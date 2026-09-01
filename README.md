@@ -13,6 +13,8 @@
 | core/ | `et_ringbuf` | SPSC 无锁环形缓冲，自由递增索引抗回绕，零拷贝连续段 API |
 |  | `et_queue` | 定长消息队列（同款无锁技巧） |
 |  | `et_mempool` | 固定块内存池，位图管理，STRICT 防重复释放 |
+|  | `et_list` | 侵入式双向链表，O(1) 插删，遍历中自删安全 |
+| algorithm/ | `et_filter` | 定点滤波器组：滑动均值 / Q15 一阶低通 / 斜率限制（纯算法层，禁 port.h） |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
 |  | `et_sched` | 协作式周期任务调度器（主循环轮询） |
 |  | `et_event` | 32 位事件标志组（ISR 置位/主循环消费） |
@@ -21,32 +23,39 @@
 |  | `et_atcmd` | 行式 AT 命令解析器 |
 | drivers/ | `et_key` | 按键四态 FSM：消抖/短按/长按/连发 |
 |  | `et_led` | LED 模式管理：常亮/闪烁N次/呼吸，输出缓存 |
+|  | `et_spwm` | 多通道软件 PWM（1ms 时基相位法，≤500Hz） |
 | debug/ | `et_log` | 分级日志：运行时过滤 + 编译期裁剪 + 自带格式化器 + hexdump |
 |  | `et_assert` | 断言：失败钩子可插拔（记录/停机/复位） |
 
 ## 目录结构
 
 ```
-├── et_config.h        # 全局裁剪配置
-├── core/ sys/ protocol/ drivers/ debug/
+├── et_config.h        # 全局裁剪配置 + 版本宏
+├── core/ algorithm/ sys/ protocol/ drivers/ debug/
 ├── port/
 │   ├── port.h         # 平台适配契约（唯一碰硬件的层）
-│   └── host/          # PC 模拟实现（含虚拟时间注入，测试用）
-├── test/              # 迷你框架 + 96 个单元用例
-├── examples/posix_demo.c   # 全栈联动演示
+│   ├── host/          # PC 模拟实现（含虚拟时间注入，测试用）
+│   └── stm32f103/     # STM32F103 真机移植（启动代码/链接脚本/最小寄存器头）
+├── test/              # 迷你框架 + 150 个单元用例
+├── examples/
+│   ├── posix_demo.c   # 全栈联动演示
+│   └── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/日志）
 └── Makefile
 ```
 
 ## 快速开始
 
 ```sh
-make test    # 或直接:
-gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/host \
-    -o build/et_tests.exe core/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c port/host/port_host.c test/*.c
+make test    # Windows 无 make 环境用 mingw32-make, 或直接:
+gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/host \
+    -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+    port/host/port_host.c test/*.c
 ./build/et_tests.exe
 
 make demo    # 运行全栈演示（虚拟 UART 链路 + 定时器 + 按键 + LED）
 ```
+
+STM32F103 真机构建/烧录见 [port/stm32f103/README.md](port/stm32f103/README.md)。
 
 ## 使用速查
 
@@ -87,6 +96,21 @@ et_frame_parser_init(&parser, &cfg);
 et_frame_feed(&parser, ch_from_uart);
 ```
 
+**侵入式链表（零拷贝组织结构体）**
+```c
+typedef struct { et_list_node_t node; int id; } item_t;   /* 节点嵌入用户结构 */
+et_list_push_back(&list, &item->node);
+et_list_remove(&list, &item->node);                       /* O(1) */
+et_list_foreach(&list, visit_fn, user);                   /* 遍历中自删安全 */
+```
+
+**GPIO 呼吸灯（et_led → et_spwm 直连，无硬件 PWM 板）**
+```c
+et_spwm_init(0, led_gpio_write, NULL, 2);     /* 500Hz 软件 PWM */
+et_led_init(&led, (et_led_write_fn)led_to_spwm, NULL);
+et_led_set_breath(&led, 2000);                /* write 回调内 et_spwm_set(0, v) */
+```
+
 ## 移植指南
 
 只需实现 `port/port.h` 契约：
@@ -97,7 +121,9 @@ et_frame_feed(&parser, ch_from_uart);
 | `port_tick_get_ms()` | 毫秒单调时基（SysTick 等），允许自然回绕 |
 | `port_putc()` | 阻塞式字符输出（日志底层） |
 
-裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关，未启用的模块不参与编译。
+已验证平台：host（CI 双系统全量单测）、**STM32F103C8T6**（`port/stm32f103/`，零警告编译，实测记录见其 README）。
+
+裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关（支持 `-D` 覆盖），未启用的模块不参与编译。
 
 ## 设计原则
 
@@ -105,7 +131,7 @@ et_frame_feed(&parser, ch_from_uart);
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core ← sys ← drivers，debug/protocol 独立，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯逻辑化，host port 提供虚拟时间注入，96 用例覆盖回绕/并发边界/畸形输入。
+- **PC 可测**：核心逻辑纯逻辑化，host port 提供虚拟时间注入，150 用例覆盖回绕/并发边界/畸形输入/定点数值。
 
 ## 测试策略亮点
 

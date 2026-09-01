@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v1.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v1.1 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -11,23 +11,27 @@
   - [2.1 et_ringbuf 环形缓冲区](#21-et_ringbuf-环形缓冲区)
   - [2.2 et_queue 定长消息队列](#22-et_queue-定长消息队列)
   - [2.3 et_mempool 固定块内存池](#23-et_mempool-固定块内存池)
-- [3. sys 系统服务层](#3-sys-系统服务层)
-  - [3.1 et_stimer 软件定时器](#31-et_stimer-软件定时器)
-  - [3.2 et_sched 任务调度器](#32-et_sched-任务调度器)
-  - [3.3 et_event 事件标志组](#33-et_event-事件标志组)
-- [4. protocol 协议层](#4-protocol-协议层)
-  - [4.1 et_crc 校验计算](#41-et_crc-校验计算)
-  - [4.2 et_frame 帧解析器](#42-et_frame-帧解析器)
-  - [4.3 et_atcmd 命令解析器](#43-et_atcmd-命令解析器)
-- [5. drivers 设备驱动层](#5-drivers-设备驱动层)
-  - [5.1 et_key 按键](#51-et_key-按键)
-  - [5.2 et_led LED](#52-et_led-led)
-- [6. debug 调试层](#6-debug-调试层)
-  - [6.1 et_log 日志](#61-et_log-日志)
-  - [6.2 et_assert 断言](#62-et_assert-断言)
-- [7. port 平台适配契约](#7-port-平台适配契约)
-- [8. 配置项参考](#8-配置项参考)
-- [9. 典型组合配方](#9-典型组合配方)
+  - [2.4 et_list 侵入式双向链表](#24-et_list-侵入式双向链表)
+- [3. algorithm 纯算法层](#3-algorithm-纯算法层)
+  - [3.1 et_filter 定点滤波器组](#31-et_filter-定点滤波器组)
+- [4. sys 系统服务层](#4-sys-系统服务层)
+  - [4.1 et_stimer 软件定时器](#41-et_stimer-软件定时器)
+  - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
+  - [4.3 et_event 事件标志组](#43-et_event-事件标志组)
+- [5. protocol 协议层](#5-protocol-协议层)
+  - [5.1 et_crc 校验计算](#51-et_crc-校验计算)
+  - [5.2 et_frame 帧解析器](#52-et_frame-帧解析器)
+  - [5.3 et_atcmd 命令解析器](#53-et_atcmd-命令解析器)
+- [6. drivers 设备驱动层](#6-drivers-设备驱动层)
+  - [6.1 et_key 按键](#61-et_key-按键)
+  - [6.2 et_led LED](#62-et_led-led)
+  - [6.3 et_spwm 软件 PWM](#63-et_spwm-软件-pwm)
+- [7. debug 调试层](#7-debug-调试层)
+  - [7.1 et_log 日志](#71-et_log-日志)
+  - [7.2 et_assert 断言](#72-et_assert-断言)
+- [8. port 平台适配契约](#8-port-平台适配契约)
+- [9. 配置项参考](#9-配置项参考)
+- [10. 典型组合配方](#10-典型组合配方)
 
 ---
 
@@ -45,7 +49,7 @@
 头文件包含路径要求（编译时加入）：
 
 ```
--I. -Icore -Isys -Iprotocol -Idrivers -Idebug -Iport
+-I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport
 ```
 
 只需拷贝启用模块对应的 `.c/.h` 对即可使用，模块间无隐藏耦合。
@@ -177,11 +181,123 @@ if (buf != NULL) { use(buf); et_mempool_free(&pool, buf); }
 
 ---
 
-## 3. sys 系统服务层
+### 2.4 et_list 侵入式双向链表
+
+零拷贝组织任意结构：节点 `et_list_node_t` 嵌入用户结构体，链表不拷贝不分配数据；任意位置 O(1) 插入/删除。与 `et_queue`（值拷贝 FIFO）互补。
+
+```c
+typedef struct et_list_node {           /* 嵌入用户结构体, 成员勿动 */
+    struct et_list_node *prev;
+    struct et_list_node *next;
+} et_list_node_t;
+
+typedef struct {
+    et_list_node_t head;                /* 哨兵: head.next=首, head.prev=尾 */
+    uint32_t       count;               /* 当前节点数 */
+} et_list_t;
+```
+
+#### API
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `void et_list_init(l)` | 任一 | 得到空表 |
+| `void et_list_node_init(n)` | 任一 | 节点置"不在链上"（静态结构体置零等效） |
+| `bool et_list_push_back(l, n)` / `push_front` | 🏠MAIN | 节点已在任一链表上时返回 false |
+| `bool et_list_remove(l, n)` | 🏠MAIN | O(1)；未链接/重复移除返回 false 且不动链表 |
+| `et_list_node_t *et_list_front(l)` / `back(l)` | 读 | 空表返回 NULL |
+| `bool et_list_is_empty(l)` / `uint32_t et_list_count(l)` | 读 | 状态 |
+| `void et_list_foreach(l, fn, user)` | 🏠MAIN | 遍历；回调中删除当前节点/其后继/任意未访问节点均安全 |
+
+宏 `ET_LIST_CONTAINER(node_ptr, type, member)`：由节点指针还原宿主结构体指针。
+
+#### 并发规则
+
+- ✅ 单上下文模块：默认主循环使用，所有 API 同一上下文内无需加锁
+- ❌ 跨上下文共享（ISR 插入/移除）：调用方用 `PORT_CRITICAL_*` 包裹**完整操作序列**（含遍历全程）
+
+```c
+typedef struct { et_list_node_t node; int id; } item_t;   /* 节点嵌入用户结构 */
+static et_list_t list;
+static item_t    pool[8];
+
+et_list_init(&list);
+et_list_push_back(&list, &pool[0].node);
+et_list_push_back(&list, &pool[1].node);
+
+/* 遍历中自删安全 */
+static void visit(et_list_node_t *n, void *user) {
+    item_t *it = ET_LIST_CONTAINER(n, item_t, node);
+    if (it->id == 3) et_list_remove(&list, n);
+}
+et_list_foreach(&list, visit, NULL);
+```
+
+实现约定（白盒知识）：`node->prev != NULL` 即"在链上"；`et_list_remove` 后 `node->next` 保留指向原后继（供 foreach 安全遍历），其余状态视为无效。节点归属校验不做（O(1) 代价约束），跨链表误删属调用方违例。
+
+---
+
+## 3. algorithm 纯算法层
+
+信号处理纯算法，**禁止包含 port.h**（与 core 同级纪律），全部定点、零浮点依赖、零动态内存。
+
+### 3.1 et_filter 定点滤波器组
+
+三个独立滤波器，句柄互不兼容，可级联组合。
+
+#### 滑动窗口均值 `et_movavg_t`
+
+环形覆盖历史样本，O(1) 增量更新（减旧加新）；和值 int64 承载不溢出。窗口未满时输出已有样本均值（开机免长等待）。
+
+| 函数 | 说明 |
+|---|---|
+| `bool et_movavg_init(f, storage, window)` | 绑定样本存储区（容量 ≥ window 个 int32），window ≥ 1 |
+| `int32_t et_movavg_update(f, x)` | 送入样本，返回均值（对称四舍五入） |
+| `void et_movavg_reset(f)` | 清空历史 |
+| `et_movavg_count(f)` / `window(f)` | 当前样本数 / 窗口容量 |
+
+#### 一阶 IIR 低通 `et_lpf1_t`
+
+递推式 `y += k*(x-y)`，k 为 Q15 定点系数（0~32767）。首样本直通。**定点特性**：稳态存在 `|残差| < 32768/k` 的死区（k=32767 时约 1 LSB）。
+
+| 函数 | 说明 |
+|---|---|
+| `bool et_lpf1_init(f, k_q15)` | k_q15=0 输出冻结；32767 近似直通 |
+| `int32_t et_lpf1_update(f, x)` | 送入样本，返回滤波输出 |
+| `void et_lpf1_set_k(f, k_q15)` | 运行中调系数 |
+| `void et_lpf1_reset(f)` / `et_lpf1_output(f)` | 重新直通 / 读当前输出 |
+
+#### 斜率限制 `et_slew_t`
+
+每步最多向目标移动 `max_step`，抑制脉冲毛刺；限幅内无损直通。首样本直通。
+
+| 函数 | 说明 |
+|---|---|
+| `bool et_slew_init(f, max_step)` | max_step ≥ 1 |
+| `int32_t et_slew_update(f, x)` | 送入样本，返回限幅输出 |
+| `void et_slew_reset(f)` / `et_slew_output(f)` | 重新直通 / 读当前输出 |
+
+```c
+static et_movavg_t ma; static int32_t ma_buf[8];
+static et_lpf1_t   lp;
+
+et_movavg_init(&ma, ma_buf, 8u);
+et_lpf1_init(&lp, 8192u);               /* α = 0.25 */
+
+int32_t raw = adc_read();
+raw = et_movavg_update(&ma, raw);       /* 先抑工频噪声 */
+int32_t smooth = et_lpf1_update(&lp, raw);   /* 再平滑 */
+```
+
+上下文约定：单上下文模块（典型为采样任务），跨上下文由调用方加临界区。
+
+---
+
+## 4. sys 系统服务层
 
 三个模块共享同一个毫秒时基（来自 `port_tick_get_ms()`），互不冲突，可按需选用。
 
-### 3.1 et_stimer 软件定时器
+### 4.1 et_stimer 软件定时器
 
 轮询式软定时器，不占用硬件定时器资源。回调在临界区外执行，回调内可安全启停任何定时器（含自身）。
 
@@ -213,7 +329,7 @@ while (1) {
 }
 ```
 
-### 3.2 et_sched 任务调度器
+### 4.2 et_sched 任务调度器
 
 协作式周期任务调度，FIFO 尾插保证公平；任务错过的周期只补跑一次（重锚定 now），避免积压风暴。
 
@@ -240,7 +356,7 @@ while (1) {
 
 **stimer vs sched 选择**：需要动态启停 / 单次延迟 / ISR 控制 → stimer；固定周期后台活 → sched。
 
-### 3.3 et_event 事件标志组
+### 4.3 et_event 事件标志组
 
 32 个独立事件位的轻量同步原语，全部 API 任意上下文可用（内部临界区保护读改写）。
 
@@ -267,9 +383,9 @@ if (got & EV_TIMEOUT) do_timeout();
 
 ---
 
-## 4. protocol 协议层
+## 5. protocol 协议层
 
-### 4.1 et_crc 校验计算
+### 5.1 et_crc 校验计算
 
 位算法实现，零查表内存；流式 API 供帧解析等场景增量计算。
 
@@ -291,7 +407,7 @@ c = et_crc16_modbus_update(c, body, body_len);
 
 标准向量自检：对 `"123456789"` 分别得 0xF4 / 0x4B37 / 0x29B1 / 0xCBF43926。
 
-### 4.2 et_frame 帧解析器
+### 5.2 et_frame 帧解析器
 
 可裁剪的字节流帧格式：
 
@@ -349,7 +465,7 @@ void USART_IRQHandler(void) {          /* ISR 里逐字节喂 */
 }
 ```
 
-### 4.3 et_atcmd 命令解析器
+### 5.3 et_atcmd 命令解析器
 
 行式命令协议：`AT+<名称>[空格<参数...>]\r\n`。CR/LF 自适应、支持退格（0x08/0x7F）、行超长自动丢弃恢复。
 
@@ -376,18 +492,18 @@ static char line[48];
 
 et_atcmd_init(&at, cmds, 2u, line, sizeof(line), NULL);
 
-/* 完帧回调里接力(见 9.3 组合配方) */
+/* 完帧回调里接力(见 10.3 组合配方) */
 char ch;
 while (get_char(&ch)) et_atcmd_feed(&at, ch);
 ```
 
 ---
 
-## 5. drivers 设备驱动层
+## 6. drivers 设备驱动层
 
-两个驱动均通过回调抽象硬件（电平读取 / 亮度写出），不直接依赖 port GPIO——矩阵键盘、IO 扩展器、软件 PWM 均可接入。
+三个驱动均通过回调抽象硬件（电平读取 / 亮度写出 / 电平写出），不直接依赖 port GPIO——矩阵键盘、IO 扩展器、软件 PWM 均可接入。
 
-### 5.1 et_key 按键
+### 6.1 et_key 按键
 
 四态 FSM：双向时间戳消抖。事件序约定：短按结束时先 `RELEASE` 后 `CLICK`；长按后释放只有 `RELEASE` 不产生 `CLICK`。
 
@@ -424,7 +540,7 @@ et_key_scan(&key, port_tick_get_ms());
 
 组合键建议在应用层实现：维护各键 `is_pressed` 位图 + 超时窗口判定，不污染单键 FSM。
 
-### 5.2 et_led LED
+### 6.2 et_led LED
 
 模式驱动，相位基于绝对时基计算（轮询抖动不影响闪烁精度）；输出带缓存，亮度不变时不触碰硬件。
 
@@ -449,11 +565,45 @@ et_led_set_blink(&led, 400, 50, 5);     /* 400ms 周期闪 5 次 */
 et_led_poll(&led, port_tick_get_ms());
 ```
 
+### 6.3 et_spwm 软件 PWM
+
+多通道软件 PWM：相位基于绝对时基计算（`((now-t0) % period) < on_ms`），轮询抖动不累积相位误差；时基自然回绕由无符号减法消化。输出带缓存，电平不变时不重复调用 write。duty 0/255 为精确边界（恒低/恒高，任何相位无毛刺）。
+
+**分辨率假设（务必阅读）**：1ms 时基下可用周期 ≥ 2ms（最高约 500Hz），占空比步进 1/period；主循环长阻塞会造成边沿抖动——高分辨率/高频需求请用硬件 PWM。
+
+通道为静态注册表（容量 `ET_SPWM_CH_MAX`，默认 4），全部 API 仅限 🏠MAIN。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_spwm_init(ch, fn, user, period_ms)` | 🏠MAIN | period_ms ≥ 2；默认 duty 0 恒低；重复 init 等效重配 |
+| `void et_spwm_deinit(ch)` | 🏠MAIN | 停止驱动（不触碰最后一次输出电平） |
+| `bool et_spwm_set(ch, duty_0_255)` | 🏠MAIN | 生效于下一次 poll；未初始化通道返回 false |
+| `et_spwm_get_duty(ch)` / `get_period(ch)` | 读 | 未初始化返回 0 |
+| `void et_spwm_poll(now)` | 🏠MAIN | 刷新全部通道，挂进主循环 poll 链 |
+
+```c
+static void ch0_out(void *u, uint8_t on) {       /* 电平回调: on 非 0 为高 */
+    (void)u;
+    gpio_write(LED_PIN, on);
+}
+
+et_spwm_init(0, ch0_out, NULL, 2);               /* 500Hz, 步进 1/2ms */
+et_spwm_set(0, 128);                             /* ~50% */
+
+while (1) {
+    uint32_t now = port_tick_get_ms();
+    et_spwm_poll(now);                           /* 与其他 poll 并列挂链 */
+    ...
+}
+```
+
+与 `et_led` 配套：把 et_led 的 write 回调直连 `et_spwm_set`，即可在无硬件 PWM 的 GPIO 上实现呼吸灯（见 10.5）。
+
 ---
 
-## 6. debug 调试层
+## 7. debug 调试层
 
-### 6.1 et_log 日志
+### 7.1 et_log 日志
 
 输出格式：`[时基ms][级别字符][标签] 正文\n`，级别字符 T/D/I/W/E。
 底层经 `port_putc()` 输出；默认不加锁，多上下文并发可能交错（需要原子行请上层加临界区）。
@@ -485,7 +635,7 @@ et_log_hexdump(ET_LOG_LEVEL_DEBUG, "rx", buf, len);
 
 编译期一刀切示例：`-DET_LOG_MAX_LEVEL=4`（仅保留 ERROR 及以上）。
 
-### 6.2 et_assert 断言
+### 7.2 et_assert 断言
 
 | API | 说明 |
 |---|---|
@@ -510,7 +660,7 @@ ET_DBG_ASSERT(queue != NULL);      /* 仅调试构建存在 */
 
 ---
 
-## 7. port 平台适配契约
+## 8. port 平台适配契约
 
 移植整个库只需实现 `port/port.h` 声明的四个能力（参考实现见 `port/host/`）：
 
@@ -523,27 +673,38 @@ ET_DBG_ASSERT(queue != NULL);      /* 仅调试构建存在 */
 
 分层纪律：**core 层禁止包含 port.h**（保证纯逻辑可 PC 测试）；sys/drivers/debug 仅经此契约触硬件。
 
+### 8.1 已验证平台
+
+| 平台 | 编译 | 仿真 | 真机实测 | 记录 |
+|---|---|---|---|---|
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟时基） | ✅ 全量单测 | v1.0 起 |
+| STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | — | — | v1.1，实测顺延 v1.1.1 |
+
+新平台移植步骤：实现上表四项契约 → `port/<platform>/` 下提供实现 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。
+
 ---
 
-## 8. 配置项参考
+## 9. 配置项参考
 
 全部位于 `et_config.h`，均带 `#ifndef` 保护，可用 `-D` 覆盖：
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / STIMER / SCHED / EVENT / CRC / FRAME / ATCMD / KEY / LED / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译 |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / STIMER / SCHED / EVENT / CRC / FRAME / ATCMD / KEY / LED / SPWM / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
 | `ET_MEMPOOL_STRICT` | 1 | free 时校验指针归属/重复释放 |
+| `ET_SPWM_CH_MAX` | 4 | 软件 PWM 静态通道数 |
+| `ET_VERSION_STRING / ET_VERSION` | "1.1.0" / 0x010100 | 版本标识，发布时须与 git tag 一致 |
 | `ET_ASSERT(cond)` | 空实现 | 库内断言映射，可指向自身故障钩子 |
 | `ET_LOG_MAX_LEVEL` | 0 (TRACE) | 日志编译期裁剪线（数值=最详细级别） |
 | `ET_LOG_LINE_MAX` 等 | 见 et_log.h | 日志行为细节 |
 
 ---
 
-## 9. 典型组合配方
+## 10. 典型组合配方
 
-### 9.1 裸机主循环骨架
+### 10.1 裸机主循环骨架
 
 ```c
 int main(void)
@@ -557,6 +718,7 @@ int main(void)
         et_sched_poll_once();          /* 周期任务 */
         et_stimer_poll(now);           /* 定时器回调 */
         et_led_poll(&led, now);        /* 灯效刷新 */
+        et_spwm_poll(now);             /* 软件 PWM 刷新 */
         et_key_scan(&key, now);        /* 按键扫描 */
 
         enter_sleep_until_interrupt(); /* WFI 低功耗可选 */
@@ -564,7 +726,7 @@ int main(void)
 }
 ```
 
-### 9.2 UART 收包流水线（ISR → 主循环）
+### 10.2 UART 收包流水线（ISR → 主循环）
 
 ```c
 /* ISR: 只做两件事 —— 入缓冲 + 置事件 */
@@ -588,7 +750,7 @@ void comm_task(void *arg) {
 }
 ```
 
-### 9.3 帧 → 命令 二级解析
+### 10.3 帧 → 命令 二级解析
 
 ```c
 static void on_frame(et_frame_parser_t *p, uint16_t len, void *user) {
@@ -600,7 +762,7 @@ static void on_frame(et_frame_parser_t *p, uint16_t len, void *user) {
 }
 ```
 
-### 9.4 ISR → 任务 事件通知（代替信号量）
+### 10.4 ISR → 任务 事件通知（代替信号量）
 
 ```c
 /* ADC 转换完成中断 */
@@ -618,6 +780,36 @@ void sample_task(void *arg) {
 }
 ```
 
+### 10.5 无硬件 PWM 的 GPIO 呼吸灯（et_led → et_spwm 直连）
+
+et_led 的亮度输出直接作为软件 PWM 占空比，`write` 回调一行直连：
+
+```c
+static et_led_t led;                                 /* spwm 按通道号使用, 无句柄 */
+
+static void led_brightness_out(void *u, uint8_t v) { /* et_led 亮度 0~255 */
+    (void)u;
+    et_spwm_set(0, v);                               /* 直连: 亮度即占空比 */
+}
+static void ch0_out(void *u, uint8_t on) {           /* 软件 PWM 电平输出 */
+    (void)u;
+    gpio_write(LED_PIN, on);                         /* 低有效板载灯在此取反 */
+}
+
+et_spwm_init(0, ch0_out, NULL, 2);                   /* 500Hz */
+et_led_init(&led, led_brightness_out, NULL);
+et_led_set_breath(&led, 2000);
+
+while (1) {
+    uint32_t now = port_tick_get_ms();
+    et_led_poll(&led, now);                          /* 亮度沿 → duty */
+    et_spwm_poll(now);                               /* duty → 电平翻转 */
+    ...
+}
+```
+
+ADC 采样链同款思路：`et_movavg`（抑噪）→ `et_lpf1`（平滑）→ `et_slew`（防突变）级联，见 3.1。
+
 ---
 
-> 更多实践参见 `examples/posix_demo.c`（全栈联动演示）与 `test/` 下各模块单元测试——它们本身就是最好的用法范例。
+> 更多实践参见 `examples/posix_demo.c`（全栈联动演示）、`examples/stm32f103_demo.c`（STM32 真机 demo）与 `test/` 下各模块单元测试——它们本身就是最好的用法范例。

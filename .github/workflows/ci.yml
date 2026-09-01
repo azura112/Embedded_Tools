@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # 单元测试矩阵: ubuntu 走 make, windows 验证 README 记载的"纯 gcc 无 make"路径
+  unit-tests:
+    name: unit-tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run unit tests (make)
+        if: runner.os == 'Linux'
+        run: make test
+
+      - name: Run unit tests (pure gcc, no make)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p build
+          gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/host \
+              -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+              port/host/port_host.c test/*.c
+          ./build/et_tests.exe
+
+      - name: Build demo
+        if: runner.os == 'Linux'
+        run: make demo
+
+  # gcov 覆盖率报告 (暂不设门槛, 随 CI 产出)
+  coverage:
+    name: coverage (gcovr)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gcovr
+        run: pip install gcovr
+
+      - name: Build & run tests with coverage
+        run: |
+          mkdir -p build
+          gcc -std=c99 -Wall -Wextra -pedantic --coverage \
+              -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/host \
+              -o build/et_tests_cov.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+              port/host/port_host.c test/*.c
+          ./build/et_tests_cov.exe
+
+      - name: Generate coverage report
+        run: |
+          gcovr --print-summary --txt-summary -o coverage_summary.txt --xml -o coverage.xml
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            coverage_summary.txt
+
+  # STM32F103 移植编译验证 (Cortex-M3, 零警告门槛)
+  cross-stm32f103:
+    name: cross stm32f103
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Build stm32f103 demo
+        run: |
+          mkdir -p build
+          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
+            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/stm32f103 \
+            -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
+            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+            port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
+            examples/stm32f103_demo.c \
+            -o build/stm32f103_demo.elf
+          arm-none-eabi-size build/stm32f103_demo.elf
