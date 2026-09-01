@@ -1,0 +1,19 @@
+# 构建产物
+build/
+
+# 编译器输出
+*.o
+*.obj
+*.exe
+*.a
+*.lib
+*.elf
+*.hex
+*.bin
+*.map
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.suo
+*.user
