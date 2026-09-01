@@ -23,23 +23,60 @@ extern "C" {
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
+/* 字符串 "主.次.补", 由上方三个分量自动拼出 */
+#define ET_VERSION_STR_(x)      #x
+#define ET_VERSION_STR(x)       ET_VERSION_STR_(x)
+#define ET_VERSION_STRING       ET_VERSION_STR(ET_VERSION_MAJOR) "." \
+                                ET_VERSION_STR(ET_VERSION_MINOR) "." \
+                                ET_VERSION_STR(ET_VERSION_PATCH)
 
 /* ===================== 模块裁剪开关 ===================== */
+/* 均带 #ifndef 保护, 可用 -DET_MODULE_XXX=0 覆盖(对应 .c 仍需移出编译列表) */
+#ifndef ET_MODULE_RINGBUF
 #define ET_MODULE_RINGBUF       1   /* core: SPSC 环形缓冲区            */
+#endif
+#ifndef ET_MODULE_QUEUE
 #define ET_MODULE_QUEUE         1   /* core: 定长消息队列 (SPSC)        */
+#endif
+#ifndef ET_MODULE_MEMPOOL
 #define ET_MODULE_MEMPOOL       1   /* core: 固定块内存池               */
+#endif
+#ifndef ET_MODULE_LIST
 #define ET_MODULE_LIST          1   /* core: 侵入式双向链表             */
+#endif
+#ifndef ET_MODULE_FILTER
 #define ET_MODULE_FILTER        1   /* algorithm: 定点数字滤波器组      */
+#endif
+#ifndef ET_MODULE_STIMER
 #define ET_MODULE_STIMER        1   /* sys  : 软件定时器                */
+#endif
+#ifndef ET_MODULE_SCHED
 #define ET_MODULE_SCHED         1   /* sys  : 协作式周期任务调度器      */
+#endif
+#ifndef ET_MODULE_EVENT
 #define ET_MODULE_EVENT         1   /* sys  : 32 位事件标志组           */
+#endif
+#ifndef ET_MODULE_CRC
 #define ET_MODULE_CRC           1   /* proto: CRC8/CRC16/CRC32 校验     */
+#endif
+#ifndef ET_MODULE_FRAME
 #define ET_MODULE_FRAME         1   /* proto: 字节流帧解析器            */
+#endif
+#ifndef ET_MODULE_ATCMD
 #define ET_MODULE_ATCMD         1   /* proto: AT 命令解析器             */
+#endif
+#ifndef ET_MODULE_KEY
 #define ET_MODULE_KEY           1   /* driver: 按键状态机               */
+#endif
+#ifndef ET_MODULE_LED
 #define ET_MODULE_LED           1   /* driver: LED 模式管理器           */
+#endif
+#ifndef ET_MODULE_SPWM
 #define ET_MODULE_SPWM          1   /* driver: 多通道软件 PWM           */
+#endif
+#ifndef ET_MODULE_LOG
 #define ET_MODULE_LOG           1   /* debug: 分级日志                  */
+#endif
 
 /* ===================== et_ringbuf ===================== */
 /* 容量保证为 2 的幂时置 1, 取模运算优化为位与; 容量非 2 的幂必须为 0 */

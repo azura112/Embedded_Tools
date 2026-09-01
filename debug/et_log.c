@@ -15,9 +15,7 @@ static volatile et_log_level_t g_level = ET_LOG_LEVEL_INFO;
 
 void et_log_set_level(et_log_level_t lv)
 {
-    if ((int)lv < ET_LOG_LEVEL_TRACE) {
-        lv = ET_LOG_LEVEL_TRACE;
-    }
+    /* lv 为枚举类型, 合法值恒 >= TRACE, 下界无需再判 */
     if ((int)lv > ET_LOG_LEVEL_NONE) {
         lv = ET_LOG_LEVEL_NONE;
     }
@@ -192,9 +190,11 @@ int et_log_output(et_log_level_t lv, const char *tag, const char *fmt, ...)
     va_list ap;
     int cnt = 0;
 
+#if ET_LOG_MAX_LEVEL > ET_LOG_LEVEL_TRACE
     if ((int)lv < ET_LOG_MAX_LEVEL) {           /* 双保险: 比编译期裁剪线更详细的级别直接丢弃 */
         return -1;
     }
+#endif
     if ((int)lv < (int)g_level) {
         return -1;
     }
@@ -233,7 +233,12 @@ void et_log_hexdump(et_log_level_t lv, const char *tag,
     const uint8_t *p = (const uint8_t *)data;
     uint32_t off;
 
-    if (((int)lv < ET_LOG_MAX_LEVEL) || ((int)lv < (int)g_level)) {
+#if ET_LOG_MAX_LEVEL > ET_LOG_LEVEL_TRACE
+    if ((int)lv < ET_LOG_MAX_LEVEL) {
+        return;
+    }
+#endif
+    if ((int)lv < (int)g_level) {
         return;
     }
     for (off = 0u; off < len; off += 16u) {

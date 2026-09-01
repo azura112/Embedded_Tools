@@ -20,6 +20,7 @@
 #define ET_LOG_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include "et_config.h"
 
 #if ET_MODULE_LOG

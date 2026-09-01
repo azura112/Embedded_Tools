@@ -20,6 +20,7 @@
 #define ET_STIMER_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "et_config.h"
 

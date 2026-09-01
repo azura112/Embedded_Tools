@@ -14,6 +14,7 @@
 #define ET_ASSERT_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "et_config.h"
 
 #if defined(__cplusplus)

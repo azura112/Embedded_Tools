@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "et_config.h"
 
 #if ET_MODULE_SPWM

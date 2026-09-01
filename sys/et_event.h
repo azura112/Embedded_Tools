@@ -14,6 +14,7 @@
 #define ET_EVENT_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "et_config.h"
 

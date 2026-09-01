@@ -13,6 +13,7 @@
 #define ET_ATCMD_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "et_config.h"
 
