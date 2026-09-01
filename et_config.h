@@ -14,19 +14,32 @@
 extern "C" {
 #endif
 
+/* ===================== 版本信息 ===================== */
+/* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
+#define ET_VERSION_MAJOR        1
+#define ET_VERSION_MINOR        1
+#define ET_VERSION_PATCH        0
+/* 整数编码 0x010100 = 1.1.0, 便于条件编译比较: #if ET_VERSION >= 0x010100 */
+#define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
+                                 (ET_VERSION_MINOR << 8)  | \
+                                 (ET_VERSION_PATCH))
+
 /* ===================== 模块裁剪开关 ===================== */
-#define ET_MODULE_RINGBUF       1   /* core: 环形缓冲区        */
-#define ET_MODULE_QUEUE         1   /* core: 定长消息队列      */
-#define ET_MODULE_MEMPOOL       1   /* core: 固定块内存池      */
-#define ET_MODULE_STIMER        1   /* sys : 软件定时器(预留)  */
-#define ET_MODULE_SCHED         1   /* sys : 任务调度器(预留)  */
-#define ET_MODULE_EVENT         1   /* sys : 事件标志(预留)    */
-#define ET_MODULE_CRC           1   /* proto: CRC校验(预留)    */
-#define ET_MODULE_FRAME         1   /* proto: 帧解析器(预留)   */
-#define ET_MODULE_ATCMD         1   /* proto: AT命令(预留)     */
-#define ET_MODULE_KEY           1   /* driver: 按键(预留)      */
-#define ET_MODULE_LED           1   /* driver: LED(预留)       */
-#define ET_MODULE_LOG           1   /* debug: 日志(预留)       */
+#define ET_MODULE_RINGBUF       1   /* core: SPSC 环形缓冲区            */
+#define ET_MODULE_QUEUE         1   /* core: 定长消息队列 (SPSC)        */
+#define ET_MODULE_MEMPOOL       1   /* core: 固定块内存池               */
+#define ET_MODULE_LIST          1   /* core: 侵入式双向链表             */
+#define ET_MODULE_FILTER        1   /* algorithm: 定点数字滤波器组      */
+#define ET_MODULE_STIMER        1   /* sys  : 软件定时器                */
+#define ET_MODULE_SCHED         1   /* sys  : 协作式周期任务调度器      */
+#define ET_MODULE_EVENT         1   /* sys  : 32 位事件标志组           */
+#define ET_MODULE_CRC           1   /* proto: CRC8/CRC16/CRC32 校验     */
+#define ET_MODULE_FRAME         1   /* proto: 字节流帧解析器            */
+#define ET_MODULE_ATCMD         1   /* proto: AT 命令解析器             */
+#define ET_MODULE_KEY           1   /* driver: 按键状态机               */
+#define ET_MODULE_LED           1   /* driver: LED 模式管理器           */
+#define ET_MODULE_SPWM          1   /* driver: 多通道软件 PWM           */
+#define ET_MODULE_LOG           1   /* debug: 分级日志                  */
 
 /* ===================== et_ringbuf ===================== */
 /* 容量保证为 2 的幂时置 1, 取模运算优化为位与; 容量非 2 的幂必须为 0 */
@@ -42,6 +55,12 @@ extern "C" {
 /* 严格模式: free 时校验指针归属与重复释放(增加少量代码, 建议调试期开启) */
 #ifndef ET_MEMPOOL_STRICT
 #define ET_MEMPOOL_STRICT       1
+#endif
+
+/* ===================== et_spwm ===================== */
+/* 软件 PWM 最大通道数(静态注册表容量), 按需裁剪节省 RAM */
+#ifndef ET_SPWM_CH_MAX
+#define ET_SPWM_CH_MAX          4
 #endif
 
 /* ===================== 调试断言 ===================== */
