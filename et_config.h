@@ -17,9 +17,9 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        1
-#define ET_VERSION_MINOR        3
+#define ET_VERSION_MINOR        4
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x010300 = 1.3.0, 便于条件编译比较: #if ET_VERSION >= 0x010300 */
+/* 整数编码 0x010400 = 1.4.0, 便于条件编译比较: #if ET_VERSION >= 0x010400 */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
@@ -68,6 +68,9 @@ extern "C" {
 #ifndef ET_MODULE_ATCMD
 #define ET_MODULE_ATCMD         1   /* proto: AT 命令解析器             */
 #endif
+#ifndef ET_MODULE_XMODEM
+#define ET_MODULE_XMODEM        1   /* proto: XMODEM-CRC 接收器         */
+#endif
 #ifndef ET_MODULE_KEY
 #define ET_MODULE_KEY           1   /* driver: 按键状态机               */
 #endif
@@ -82,6 +85,9 @@ extern "C" {
 #endif
 #ifndef ET_MODULE_SOFTCLOCK
 #define ET_MODULE_SOFTCLOCK     1   /* sys: 软时钟(毫秒 tick→日历时钟)  */
+#endif
+#ifndef ET_MODULE_SHELL
+#define ET_MODULE_SHELL         1   /* debug: 行式交互壳(atcmd 之上)    */
 #endif
 #ifndef ET_MODULE_LOG
 #define ET_MODULE_LOG           1   /* debug: 分级日志                  */
