@@ -49,7 +49,27 @@ arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bi
 ```
 
 实测（GNU Tools for STM32 13.3.rel1）：**`-Wall -Wextra -pedantic` 零警告**。
-v1.1：`text=7976 data=4 bss=216`；v1.2（+et_kv+软时钟+重启计数）：`text=10892 data=4 bss=276`（Flash 17%，RAM 1.4%）。
+v1.1：`text=7976 data=4 bss=216`；v1.2：`text=10892 data=4 bss=276`；v1.3：`text=11208 data=4 bss=276`（Flash 17%，RAM 1.4%）。
+
+## Renode 仿真（v1.3 起为 CI 常设门）
+
+`renode/smoke.sh` 在 headless Renode 中跑通 demo 并断言串口关键日志（横幅 / `kv: seq=…` / UTC 心跳 / `boot #1` / **复位后 `boot #2`** —— 后者即 kv 掉电持久化的功能证据）：
+
+```sh
+arm-none-eabi-gcc ...(同上, 产出 build/stm32f103_demo.elf)
+sh port/stm32f103/renode/smoke.sh <renode可执行> <renode安装根> <仓库根> <输出目录>
+```
+
+仿真要点（Renode 1.16.1，与真机差异按计划 §7 记录在案）：
+
+| 项 | 处理 |
+|---|---|
+| F103 flash 控制器无寄存器模型 | `sysbus Tag <0x40022000,0x40022013> "FLASH" 0x0`（读 0=空闲/无错误），存储体可写；**只验功能不验擦写时序** |
+| flash 上电态 | `flash_erased_64k.bin`（全 0xFF）先填充再 LoadELF，模拟真实擦除态 |
+| 有界运行 / 复位 | `emulation RunFor`（不可先 `start`）；`sysbus.cpu Reset` 软复位（内存保持） |
+| 本 smoke 曾揪出的 bug | v1.2 port_flash_write 块内偏移错误（固定 src[0..3]）——宿主机全绿未暴露，仿真首跑即现形 |
+
+CI：`.github/workflows/ci.yml` 的 `renode-smoke` job（Renode 固定 1.16.1，失败保留 uart 日志 artifact）；`release.yml` 发布前强制过此门。
 
 ## 烧录与运行
 
@@ -62,7 +82,7 @@ v1.1：`text=7976 data=4 bss=216`；v1.2（+et_kv+软时钟+重启计数）：`t
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟时基单测） | ✅ 206 用例 | v1.0 起 |
-| STM32F103C8T6 (arm-none-eabi-gcc 13.3) | ✅ 零警告 | ⏳ 顺延 | ⏳ 顺延 | v1.1/v1.2 |
+| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟 flash+时基单测） | ✅ 206 用例 | v1.0 起 |
+| STM32F103C8T6 (arm-none-eabi-gcc 13.3) | ✅ 零警告 | ✅ Renode smoke（本机+CI 门） | 待硬件（常设挂账，**不阻塞发布**） | v1.1 编译 / v1.3 仿真闭环 |
 
-> ⏳ 项按 v1.1/v1.2 计划"降级方案"处理：编译验证已交付，Renode/QEMU 仿真与真机实测待环境到位后补录。Renode 参考：`machine create "stm32"` + `machine LoadELF build/stm32f103_demo.elf`（`sysbus.usart1` 主机端串口重定向可看日志）。
+> **v1.3 政策**：Renode CI 门作为 F103 的功能验收线（断言 kv/重启计数等日志）；真机记录转常设挂账，硬件到位后按 checklist 补录（重启计数 `boot #n` 递增即为最直观验收），不再随版本顺延阻塞。

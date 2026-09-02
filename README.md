@@ -139,8 +139,8 @@ et_kv_set(&kv, 1, &n, sizeof(n));          /* 即时持久化，断电自愈 */
 
 - **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（206 例）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
-- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译；
-- **发布**（`.github/workflows/release.yml`）：`v*` tag → 全量测试 + ARM ELF/BIN → GitHub Release 附件。
+- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译 × **Renode F103 仿真 smoke（断言 kv/重启计数日志）**；
+- **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
 ## 测试策略亮点
 
