@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.2.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.2开发计划：et_kv存储与实测补录.md](v1.2开发计划：et_kv存储与实测补录.md)**
+> 当前版本：**v1.3.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.3开发计划：平台实测闭环与et_fsm.md](v1.3开发计划：平台实测闭环与et_fsm.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -15,6 +15,7 @@
 |  | `et_mempool` | 固定块内存池，位图管理，STRICT 防重复释放 |
 |  | `et_list` | 侵入式双向链表，O(1) 插删，遍历中自删安全 |
 | algorithm/ | `et_filter` | 定点滤波器组：滑动均值 / Q15 一阶低通 / 斜率限制（纯算法层，禁 port.h） |
+|  | `et_fsm` | 表驱动状态机：const 迁移表可驻 flash，guard 回退链，零分配 |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
 |  | `et_sched` | 协作式周期任务调度器（主循环轮询） |
 |  | `et_event` | 32 位事件标志组（ISR 置位/主循环消费） |
@@ -38,7 +39,7 @@
 │   ├── port.h         # 平台适配契约（唯一碰硬件的层，v1.2 起含 flash 三件套）
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   └── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
-├── test/              # 迷你框架 + 191 个单元用例（kv 断电恢复矩阵 28 例）
+├── test/              # 迷你框架 + 206 个单元用例（kv 断电恢复矩阵 28 例）
 ├── examples/
 │   ├── posix_demo.c   # 全栈联动演示
 │   └── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -132,11 +133,11 @@ et_kv_set(&kv, 1, &n, sizeof(n));          /* 即时持久化，断电自愈 */
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，191 用例覆盖回绕/并发边界/畸形输入/掉电恢复/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，206 用例覆盖回绕/并发边界/畸形输入/掉电恢复/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（191 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（206 例）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 全量测试 + ARM ELF/BIN → GitHub Release 附件。

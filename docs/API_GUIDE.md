@@ -14,6 +14,7 @@
   - [2.4 et_list 侵入式双向链表](#24-et_list-侵入式双向链表)
 - [3. algorithm 纯算法层](#3-algorithm-纯算法层)
   - [3.1 et_filter 定点滤波器组](#31-et_filter-定点滤波器组)
+  - [3.2 et_fsm 表驱动状态机](#32-et_fsm-表驱动状态机)
 - [4. sys 系统服务层](#4-sys-系统服务层)
   - [4.1 et_stimer 软件定时器](#41-et_stimer-软件定时器)
   - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
@@ -293,6 +294,42 @@ int32_t smooth = et_lpf1_update(&lp, raw);   /* 再平滑 */
 ```
 
 上下文约定：单上下文模块（典型为采样任务），跨上下文由调用方加临界区。
+
+### 3.2 et_fsm 表驱动状态机
+
+"扁平表驱动"轻量状态机：迁移表由调用方以 `const` 提供（可驻 flash，API 无任何改表入口），guard/action 回调外置业务规则，零动态内存。不做层次/并行态/内置事件队列——复杂编排由应用组合。
+
+**迁移语义**：表序扫描，首个 `event` 匹配且 guard 通过（或无 guard）的迁移生效；guard 失败**继续向后扫**（同事件回退链）；无匹配 → 事件被忽略、返回 false；自迁移合法且 action 照常执行。
+
+```c
+#include "et_fsm.h"
+
+enum { EV_TOGGLE = 1, EV_FORCE_OFF = 2 };
+enum { ST_OFF = 0, ST_ON = 1 };
+
+/* 状态条件用 guard 表达(扁平表无状态匹配维度) */
+static bool is_off(void *u) { (void)u; return et_fsm_state(&led_fsm) == ST_OFF; }
+static bool gate_open(void *u) { (void)u; return gate_enable; }
+
+static const et_fsm_trans_t TBL[] = {
+    { EV_TOGGLE,    ST_ON,  is_off,    led_on  },   /* OFF->ON */
+    { EV_TOGGLE,    ST_OFF, gate_open, led_off },   /* ON->OFF(受闸) */
+    { EV_TOGGLE,    ST_ON,  NULL,      led_on  },   /* 回退链: 自迁移兜底 */
+    { EV_FORCE_OFF, ST_OFF, NULL,      NULL    },   /* 任意态->OFF, 无动作 */
+};
+
+et_fsm_init(&led_fsm, ST_OFF, TBL, 4, NULL);     /* 重复 init 会被拒绝 */
+et_fsm_dispatch(&led_fsm, EV_TOGGLE);            /* true: 已迁移 */
+et_fsm_state(&led_fsm);                          /* ST_ON */
+```
+
+| API | 说明 |
+|---|---|
+| `et_fsm_init(f, init, table, count, user)` | 绑定 const 迁移表与初始态；参数非法/重复 init 返回 false 且不破坏现场 |
+| `et_fsm_dispatch(f, ev)` | 派发事件：迁移生效 true（含自迁移）；被忽略 false |
+| `et_fsm_state(f)` | 只读查询当前状态 |
+
+单测 15 例（首匹配/guard 回退链/自迁移/未知事件/guard 全拒/重复 init 防护/单条目边界/user 透传/const 表驻留等，`test/test_fsm.c`）。
 
 ---
 
@@ -766,7 +803,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 191 用例 | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 206 用例 | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | — | — | v1.1/v1.2 编译级，实测顺延补录 |
 
 新平台移植步骤：实现基础四项契约 →（用 `ET_MODULE_KV` 时）再实现 flash 三件套与几何 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。

@@ -47,6 +47,9 @@ extern "C" {
 #ifndef ET_MODULE_FILTER
 #define ET_MODULE_FILTER        1   /* algorithm: 定点数字滤波器组      */
 #endif
+#ifndef ET_MODULE_FSM
+#define ET_MODULE_FSM           1   /* algorithm: 表驱动状态机          */
+#endif
 #ifndef ET_MODULE_STIMER
 #define ET_MODULE_STIMER        1   /* sys  : 软件定时器                */
 #endif

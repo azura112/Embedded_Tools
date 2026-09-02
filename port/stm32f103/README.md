@@ -62,7 +62,7 @@ v1.1：`text=7976 data=4 bss=216`；v1.2（+et_kv+软时钟+重启计数）：`t
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟时基单测） | ✅ 191 用例 | v1.0 起 |
+| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟时基单测） | ✅ 206 用例 | v1.0 起 |
 | STM32F103C8T6 (arm-none-eabi-gcc 13.3) | ✅ 零警告 | ⏳ 顺延 | ⏳ 顺延 | v1.1/v1.2 |
 
 > ⏳ 项按 v1.1/v1.2 计划"降级方案"处理：编译验证已交付，Renode/QEMU 仿真与真机实测待环境到位后补录。Renode 参考：`machine create "stm32"` + `machine LoadELF build/stm32f103_demo.elf`（`sysbus.usart1` 主机端串口重定向可看日志）。
