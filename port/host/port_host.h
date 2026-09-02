@@ -29,6 +29,34 @@ void     port_host_capture_start(char *buf, uint32_t cap);
 /* 停止捕获并返回写入长度(缓冲内自动补 NUL) */
 uint32_t port_host_capture_stop(void);
 
+/* ===================== flash 参数区模拟 (et_kv 测试用) ===================== */
+
+#ifndef PORT_FLASH_SECTOR_SIZE
+#define PORT_FLASH_SECTOR_SIZE      1024u    /* host 模拟: 1KB x 16 = 16KB 静态 RAM */
+#endif
+#ifndef PORT_FLASH_SECTOR_COUNT
+#define PORT_FLASH_SECTOR_COUNT     16u
+#endif
+#ifndef PORT_FLASH_ERASE_MS_MAX
+#define PORT_FLASH_ERASE_MS_MAX     1u       /* host 模拟擦除瞬时完成 */
+#endif
+
+/* 模拟区整体置 0xFF(等效新芯片), 写入计数/故障注入清零 */
+void     port_host_flash_reset(void);
+
+/* 白盒访问模拟区(测试直接构造坏页/乱序 seq 等), 返回区内偏移处的字节指针 */
+uint8_t *port_host_flash_mem(uint32_t offset);
+
+/* 掉电注入: 自调用起累计写入 n 字节后模拟掉电, 后续 port_flash_write 不再写
+ * (部分写入截断); 传 0xFFFFFFFF 关闭注入。精确断点可先查 port_host_flash_written() */
+void     port_host_flash_fail_after(uint32_t n);
+
+/* 擦除故障注入: 下一次 port_flash_erase_sector 只擦除扇区前半(模拟擦除中断) */
+void     port_host_flash_erase_fail_once(void);
+
+/* 累计写入字节数(验证"del 不存在 key 零写入"等) */
+uint32_t port_host_flash_written(void);
+
 #ifdef __cplusplus
 }
 #endif

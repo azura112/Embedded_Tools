@@ -9,8 +9,10 @@
  */
 #include "port.h"
 #include "port_host.h"
+#include "et_config.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static volatile uint32_t g_virtual_ticks = 0u;
 
@@ -80,4 +82,96 @@ void port_putc(char c)
         return;
     }
     (void)putchar(c);
+}
+
+/* ===================== flash 参数区模拟 ===================== */
+
+static uint8_t  g_flash[PORT_FLASH_SECTOR_SIZE * PORT_FLASH_SECTOR_COUNT];
+static uint32_t g_fail_limit = 0xFFFFFFFFu;     /* 掉电注入阈值(写入累计) */
+static uint32_t g_written    = 0u;              /* 累计写入字节数 */
+static bool     g_erase_fail = false;           /* 下次擦除只擦前半 */
+
+void port_host_flash_reset(void)
+{
+    memset(g_flash, 0xFF, sizeof(g_flash));
+    g_fail_limit = 0xFFFFFFFFu;
+    g_written    = 0u;
+    g_erase_fail = false;
+}
+
+uint8_t *port_host_flash_mem(uint32_t offset)
+{
+    if (offset >= sizeof(g_flash)) {
+        return NULL;
+    }
+    return &g_flash[offset];
+}
+
+void port_host_flash_fail_after(uint32_t n)
+{
+    g_fail_limit = n;
+}
+
+void port_host_flash_erase_fail_once(void)
+{
+    g_erase_fail = true;
+}
+
+uint32_t port_host_flash_written(void)
+{
+    return g_written;
+}
+
+bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
+{
+    if ((offset > sizeof(g_flash)) || (len > sizeof(g_flash) - offset)) {
+        return false;
+    }
+    memcpy(buf, &g_flash[offset], len);
+    return true;
+}
+
+uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
+{
+    const uint8_t *src = (const uint8_t *)buf;
+    uint32_t i;
+
+    if ((offset > sizeof(g_flash)) || (len > sizeof(g_flash) - offset)) {
+        return 0u;
+    }
+    if (((offset % 4u) != 0u) || ((len % 4u) != 0u)) {
+        return 0u;                              /* 4B 对齐契约 */
+    }
+
+    for (i = 0u; i < len; i++) {
+        uint8_t old = g_flash[offset + i];
+        uint8_t new = src[i];
+
+        if (g_written >= g_fail_limit) {
+            /* 掉电: 只截断本次, 之后(模拟重启后)恢复可用 */
+            g_fail_limit = 0xFFFFFFFFu;
+            break;
+        }
+        if (((uint8_t)(new & (uint8_t)~old)) != 0u) {
+            break;                              /* 位写违约: 0 位不可写成 1 */
+        }
+        g_flash[offset + i] = new;
+        g_written++;
+    }
+    return i;
+}
+
+bool port_flash_erase_sector(uint32_t sector_index)
+{
+    uint32_t base;
+    uint32_t n;
+
+    if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
+        return false;
+    }
+    base = sector_index * PORT_FLASH_SECTOR_SIZE;
+    n    = g_erase_fail ? (PORT_FLASH_SECTOR_SIZE / 2u) : PORT_FLASH_SECTOR_SIZE;
+    g_erase_fail = false;
+    memset(&g_flash[base], 0xFF, n);
+    return true;
 }

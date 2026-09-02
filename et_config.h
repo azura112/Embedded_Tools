@@ -17,7 +17,7 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        1
-#define ET_VERSION_MINOR        1
+#define ET_VERSION_MINOR        2
 #define ET_VERSION_PATCH        0
 /* 整数编码 0x010100 = 1.1.0, 便于条件编译比较: #if ET_VERSION >= 0x010100 */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
@@ -74,6 +74,12 @@ extern "C" {
 #ifndef ET_MODULE_SPWM
 #define ET_MODULE_SPWM          1   /* driver: 多通道软件 PWM           */
 #endif
+#ifndef ET_MODULE_KV
+#define ET_MODULE_KV            1   /* storage: flash 键值掉电存储      */
+#endif
+#ifndef ET_MODULE_SOFTCLOCK
+#define ET_MODULE_SOFTCLOCK     1   /* sys: 软时钟(毫秒 tick→日历时钟)  */
+#endif
 #ifndef ET_MODULE_LOG
 #define ET_MODULE_LOG           1   /* debug: 分级日志                  */
 #endif
@@ -98,6 +104,18 @@ extern "C" {
 /* 软件 PWM 最大通道数(静态注册表容量), 按需裁剪节省 RAM */
 #ifndef ET_SPWM_CH_MAX
 #define ET_SPWM_CH_MAX          4
+#endif
+
+/* ===================== flash 参数区几何 (port 契约, 见 port.h) ===================== */
+/* 仅 ET_MODULE_KV=1 时参与编译; 平台几何不同用 -D 覆盖 */
+#ifndef PORT_FLASH_SECTOR_SIZE
+#define PORT_FLASH_SECTOR_SIZE  1024u    /* F103 中容量页 1KB */
+#endif
+#ifndef PORT_FLASH_SECTOR_COUNT
+#define PORT_FLASH_SECTOR_COUNT 16u      /* 参数区扇区数(et_kv 用其中两扇区) */
+#endif
+#ifndef PORT_FLASH_ERASE_MS_MAX
+#define PORT_FLASH_ERASE_MS_MAX 20u      /* F103 1KB 页擦典型 ~20ms */
 #endif
 
 /* ===================== 调试断言 ===================== */

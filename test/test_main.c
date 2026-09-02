@@ -20,6 +20,8 @@ extern const et_test_case_t *test_led_cases(size_t *count);
 extern const et_test_case_t *test_spwm_cases(size_t *count);
 extern const et_test_case_t *test_log_cases(size_t *count);
 extern const et_test_case_t *test_assert_cases(size_t *count);
+extern const et_test_case_t *test_kv_cases(size_t *count);
+extern const et_test_case_t *test_softclock_cases(size_t *count);
 
 typedef const et_test_case_t *(*et_suite_get_fn)(size_t *count);
 
@@ -45,6 +47,8 @@ static const et_suite_t g_suites[] = {
     { "driver/spwm",  test_spwm_cases    },
     { "debug/log",    test_log_cases     },
     { "debug/assert", test_assert_cases  },
+    { "storage/kv",   test_kv_cases      },
+    { "sys/softclock", test_softclock_cases },
 };
 
 int main(void)
