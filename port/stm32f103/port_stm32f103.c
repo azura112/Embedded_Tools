@@ -163,7 +163,8 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
             uint32_t sr;
 
             *(volatile uint16_t *)(addr + 0u) =
-                (uint16_t)((uint16_t)src[0u] | (uint16_t)(src[1u] << 8));
+                (uint16_t)((uint16_t)src[done + 0u] |
+                           (uint16_t)((uint16_t)src[done + 1u] << 8));
             if (!flash_wait_idle()) {
                 break;
             }
@@ -173,7 +174,8 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
                 break;
             }
             *(volatile uint16_t *)(addr + 2u) =
-                (uint16_t)((uint16_t)src[2u] | (uint16_t)(src[3u] << 8));
+                (uint16_t)((uint16_t)src[done + 2u] |
+                           (uint16_t)((uint16_t)src[done + 3u] << 8));
             if (!flash_wait_idle()) {
                 break;
             }

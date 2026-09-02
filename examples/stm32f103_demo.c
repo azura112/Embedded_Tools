@@ -114,10 +114,30 @@ static void heartbeat(void *arg)
 
     (void)arg;
     if (et_softclock_get_datetime(&g_sc, &dt)) {
-        ET_LOGI("demo", "alive %u ms | boot #%u | %04u-%02u-%02u %02u:%02u:%02u",
-                (unsigned)now, (unsigned)g_boot_count,
-                (unsigned)dt.year, (unsigned)dt.month, (unsigned)dt.day,
-                (unsigned)dt.hour, (unsigned)dt.min, (unsigned)dt.sec);
+        /* et_log 不支持域宽(%04u), 年月日补零在栈上手工拼 */
+        char dt_line[24];
+        dt_line[0] = '0' + (char)((dt.year / 1000u) % 10u);
+        dt_line[1] = '0' + (char)((dt.year / 100u) % 10u);
+        dt_line[2] = '0' + (char)((dt.year / 10u) % 10u);
+        dt_line[3] = '0' + (char)(dt.year % 10u);
+        dt_line[4] = '-';
+        dt_line[5] = '0' + (char)(dt.month / 10u);
+        dt_line[6] = '0' + (char)(dt.month % 10u);
+        dt_line[7] = '-';
+        dt_line[8] = '0' + (char)(dt.day / 10u);
+        dt_line[9] = '0' + (char)(dt.day % 10u);
+        dt_line[10] = ' ';
+        dt_line[11] = '0' + (char)(dt.hour / 10u);
+        dt_line[12] = '0' + (char)(dt.hour % 10u);
+        dt_line[13] = ':';
+        dt_line[14] = '0' + (char)(dt.min / 10u);
+        dt_line[15] = '0' + (char)(dt.min % 10u);
+        dt_line[16] = ':';
+        dt_line[17] = '0' + (char)(dt.sec / 10u);
+        dt_line[18] = '0' + (char)(dt.sec % 10u);
+        dt_line[19] = '\0';
+        ET_LOGI("demo", "alive %u ms | boot #%u | %s (UTC)",
+                (unsigned)now, (unsigned)g_boot_count, dt_line);
     } else {
         ET_LOGI("demo", "alive %u ms | boot #%u",
                 (unsigned)now, (unsigned)g_boot_count);
