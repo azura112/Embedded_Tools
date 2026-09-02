@@ -26,8 +26,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p build
-          gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/host \
-              -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+          gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
+              -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
               port/host/port_host.c test/*.c
           ./build/et_tests.exe
 
@@ -35,7 +35,7 @@ jobs:
         if: runner.os == 'Linux'
         run: make demo
 
-  # gcov 覆盖率报告 (暂不设门槛, 随 CI 产出)
+  # gcov 覆盖率门槛: 行覆盖 ≥85% (P4 指标; 与 Makefile/README 命令保持同步)
   coverage:
     name: coverage (gcovr)
     runs-on: ubuntu-latest
@@ -49,14 +49,15 @@ jobs:
         run: |
           mkdir -p build
           gcc -std=c99 -Wall -Wextra -pedantic --coverage \
-              -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/host \
-              -o build/et_tests_cov.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+              -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
+              -o build/et_tests_cov.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
               port/host/port_host.c test/*.c
           ./build/et_tests_cov.exe
 
-      - name: Generate coverage report
+      - name: Generate coverage report (gate ≥85% lines)
         run: |
-          gcovr --print-summary --txt-summary -o coverage_summary.txt --xml -o coverage.xml
+          gcovr --print-summary --txt-summary -o coverage_summary.txt \
+                --fail-under-line 85 --xml -o coverage.xml
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
@@ -80,9 +81,9 @@ jobs:
         run: |
           mkdir -p build
           arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
-            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Iport -Iport/stm32f103 \
+            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
             -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c \
+            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/et_kv.c \
             port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
             examples/stm32f103_demo.c \
             -o build/stm32f103_demo.elf

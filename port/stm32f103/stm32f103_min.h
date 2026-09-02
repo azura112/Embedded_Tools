@@ -52,4 +52,28 @@
 #define SCB_SCR                 REG32(0xE000ED10u)
 #define SCB_SCR_SLEEPDEEP       (1u << 2)
 
+/* ===================== FLASH (PM0056) ===================== */
+/* 映射: 0x40022000-0x40022013; 仅用中容量 F103 相关的 ACR/KEYR/SR/CR */
+#define FLASH_ACR               REG32(0x40022000u)      /* 等待周期/预取 */
+#define FLASH_KEYR              REG32(0x40022004u)      /* 解锁键寄存器 */
+#define FLASH_SR                REG32(0x4002200Cu)      /* 状态寄存器 */
+#define FLASH_CR                REG32(0x40022010u)      /* 控制寄存器 */
+
+#define FLASH_ACR_LATENCY_SHIFT 0u
+
+#define FLASH_SR_BSY            (1u << 0)               /* 忙(编程/擦除中) */
+#define FLASH_SR_PGERR          (1u << 2)               /* 编程错误 */
+#define FLASH_SR_WRPRTERR       (1u << 4)               /* 写保护错误 */
+#define FLASH_SR_EOP            (1u << 5)               /* 操作完成 */
+
+#define FLASH_CR_PG             (1u << 0)   /* 编程使能 */
+#define FLASH_CR_PER            (1u << 1)   /* 页擦除使能 */
+#define FLASH_CR_MER            (1u << 2)   /* 全片擦除使能 */
+#define FLASH_CR_STRT           (1u << 6)   /* 启动擦除 */
+#define FLASH_CR_LOCK           (1u << 7)   /* 上锁(保护配置) */
+
+/* PM0056 3.3.4: KEY1=0x45670123, KEY2=0xCDEF89AB 顺序写入 KEYR 解锁 */
+#define FLASH_KEY1              0x45670123u
+#define FLASH_KEY2              0xCDEF89ABu
+
 #endif /* STM32F103_MIN_H */

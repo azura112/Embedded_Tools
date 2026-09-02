@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v1.1 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v1.2 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -18,20 +18,23 @@
   - [4.1 et_stimer 软件定时器](#41-et_stimer-软件定时器)
   - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
   - [4.3 et_event 事件标志组](#43-et_event-事件标志组)
+  - [4.4 et_softclock 软时钟](#44-et_softclock-软时钟)
 - [5. protocol 协议层](#5-protocol-协议层)
   - [5.1 et_crc 校验计算](#51-et_crc-校验计算)
   - [5.2 et_frame 帧解析器](#52-et_frame-帧解析器)
   - [5.3 et_atcmd 命令解析器](#53-et_atcmd-命令解析器)
-- [6. drivers 设备驱动层](#6-drivers-设备驱动层)
-  - [6.1 et_key 按键](#61-et_key-按键)
-  - [6.2 et_led LED](#62-et_led-led)
-  - [6.3 et_spwm 软件 PWM](#63-et_spwm-软件-pwm)
-- [7. debug 调试层](#7-debug-调试层)
-  - [7.1 et_log 日志](#71-et_log-日志)
-  - [7.2 et_assert 断言](#72-et_assert-断言)
-- [8. port 平台适配契约](#8-port-平台适配契约)
-- [9. 配置项参考](#9-配置项参考)
-- [10. 典型组合配方](#10-典型组合配方)
+- [6. storage 存储层](#6-storage-存储层)
+  - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
+- [7. drivers 设备驱动层](#7-drivers-设备驱动层)
+  - [7.1 et_key 按键](#71-et_key-按键)
+  - [7.2 et_led LED](#72-et_led-led)
+  - [7.3 et_spwm 软件 PWM](#73-et_spwm-软件-pwm)
+- [8. debug 调试层](#8-debug-调试层)
+  - [8.1 et_log 日志](#81-et_log-日志)
+  - [8.2 et_assert 断言](#82-et_assert-断言)
+- [9. port 平台适配契约](#9-port-平台适配契约)
+- [10. 配置项参考](#10-配置项参考)
+- [11. 典型组合配方](#11-典型组合配方)
 
 ---
 
@@ -381,6 +384,33 @@ if (got & EV_RX)  process_rx();
 if (got & EV_TIMEOUT) do_timeout();
 ```
 
+### 4.4 et_softclock 软时钟 (timestamp → 日历)
+
+纯软件换算：把调用方注入的毫秒 tick（如 `port_tick_get_ms()`）推进为 **UTC 日历时间**。Hinnant `civil_from_days` 纯整数算法（无循环无查表），闰年/月末自动处理；内部为 32 位无符号秒计数，覆盖 **1970 ~ 2106 年**（无 2038 问题）。断电恢复：把 `et_softclock_unix()` 值经 et_kv 持久化，上电 `et_softclock_init(sc, 保存值)` 恢复（demo 见 `examples/stm32f103_demo.c`）。
+
+```c
+#include "et_softclock.h"
+
+et_softclock_t sc;
+et_datetime_t  dt;
+
+et_softclock_init(&sc, 1767225600u);        /* 2026-01-01 00:00:00 UTC */
+while (1) {
+    et_softclock_poll(&sc, port_tick_get_ms());   /* 主循环每趟推进 */
+    et_softclock_get_datetime(&sc, &dt);          /* → {2026,1,1, 0,0,12} */
+}
+```
+
+| API | 说明 |
+|---|---|
+| `et_softclock_init(sc, unix_sec)` | 设定起始时间（可由 et_kv 恢复） |
+| `et_softclock_set_unix(sc, unix_sec)` | 运行中校时（NTP/恢复） |
+| `et_softclock_poll(sc, now_ms)` | 推进；无符号减法消化回绕与大步进 |
+| `et_softclock_unix(sc)` | 当前 UTC 秒（30 位, 1970-2106） |
+| `et_softclock_get_datetime(sc, &dt)` | 拆解为 年/月/日/时/分/秒 |
+
+已覆盖：闰年/闰世纪、月末进位、回绕、多实例、毫秒余数累计等 13 例单测（`test/test_softclock.c`）。
+
 ---
 
 ## 5. protocol 协议层
@@ -492,18 +522,71 @@ static char line[48];
 
 et_atcmd_init(&at, cmds, 2u, line, sizeof(line), NULL);
 
-/* 完帧回调里接力(见 10.3 组合配方) */
+/* 完帧回调里接力(见 11.3 组合配方) */
 char ch;
 while (get_char(&ch)) et_atcmd_feed(&at, ch);
 ```
 
 ---
 
-## 6. drivers 设备驱动层
+## 6. storage 存储层
+
+### 6.1 et_kv flash 键值存储 (掉电保存)
+
+"参数掉电保存"专用 KV 库：双扇区乒乓 + 追加写 + CRC32，断电安全，零动态内存，仅依赖 `port.h` 的 flash 三件套（`ET_MODULE_KV=1` 时 port 必须实现 flash 契约，见 9 章）。
+
+```c
+#include "et_kv.h"
+
+et_kv_t        kv;
+et_kv_layout_t lay = { 14u, 15u };     /* 参数区内两个扇区, 平台自定 */
+uint32_t       boot = 0u;
+
+if (!et_kv_init(&kv, &lay)) {          /* 两页均坏(首上电/误擦除) */
+    et_kv_format(&kv, &lay);           /* 丢弃旧数据重建 */
+    et_kv_init(&kv, &lay);
+}
+et_kv_get(&kv, 1, &boot, sizeof(boot), NULL);
+boot++;
+et_kv_set(&kv, 1, &boot, sizeof(boot));   /* 即时持久化 */
+```
+
+#### 可靠性模型
+
+| 环节 | 机制 |
+|---|---|
+| 页头 | `magic('ETKV') \| seq \| state \| crc32`（CRC 仅覆盖前 8 字节，state 字段独立于校验） |
+| 有效判定 | state 逐位编程 0xFFFFFFFF(MOVING)→0x00000000(COMMITTED)，是页生效前的**最后一次写**：搬迁中掉电 → 废弃半成品页、源页无损 |
+| 记录 | key u16（bit15=Tombstone）\| len \| vcrc(=crc32(payload)) \| payload 4B对齐+0xFF 尾；单个损坏只丢该记录 |
+| 断电容忍 | 页头/记录任意位置掉电，重开自动迁移修复；读出 CRC 失败仅跳过，不影响其他 key |
+| 满页 | 自动压实（专用 → 备用 → 换代 seq+1）；`et_kv_commit()` 可手动抳 |
+
+#### API
+
+| 函数 | 说明 |
+|---|---|
+| `et_kv_init(kv, layout)` | 扫描两扇区仲裁选活跃页；脏尾自动搬迁修复；两页均坏返回 false |
+| `et_kv_format(kv, layout)` | 擦除两扇区 + 写 seq=1 空白页（旧数据全弃） |
+| `et_kv_set(kv, key, val, len)` | 追加新版本（即时持久化）；空间不足自动压实重试；len≤单页上限 |
+| `et_kv_get(kv, key, buf, cap, *out_len)` | 取最新有效版本；不存在/已删/CRC 坏返回 false（不触碰 buf） |
+| `et_kv_del(kv, key)` | 写 tombstone；key 不存在时零写入返回 false |
+| `et_kv_size(kv, key)` | 查询当前值长度（不存在/已删/损坏为 0） |
+| `et_kv_commit(kv)` | 手动压实：存活记录（去重）迁去对页 |
+| `et_kv_stats(kv, &st)` | seq / 双扇区擦除计数 / 已用剩余字节 / 槽位与有效 key 数 |
+
+用户 key ∈ [1, 0x7FFE]（0x7FFF、0xFFFF 为系统哨兵）。全部 API 仅限 🏠MAIN 上下文（flash 擦写为 ms 级阻塞，喂狗由调用方负责）。
+
+#### 断电恢复测试矩阵（test/test_kv.c）
+
+覆盖：首启格式化、追加/覆盖/删除、页头截断、记录截断、压缩前/中/后各断点、半扇区残留、seq 仲裁、写违例注入 —— 28 例全绿；掉电点靠宿主机 flash 模拟器“一次性截断 + 位写约束”注入（见 port/host/）。
+
+---
+
+## 7. drivers 设备驱动层
 
 三个驱动均通过回调抽象硬件（电平读取 / 亮度写出 / 电平写出），不直接依赖 port GPIO——矩阵键盘、IO 扩展器、软件 PWM 均可接入。
 
-### 6.1 et_key 按键
+### 7.1 et_key 按键
 
 四态 FSM：双向时间戳消抖。事件序约定：短按结束时先 `RELEASE` 后 `CLICK`；长按后释放只有 `RELEASE` 不产生 `CLICK`。
 
@@ -540,7 +623,7 @@ et_key_scan(&key, port_tick_get_ms());
 
 组合键建议在应用层实现：维护各键 `is_pressed` 位图 + 超时窗口判定，不污染单键 FSM。
 
-### 6.2 et_led LED
+### 7.2 et_led LED
 
 模式驱动，相位基于绝对时基计算（轮询抖动不影响闪烁精度）；输出带缓存，亮度不变时不触碰硬件。
 
@@ -565,7 +648,7 @@ et_led_set_blink(&led, 400, 50, 5);     /* 400ms 周期闪 5 次 */
 et_led_poll(&led, port_tick_get_ms());
 ```
 
-### 6.3 et_spwm 软件 PWM
+### 7.3 et_spwm 软件 PWM
 
 多通道软件 PWM：相位基于绝对时基计算（`((now-t0) % period) < on_ms`），轮询抖动不累积相位误差；时基自然回绕由无符号减法消化。输出带缓存，电平不变时不重复调用 write。duty 0/255 为精确边界（恒低/恒高，任何相位无毛刺）。
 
@@ -597,13 +680,13 @@ while (1) {
 }
 ```
 
-与 `et_led` 配套：把 et_led 的 write 回调直连 `et_spwm_set`，即可在无硬件 PWM 的 GPIO 上实现呼吸灯（见 10.5）。
+与 `et_led` 配套：把 et_led 的 write 回调直连 `et_spwm_set`，即可在无硬件 PWM 的 GPIO 上实现呼吸灯（见 11.5）。
 
 ---
 
-## 7. debug 调试层
+## 8. debug 调试层
 
-### 7.1 et_log 日志
+### 8.1 et_log 日志
 
 输出格式：`[时基ms][级别字符][标签] 正文\n`，级别字符 T/D/I/W/E。
 底层经 `port_putc()` 输出；默认不加锁，多上下文并发可能交错（需要原子行请上层加临界区）。
@@ -635,7 +718,7 @@ et_log_hexdump(ET_LOG_LEVEL_DEBUG, "rx", buf, len);
 
 编译期一刀切示例：`-DET_LOG_MAX_LEVEL=4`（仅保留 ERROR 及以上）。
 
-### 7.2 et_assert 断言
+### 8.2 et_assert 断言
 
 | API | 说明 |
 |---|---|
@@ -660,9 +743,9 @@ ET_DBG_ASSERT(queue != NULL);      /* 仅调试构建存在 */
 
 ---
 
-## 8. port 平台适配契约
+## 9. port 平台适配契约
 
-移植整个库只需实现 `port/port.h` 声明的四个能力（参考实现见 `port/host/`）：
+移植整个库需要实现 `port/port.h` 声明的能力（参考实现见 `port/host/`、`port/stm32f103/`）：
 
 | 接口 | 要求 | 典型实现 |
 |---|---|---|
@@ -670,41 +753,50 @@ ET_DBG_ASSERT(queue != NULL);      /* 仅调试构建存在 */
 | `port_critical_enter()/exit()` | 同上（宏的函数形态） | 同上 |
 | `port_tick_get_ms()` | 毫秒单调时基，由中断维护，允许自然回绕 | SysTick 中断累加 |
 | `port_putc(c)` | 阻塞式单字符输出（日志底层） | USART 轮询发送 |
+| `port_flash_read/write/erase_sector` + 几何宏 | **仅 ET_MODULE_KV=1 时必选**：参数区 4B 对齐只擦写、只允许 1→0 写、短写如实上报（掉电/故障部分写入） | F103: FLASH 寄存器直驱（PM0056） |
 
-分层纪律：**core 层禁止包含 port.h**（保证纯逻辑可 PC 测试）；sys/drivers/debug 仅经此契约触硬件。
+flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contract.md`）：
+- 参数区 = `PORT_FLASH_SECTOR_SIZE × PORT_FLASH_SECTOR_COUNT` 连续扇区，`PORT_FLASH_ERASE_MS_MAX` 给调用方喂狗参考；
+- 擦/写必须发生在 🏠MAIN（内建临界区），ms 级阻塞由调用方安排调度与看门狗；
+- `port_flash_write` 返回实际写入字节数（掉电可短写）——et_kv 靠它判别中断并恢复。
 
-### 8.1 已验证平台
+分层纪律：**core/algorithm 层禁止包含 port.h**（保证纯逻辑可 PC 测试）；sys/drivers/debug/storage 仅经此契约触硬件。
+
+### 9.1 已验证平台
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟时基） | ✅ 全量单测 | v1.0 起 |
-| STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | — | — | v1.1，实测顺延 v1.1.1 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 191 用例 | v1.0 起 |
+| STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | — | — | v1.1/v1.2 编译级，实测顺延补录 |
 
-新平台移植步骤：实现上表四项契约 → `port/<platform>/` 下提供实现 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。
+新平台移植步骤：实现基础四项契约 →（用 `ET_MODULE_KV` 时）再实现 flash 三件套与几何 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。
 
 ---
 
-## 9. 配置项参考
+## 10. 配置项参考
 
 全部位于 `et_config.h`，均带 `#ifndef` 保护，可用 `-D` 覆盖：
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / STIMER / SCHED / EVENT / CRC / FRAME / ATCMD / KEY / LED / SPWM / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / STIMER / SCHED / EVENT / CRC / FRAME / ATCMD / KEY / LED / SPWM / KV / SOFTCLOCK / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
 | `ET_MEMPOOL_STRICT` | 1 | free 时校验指针归属/重复释放 |
 | `ET_SPWM_CH_MAX` | 4 | 软件 PWM 静态通道数 |
-| `ET_VERSION_STRING / ET_VERSION` | "1.1.0" / 0x010100 | 版本标识，发布时须与 git tag 一致 |
+| `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |
+| `PORT_FLASH_SECTOR_COUNT` | 16 | 参数区扇区数（et_kv 用其中两扇区） |
+| `PORT_FLASH_ERASE_MS_MAX` | 20 | 单扇区擦除耗时上限（ms，喂狗参考） |
+| `ET_VERSION_STRING / ET_VERSION` | "1.2.0" / 0x010200 | 版本标识，发布时须与 git tag 一致 |
 | `ET_ASSERT(cond)` | 空实现 | 库内断言映射，可指向自身故障钩子 |
 | `ET_LOG_MAX_LEVEL` | 0 (TRACE) | 日志编译期裁剪线（数值=最详细级别） |
 | `ET_LOG_LINE_MAX` 等 | 见 et_log.h | 日志行为细节 |
 
 ---
 
-## 10. 典型组合配方
+## 11. 典型组合配方
 
-### 10.1 裸机主循环骨架
+### 11.1 裸机主循环骨架
 
 ```c
 int main(void)
@@ -726,7 +818,7 @@ int main(void)
 }
 ```
 
-### 10.2 UART 收包流水线（ISR → 主循环）
+### 11.2 UART 收包流水线（ISR → 主循环）
 
 ```c
 /* ISR: 只做两件事 —— 入缓冲 + 置事件 */
@@ -750,7 +842,7 @@ void comm_task(void *arg) {
 }
 ```
 
-### 10.3 帧 → 命令 二级解析
+### 11.3 帧 → 命令 二级解析
 
 ```c
 static void on_frame(et_frame_parser_t *p, uint16_t len, void *user) {
@@ -762,7 +854,7 @@ static void on_frame(et_frame_parser_t *p, uint16_t len, void *user) {
 }
 ```
 
-### 10.4 ISR → 任务 事件通知（代替信号量）
+### 11.4 ISR → 任务 事件通知（代替信号量）
 
 ```c
 /* ADC 转换完成中断 */
@@ -780,7 +872,7 @@ void sample_task(void *arg) {
 }
 ```
 
-### 10.5 无硬件 PWM 的 GPIO 呼吸灯（et_led → et_spwm 直连）
+### 11.5 无硬件 PWM 的 GPIO 呼吸灯（et_led → et_spwm 直连）
 
 et_led 的亮度输出直接作为软件 PWM 占空比，`write` 回调一行直连：
 

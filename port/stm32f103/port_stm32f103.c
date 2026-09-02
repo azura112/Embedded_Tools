@@ -12,10 +12,21 @@
  *   - 计数不可能被 ISR 破坏: 临界区内中断被屏蔽, ISR 的进入/退出天然串行化。
  *
  * 中断安全: port_tick_get_ms() 可在 ISR 中调用(单读)。
+ *
+ * flash 参数区 (PM0056):
+ *  - F1 中容量页 1KB: CR.PER 页擦 + CR.STRT 启动, BSY 忙等 (PM0056 3.3.2);
+ *  - 编程粒度为 16 位半字, 4B 对齐的写拆成两个半字编程 (PM0056 3.3.1);
+ *  - 解锁: KEYR 依次写入 KEY1/KEY2 (PM0056 3.3.4), 序列不得被打断;
+ *  - F1 没有页地址选择寄存器: 页擦目标 = STRT 执行时刻的取指所在页, 因此
+ *    参数区必须与代码/常量页分离。参数区取片内 flash 末端 16 扇区
+ *    (代码从 0x08000000 起, 链接脚本 ASSERT 兜底, 见 stm32f103c8t6.ld);
+ *  - 擦写期间同区取指停顿: 按契约仅 🏠MAIN 线程执行擦写, port 内部以
+ *    临界区包住完整擦写序列 (ISR 不可能在擦写中途打断取指冲突)。
  */
 #include "port.h"
 #include "port_stm32f103.h"
 #include "stm32f103_min.h"
+#include "et_config.h"
 
 static volatile uint32_t g_tick_ms = 0u;    /* SysTick 中断累加, 1ms 一跳 */
 
@@ -63,6 +74,139 @@ void port_putc(char c)
         /* 轮询等待发送数据寄存器空 */
     }
     USART1_DR = (uint8_t)c;
+}
+
+/* ===================== flash 参数区 (port.h 契约, PM0056) ===================== */
+
+/* 参数区 = 片内 flash 末端 PORT_FLASH_SECTOR_COUNT 个扇区 (C8T6: 64K 尾部 16K)。
+ * 若使用更大容量同封装芯片, 用 -DPORT_STM32F103_FLASH_SIZE 覆盖。 */
+#ifndef PORT_STM32F103_FLASH_SIZE
+#define PORT_STM32F103_FLASH_SIZE   (64u * 1024u)
+#endif
+#define PORT_FLASH_AREA_SIZE        ((uint32_t)PORT_FLASH_SECTOR_COUNT * \
+                                     (uint32_t)PORT_FLASH_SECTOR_SIZE)
+#define PORT_FLASH_AREA_BASE        (0x08000000u + PORT_STM32F103_FLASH_SIZE - \
+                                     PORT_FLASH_AREA_SIZE)
+
+/* 忙等待上限: 8MHz 下约 10^6 次循环(≈1s), 远大于 20ms 典型页擦耗时,
+ * 超时即视为 flash 硬件故障(擦写卡死) */
+#define FLASH_BUSY_TIMEOUT          1000000u
+
+static bool flash_wait_idle(void)
+{
+    uint32_t guard = FLASH_BUSY_TIMEOUT;
+
+    while ((FLASH_SR & FLASH_SR_BSY) != 0u) {
+        if (--guard == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* KEYR 解锁 (PM0056 3.3.4): 两键值须按序写入; 序列被打断会解锁失败。
+ * 调用方 (port_flash_write/erase_sector) 已在临界区内, 序列原子性有保证。 */
+static bool flash_unlock(void)
+{
+    if ((FLASH_CR & FLASH_CR_LOCK) == 0u) {
+        return true;                    /* 已解锁 (上次操作未上锁) */
+    }
+    FLASH_KEYR = FLASH_KEY1;
+    FLASH_KEYR = FLASH_KEY2;
+    return (FLASH_CR & FLASH_CR_LOCK) == 0u;
+}
+
+/* 复位 CR 模式位并重新上锁 (PM0056 3.3.1: 操作完成后必须清 PG/PER 并置 LOCK) */
+static void flash_lock_idle(void)
+{
+    FLASH_CR &= ~(uint32_t)(FLASH_CR_PG | FLASH_CR_PER | FLASH_CR_MER |
+                            FLASH_CR_STRT);
+    FLASH_CR |= (uint32_t)FLASH_CR_LOCK;
+}
+
+bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
+{
+    const uint8_t *src;
+    uint8_t *dst;
+
+    if ((buf == NULL) || (offset > PORT_FLASH_AREA_SIZE) ||
+        (len > PORT_FLASH_AREA_SIZE - offset)) {
+        return false;
+    }
+    src = (const uint8_t *)(PORT_FLASH_AREA_BASE + offset);
+    dst = (uint8_t *)buf;
+    while (len-- > 0u) {
+        *dst++ = *src++;
+    }
+    return true;
+}
+
+uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
+{
+    const uint8_t *src = (const uint8_t *)buf;
+    uint32_t done = 0u;
+
+    /* 契约: 4B 对齐; F1 编程粒度为 16 位半字, 4B 块内拆两个半字编程 */
+    if ((src == NULL) || ((offset & 3u) != 0u) || ((len & 3u) != 0u)) {
+        return 0u;
+    }
+    if ((offset > PORT_FLASH_AREA_SIZE) ||
+        (len > PORT_FLASH_AREA_SIZE - offset)) {
+        return 0u;
+    }
+
+    PORT_CRITICAL_ENTER();
+    if (flash_unlock()) {
+        FLASH_CR |= (uint32_t)FLASH_CR_PG;      /* 编程使能 */
+        for (done = 0u; done < len; done += 4u) {
+            uint32_t addr = PORT_FLASH_AREA_BASE + offset + done;
+            uint32_t sr;
+
+            *(volatile uint16_t *)(addr + 0u) =
+                (uint16_t)((uint16_t)src[0u] | (uint16_t)(src[1u] << 8));
+            if (!flash_wait_idle()) {
+                break;
+            }
+            /* 只允许 1→0 写: 违反(未擦重写)硬件置 PGERR/WRPRTERR, 按故障截断 */
+            sr = FLASH_SR;
+            if ((sr & (FLASH_SR_PGERR | FLASH_SR_WRPRTERR)) != 0u) {
+                break;
+            }
+            *(volatile uint16_t *)(addr + 2u) =
+                (uint16_t)((uint16_t)src[2u] | (uint16_t)(src[3u] << 8));
+            if (!flash_wait_idle()) {
+                break;
+            }
+            sr = FLASH_SR;
+            if ((sr & (FLASH_SR_PGERR | FLASH_SR_WRPRTERR)) != 0u) {
+                break;
+            }
+        }
+        /* done 仅在整块(两半字)成功后才推进: 短写一律按 4B 块裁剪上报,
+         * 语义与宿主机模拟一致 —— 短写 = 掉电/故障, 调用方校验 */
+        flash_lock_idle();
+    }
+    PORT_CRITICAL_EXIT();
+    return done;
+}
+
+bool port_flash_erase_sector(uint32_t sector_index)
+{
+    bool ok = false;
+
+    if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
+        return false;
+    }
+
+    PORT_CRITICAL_ENTER();
+    if (flash_unlock()) {
+        FLASH_CR |= (uint32_t)FLASH_CR_PER;     /* 页擦除使能 */
+        FLASH_CR |= (uint32_t)FLASH_CR_STRT;    /* 启动: 目标页 = 当前取指页 (见头注) */
+        ok = flash_wait_idle();
+        flash_lock_idle();
+    }
+    PORT_CRITICAL_EXIT();
+    return ok;
 }
 
 /* ===================== 平台初始化 (非 port.h 契约, 供 main 调用) ===================== */
