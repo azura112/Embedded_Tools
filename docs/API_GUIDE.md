@@ -24,6 +24,7 @@
   - [5.1 et_crc 校验计算](#51-et_crc-校验计算)
   - [5.2 et_frame 帧解析器](#52-et_frame-帧解析器)
   - [5.3 et_atcmd 命令解析器](#53-et_atcmd-命令解析器)
+  - [5.4 et_xmodem XMODEM-CRC 接收器](#54-et_xmodem-xmodem-crc-接收器)
 - [6. storage 存储层](#6-storage-存储层)
   - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
 - [7. drivers 设备驱动层](#7-drivers-设备驱动层)
@@ -33,6 +34,7 @@
 - [8. debug 调试层](#8-debug-调试层)
   - [8.1 et_log 日志](#81-et_log-日志)
   - [8.2 et_assert 断言](#82-et_assert-断言)
+  - [8.3 et_shell 行式交互壳](#83-et_shell-行式交互壳)
 - [9. port 平台适配契约](#9-port-平台适配契约)
 - [10. 配置项参考](#10-配置项参考)
 - [11. 典型组合配方](#11-典型组合配方)
@@ -564,6 +566,55 @@ char ch;
 while (get_char(&ch)) et_atcmd_feed(&at, ch);
 ```
 
+### 5.4 et_xmodem XMODEM-CRC 接收器（固件传输）
+
+bootloader 拉取固件镜像的传输协议：接收器为核，逐字节喂入、返回应答动作由调用方写回线路；发送器为可选编译项。CRC 复用 `et_crc16_ccitt_update(0x0000, …)` 流式种子（XMODEM-CRC 与 CCITT-FALSE 仅初始值之差）；超时/重试由调用方注入 `now`（host 虚拟时间可全速测试）；`ET_XM_1K=1` 可选 1024B 大块。
+
+| API | 说明 |
+|---|---|
+| `et_xmodem_rx_init(x, buf, cap, sink, user)` | buf 为单块暂存（≥132，1K 模式 ≥1028）；不满足进入 ERR 终态 |
+| `et_xmodem_rx(x, ch, now)` | 逐字节喂入，返回 ACK/NAK/CAN/IDLE/DONE/ERR 应答动作 |
+| `et_xmodem_rx_tick(x, now)` | 超时驱动：1s 无块催块(NAK)、10s 静默放弃(ERR, 会话自动复位) |
+| `sink(user, offset, data, len)` | 整块数据出口：写 flash 走 `port_flash_write`，或 RAM；返回 false 立即中止 |
+
+**bootloader 数据通路图**（DoD 附）：
+
+```
+UART RX ──字节──> et_xmodem_rx() ──整块──> sink 回调 ──> port_flash_write(offset)
+应答动作(ACK/NAK/CAN) ──UART TX── 对端         (首块前先 erase 目标扇区)
+超时驱动: 主循环周期调 et_xmodem_rx_tick(x, now)
+```
+
+协议覆盖：SOH/STX 分块、块号+补码校验、序号回绕（255→0→1）、CRC 坏 NAK 重传、重复块 ACK 不重复 sink、EOT 两段确认（NAK→ACK+DONE）、CAN×2 中止、10s 静默放弃。块内一切字节皆数据（单个 CAN 亦然，块 CRC 兜底），仅连续 CAN×2 视为取消。对端行为矩阵测试 17 例（`test/test_xmodem.c`，ET_XM_1K=0/1 双变体）。
+
+```c
+#include "et_xmodem.h"
+
+static uint8_t xmbuf[132];
+static bool sink(void *u, uint32_t off, const uint8_t *d, uint32_t len) {
+    (void)u; (void)d;
+    return port_flash_write(off, d, len) == len;   /* 写 flash 参数区 */
+}
+
+et_xmodem_rx_init(&xm, xmbuf, sizeof(xmbuf), sink, NULL);
+while (1) {
+    uint32_t now = port_tick_get_ms();
+    et_xm_act_t a = et_xmodem_rx_tick(&xm, now);   /* 催块/静默放弃 */
+    if (a == ET_XM_NAK) uart_putc(ET_XM_NAK_BYTE);
+    if (uart_rx_ready()) {
+        a = et_xmodem_rx(&xm, uart_getc(), now);
+        switch (a) {
+        case ET_XM_ACK: uart_putc(ET_XM_ACK_BYTE); break;
+        case ET_XM_NAK: uart_putc(ET_XM_NAK_BYTE); break;
+        case ET_XM_CAN: uart_putc(ET_XM_CAN_BYTE); break;
+        case ET_XM_DONE: jump_to_app(); break;      /* 镜像收完 */
+        case ET_XM_ERR: boot_fallback(); break;     /* 静默放弃 */
+        default: break;
+        }
+    }
+}
+```
+
 ---
 
 ## 6. storage 存储层
@@ -612,6 +663,8 @@ et_kv_set(&kv, 1, &boot, sizeof(boot));   /* 即时持久化 */
 | `et_kv_stats(kv, &st)` | seq / 双扇区擦除计数 / 已用剩余字节 / 槽位与有效 key 数 |
 
 用户 key ∈ [1, 0x7FFE]（0x7FFF、0xFFFF 为系统哨兵）。全部 API 仅限 🏠MAIN 上下文（flash 擦写为 ms 级阻塞，喂狗由调用方负责）。
+
+**枚举迭代（v1.4，诊断导出/批量读取）**：`et_kv_iter_init(kv, &it)` + `et_kv_iter_next(kv, &it, &key, &len)` 只读枚举有效 key——快照语义（init 固定活跃页，迭代期间压实换页不影响快照页可读性），只出 CRC 有效、非 tombstone、无更新版本（去重）的记录。
 
 #### 断电恢复测试矩阵（test/test_kv.c）
 
@@ -778,6 +831,33 @@ et_assert_install(on_assert_fail, NULL);
 ET_DBG_ASSERT(queue != NULL);      /* 仅调试构建存在 */
 ```
 
+### 8.3 et_shell 行式交互壳（atcmd 之上的可选增强）
+
+"调试够用"的行式壳：输入回显 + 退格擦写 + 提示符 + help 自动生成。**et_atcmd 仍可独立使用**——shell 不做解析重复，行编辑语义（退格删字/超长丢弃）全部由底层 atcmd 决定，shell 只决定"回显什么"。
+
+| API | 说明 |
+|---|---|
+| `et_shell_init(sh, at, putc, user)` | at 须已 et_atcmd_init；putc 阻塞单字符输出 |
+| `et_shell_set_echo / set_erase / set_prompt` | 回显开关 / 退格 ANSI 擦写序列开关 / 提示符（NULL 隐藏） |
+| `et_shell_feed(sh, ch)` | 回显/擦写处理后透传 atcmd；命令执行后自动补提示符 |
+| `et_shell_print_help(sh)` | 扫描命令表逐行 "NAME - 帮助文本"（help 字段 NULL 只出名称） |
+| `et_shell_help_cmd(args, user)` | 预置 help 命令：命令表加 `{"HELP", et_shell_help_cmd}` 且 atcmd user 指到 shell |
+
+命令表尾部追加了可选 `help` 字段（只增不改，既有 `{name, fn}` 位置初始化器仍兼容）。不做历史/Tab 补全/多行编辑（Non-goals，v1.5 再议）。
+
+```c
+static const et_atcmd_entry_t cmds[] = {
+    { "VER",  cmd_ver,  "print version" },
+    { "RST",  cmd_rst,  "reboot" },
+    { "HELP", et_shell_help_cmd, "list commands" },
+};
+et_atcmd_init(&at, cmds, 3u, line, sizeof(line), &sh);
+et_shell_init(&sh, &at, uart_putc_cb, NULL);
+et_shell_set_prompt(&sh, "> ");
+
+while (1) { if (uart_rx_ready()) et_shell_feed(&sh, uart_getc()); }
+```
+
 ---
 
 ## 9. port 平台适配契约
@@ -803,7 +883,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 206 用例 | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 245 用例 | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | — | — | v1.1/v1.2 编译级，实测顺延补录 |
 
 新平台移植步骤：实现基础四项契约 →（用 `ET_MODULE_KV` 时）再实现 flash 三件套与几何 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。
@@ -816,15 +896,18 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / STIMER / SCHED / EVENT / CRC / FRAME / ATCMD / KEY / LED / SPWM / KV / SOFTCLOCK / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / FSM / STIMER / SCHED / EVENT / SOFTCLOCK / CRC / FRAME / ATCMD / XMODEM / KV / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
 | `ET_MEMPOOL_STRICT` | 1 | free 时校验指针归属/重复释放 |
 | `ET_SPWM_CH_MAX` | 4 | 软件 PWM 静态通道数 |
+| `ET_XM_1K` | 0 | et_xmodem 1K 大块(STX)开关，打开后暂存 ≥1028B |
+| `ET_CRC_TABLE` | 0 | CRC16-CCITT 查表优化(256 项静态表驻只读段)；默认位算法零 RAM |
+| `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |
 | `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |
 | `PORT_FLASH_SECTOR_COUNT` | 16 | 参数区扇区数（et_kv 用其中两扇区） |
 | `PORT_FLASH_ERASE_MS_MAX` | 20 | 单扇区擦除耗时上限（ms，喂狗参考） |
-| `ET_VERSION_STRING / ET_VERSION` | "1.2.0" / 0x010200 | 版本标识，发布时须与 git tag 一致 |
+| `ET_VERSION_STRING / ET_VERSION` | "1.4.0" / 0x010400 | 版本标识，发布时须与 git tag 一致 |
 | `ET_ASSERT(cond)` | 空实现 | 库内断言映射，可指向自身故障钩子 |
 | `ET_LOG_MAX_LEVEL` | 0 (TRACE) | 日志编译期裁剪线（数值=最详细级别） |
 | `ET_LOG_LINE_MAX` 等 | 见 et_log.h | 日志行为细节 |
@@ -942,3 +1025,32 @@ ADC 采样链同款思路：`et_movavg`（抑噪）→ `et_lpf1`（平滑）→ 
 ---
 
 > 更多实践参见 `examples/posix_demo.c`（全栈联动演示）、`examples/stm32f103_demo.c`（STM32 真机 demo）与 `test/` 下各模块单元测试——它们本身就是最好的用法范例。
+
+### 11.6 故障现场落 kv（et_assert 钩子 × et_kv，debug×storage 协同）
+
+把断言故障现场写进掉电参数区，重启后 `et_kv_get("fault")` 取现场——无需调试器也能知道设备"死"在哪一行：
+
+```c
+typedef struct { uint32_t pc_line; uint32_t boot_cnt; } fault_t;
+
+static void fault_hook(const char *file, int line, const char *expr, void *user) {
+    et_kv_t *kv = (et_kv_t *)user;
+    fault_t f = { (uint32_t)line, 0u };
+    et_kv_get(kv, 1, &f.boot_cnt, sizeof(f.boot_cnt), NULL);
+    f.boot_cnt++;
+    et_kv_set(kv, 1, &f.boot_cnt, sizeof(f.boot_cnt));
+    et_kv_set(kv, 2, &f.pc_line, sizeof(f.pc_line));      /* 键 2 = 最近故障行号 */
+    (void)file; (void)expr;
+    NVIC_SystemReset();                                    /* 钩子决定复位 */
+}
+
+et_assert_install(fault_hook, &kv);                        /* 详见 8.2 */
+
+/* 重启后诊断(配合 6.1 的 iter 批量导出到上位机) */
+uint32_t line = 0u;
+if (et_kv_get(&kv, 2, &line, sizeof(line), NULL)) {
+    ET_LOGE("diag", "last assert at line %u", (unsigned)line);
+}
+```
+
+要点：故障信息与业务参数同区不同键；boot 计数键在钩子内自增（每次复位即一次故障记录）；`et_kv_iter` 可把全部诊断键批量导出给上位机。
