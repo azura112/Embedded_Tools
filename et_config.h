@@ -99,6 +99,13 @@ extern "C" {
 #define ET_RINGBUF_POW2         0
 #endif
 
+/* ===================== et_crc ===================== */
+/* 查表优化: 置 1 时 CRC16-CCITT 用 256 项静态表(吞吐优先, 表驻只读段),
+ * 默认 0 保持位算法零 RAM; 表放置段可用 -DET_CRC_TABLE_SECTION=".段名" 指定 */
+#ifndef ET_CRC_TABLE
+#define ET_CRC_TABLE            0
+#endif
+
 /* ===================== et_mempool ===================== */
 /* 块区对齐粒度, 默认按指针宽度对齐 */
 #ifndef ET_MEMPOOL_ALIGN
