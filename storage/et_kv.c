@@ -659,4 +659,70 @@ void et_kv_stats(et_kv_t *kv, et_kv_stats_t *st)
     st->key_count = kc.count;
 }
 
+/* ===================== 枚举迭代 (v1.4) ===================== */
+
+bool et_kv_iter_init(const et_kv_t *kv, et_kv_iter_t *it)
+{
+    if ((kv == NULL) || (it == NULL)) {
+        return false;
+    }
+    if (kv->act_seq == 0u) {
+        return false;               /* 未初始化/未格式化的零句柄 */
+    }
+    it->sector = kv->act_sector;    /* 快照: 固定活跃页扇区 */
+    it->off    = KV_HDR_SIZE;
+    return true;
+}
+
+bool et_kv_iter_next(const et_kv_t *kv, et_kv_iter_t *it,
+                     uint16_t *key, uint16_t *len)
+{
+    uint32_t base;
+
+    if ((kv == NULL) || (it == NULL) || (key == NULL)) {
+        return false;
+    }
+    base = it->sector * KV_PAGE_SIZE;
+    while ((it->off + KV_REC_HDR_SIZE) <= KV_PAGE_SIZE) {
+        uint8_t      hdr[KV_REC_HDR_SIZE];
+        uint16_t     enc_key, rlen;
+        uint32_t     vcrc;
+        kv_recinfo_t ri;
+
+        if (!port_flash_read(base + it->off, hdr, KV_REC_HDR_SIZE)) {
+            return false;
+        }
+        enc_key = (uint16_t)(hdr[0] | ((uint16_t)hdr[1] << 8));
+        rlen    = (uint16_t)(hdr[2] | ((uint16_t)hdr[3] << 8));
+        vcrc    = rd32(&hdr[4]);
+
+        if ((enc_key == 0xFFFFu) && (rlen == 0xFFFFu) &&
+            (vcrc == 0xFFFFFFFFu)) {
+            return false;                       /* 未写区: 枚举结束 */
+        }
+        if ((enc_key == 0xFFFFu) || (rlen == 0xFFFFu) ||
+            ((uint32_t)rlen > KV_VAL_MAX)) {
+            return false;                       /* 脏尾: 终止 */
+        }
+
+        ri.key     = (uint16_t)(enc_key & 0x7FFFu);
+        ri.deleted = (enc_key & KV_TOMBSTONE_BIT) != 0u;
+        ri.len     = rlen;
+        ri.off     = it->off;
+        ri.crc_ok  = rec_crc_ok(base, it->off + KV_REC_HDR_SIZE, rlen, vcrc);
+
+        it->off += KV_REC_HDR_SIZE + KV_ALIGN4(rlen);
+
+        /* 仅输出: CRC 有效 + 非 tombstone + 无更新版本(去重) */
+        if (ri.crc_ok && (!ri.deleted) && !rec_has_newer(it->sector, &ri)) {
+            *key = ri.key;
+            if (len != NULL) {
+                *len = ri.len;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 #endif /* ET_MODULE_KV */

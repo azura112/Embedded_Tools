@@ -662,6 +662,158 @@ static void pcut_erase_half_sector(void)
     }
 }
 
+/* ===================== 枚举迭代 (v1.4) ===================== */
+
+static void iter_enumerate_all(void)
+{
+    uint8_t      v[8];
+    et_kv_iter_t it;
+    uint16_t     key, len;
+    uint8_t      seen[4] = { 0u, 0u, 0u, 0u };
+    int          total   = 0;
+
+    kv_fresh();
+    ET_CHECK(et_kv_set(&g_kv, 1u, "aa", 2u));
+    ET_CHECK(et_kv_set(&g_kv, 2u, "bbbb", 4u));
+    ET_CHECK(et_kv_set(&g_kv, 3u, "cccccc", 6u));
+
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    while (et_kv_iter_next(&g_kv, &it, &key, &len)) {
+        ET_CHECK(key <= 3u);
+        ET_CHECK(seen[key] == 0u);                  /* 每 key 恰一次 */
+        seen[key] = 1u;
+        total++;
+        switch (key) {
+        case 1u: ET_CHECK_U32_EQ(2u, len); break;
+        case 2u: ET_CHECK_U32_EQ(4u, len); break;
+        case 3u: ET_CHECK_U32_EQ(6u, len); break;
+        default: ET_FAIL("unexpected key");
+        }
+        /* 值与 et_kv_get 一致 */
+        ET_CHECK(et_kv_get(&g_kv, key, v, sizeof(v), NULL));
+    }
+    ET_CHECK_U32_EQ(3, total);
+    ET_CHECK(seen[1] && seen[2] && seen[3]);
+}
+
+static void iter_tombstone_skipped(void)
+{
+    et_kv_iter_t it;
+    uint16_t     key, len;
+
+    kv_fresh();
+    ET_CHECK(et_kv_set(&g_kv, 1u, "aa", 2u));
+    ET_CHECK(et_kv_del(&g_kv, 1u));                 /* tombstone */
+    ET_CHECK(et_kv_set(&g_kv, 2u, "bb", 2u));
+
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(2u, key);                       /* 1 已删不出现 */
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, &key, &len));
+}
+
+static void iter_latest_only(void)
+{
+    et_kv_iter_t it;
+    uint16_t     key, len;
+
+    kv_fresh();
+    ET_CHECK(et_kv_set(&g_kv, 7u, "aaaa", 4u));
+    ET_CHECK(et_kv_set(&g_kv, 7u, "bbbbbbbb", 8u)); /* 同 key 两个版本 */
+
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(7u, key);
+    ET_CHECK_U32_EQ(8u, len);                       /* 只出最新版本 */
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, &key, &len));
+}
+
+static void iter_empty_and_args(void)
+{
+    et_kv_iter_t it;
+    et_kv_t      zero;
+    uint16_t     key, len;
+
+    kv_fresh();                                     /* 格式化后无记录 */
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, &key, &len)); /* 空库立即结束 */
+
+    memset(&zero, 0, sizeof(zero));
+    ET_CHECK(!et_kv_iter_init(&zero, &it));         /* 未初始化句柄 */
+    ET_CHECK(!et_kv_iter_init(NULL, &it));
+    ET_CHECK(!et_kv_iter_init(&g_kv, NULL));
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, NULL, NULL)); /* key 必填 */
+}
+
+static void iter_mid_set_appends_visible(void)
+{
+    et_kv_iter_t it;
+    uint16_t     key, len;
+
+    kv_fresh();
+    ET_CHECK(et_kv_set(&g_kv, 1u, "a", 1u));
+    ET_CHECK(et_kv_set(&g_kv, 2u, "b", 1u));
+
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(1u, key);
+    ET_CHECK(et_kv_set(&g_kv, 3u, "c", 1u));        /* 迭代中追加(同活跃页) */
+
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(2u, key);
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(3u, key);                       /* 快照页上的追加对游标可见 */
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, &key, &len));
+}
+
+static void iter_across_commit_snapshot(void)
+{
+    et_kv_iter_t it;
+    uint16_t     key, len;
+
+    kv_fresh();
+    ET_CHECK(et_kv_set(&g_kv, 1u, "a", 1u));
+    ET_CHECK(et_kv_set(&g_kv, 1u, "aa", 2u));       /* 旧版本: 压实时丢弃 */
+    ET_CHECK(et_kv_set(&g_kv, 2u, "b", 1u));
+    ET_CHECK(et_kv_set(&g_kv, 3u, "c", 1u));
+
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(1u, key);
+
+    ET_CHECK(et_kv_commit(&g_kv));                  /* 换页: 快照页转备用但仍可读 */
+
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(2u, key);
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(3u, key);
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, &key, &len));
+}
+
+static void iter_crc_bad_skipped(void)
+{
+    const uint8_t *mem;
+    et_kv_iter_t   it;
+    uint16_t       key, len;
+
+    kv_fresh();
+    ET_CHECK(et_kv_set(&g_kv, 1u, "aa", 2u));
+    ET_CHECK(et_kv_set(&g_kv, 2u, "bb", 2u));
+    ET_CHECK(et_kv_set(&g_kv, 3u, "cc", 2u));
+
+    /* 白盒: 打坏第 2 条记录 payload 首字节 → CRC 失效, 仅该条被跳过 */
+    mem = port_host_flash_mem(PAGE_A * SZ + 16u + (8u + 4u) + 8u);
+    ET_CHECK(mem != NULL);
+    ((volatile uint8_t *)mem)[0] ^= 0xFFu;
+
+    ET_CHECK(et_kv_iter_init(&g_kv, &it));
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(1u, key);
+    ET_CHECK(et_kv_iter_next(&g_kv, &it, &key, &len));
+    ET_CHECK_U32_EQ(3u, key);                       /* 2 被跳过 */
+    ET_CHECK(!et_kv_iter_next(&g_kv, &it, &key, &len));
+}
+
 const et_test_case_t *test_kv_cases(size_t *count)
 {
     static const et_test_case_t tbl[] = {
@@ -686,6 +838,13 @@ const et_test_case_t *test_kv_cases(size_t *count)
         {"kv.init_fails_both_bad",      kv_init_fails_both_bad},
         {"kv.stats_fields",             kv_stats_fields},
         {"kv.erase_counters",           kv_erase_counters},
+        {"iter.enumerate_all",          iter_enumerate_all},
+        {"iter.tombstone_skipped",      iter_tombstone_skipped},
+        {"iter.latest_only",            iter_latest_only},
+        {"iter.empty_and_args",         iter_empty_and_args},
+        {"iter.mid_set_appends",        iter_mid_set_appends_visible},
+        {"iter.across_commit",          iter_across_commit_snapshot},
+        {"iter.crc_bad_skipped",        iter_crc_bad_skipped},
         {"pcut.record_header_1byte",    pcut_record_header_1byte},
         {"pcut.record_header_6bytes",   pcut_record_header_6bytes},
         {"pcut.record_payload_mid",     pcut_record_payload_mid},

@@ -90,6 +90,26 @@ bool et_kv_commit(et_kv_t *kv);
 
 void et_kv_stats(et_kv_t *kv, et_kv_stats_t *st);
 
+/* ===================== 枚举迭代 (v1.4) ===================== */
+/*
+ * 枚举活跃页上的有效 key(诊断导出/上位机批量读取场景), 只读: 不触碰页状态。
+ * 快照语义: init 时固定"当时活跃页"扇区; 迭代期间 set() 触发压实换页也不影响
+ * 快照页的可读性(其数据在下一次压实前有效), 多版本只出最新, tombstone 跳过。
+ * 迭代期间向活跃页追加的新记录会被游标自然覆盖(游标只在已写区内前移)。
+ */
+typedef struct {
+    uint32_t sector;        /* 快照页扇区, 勿动 */
+    uint32_t off;           /* 下一记录页内偏移, 勿动 */
+} et_kv_iter_t;
+
+/* 初始化迭代器: kv 须已 init/format; 零句柄/空参数返回 false。🏠MAIN */
+bool et_kv_iter_init(const et_kv_t *kv, et_kv_iter_t *it);
+
+/* 取下一个有效 key(及其值长度, len 可传 NULL); 无更多返回 false。
+ * 仅输出 CRC 有效、非 tombstone、且无更新版本(去重)的记录。🏠MAIN */
+bool et_kv_iter_next(const et_kv_t *kv, et_kv_iter_t *it,
+                     uint16_t *key, uint16_t *len);
+
 #ifdef __cplusplus
 }
 #endif
