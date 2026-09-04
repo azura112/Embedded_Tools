@@ -62,8 +62,8 @@ static void on_unknown(const char *name, uint16_t len,
 }
 
 static const et_atcmd_entry_t g_cmds[] = {
-    { "PING", cmd_ping },
-    { "ECHO", cmd_echo },
+    { "PING", cmd_ping, NULL },
+    { "ECHO", cmd_echo, NULL },
 };
 
 /* ---- 帧解析完成回调: 把载荷交给 AT 解析器 ---- */

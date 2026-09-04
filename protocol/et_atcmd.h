@@ -28,6 +28,9 @@ typedef void (*et_atcmd_fn)(char *args, void *user);
 typedef struct {
     const char *name;                   /* 不含 "AT+" 前缀 */
     et_atcmd_fn fn;
+    /* v1.4 追加: 帮助文本(可为 NULL), 供 et_shell 的 help 自动生成。
+     * 字段只增不改: 既有 {name, fn} 位置初始化器仍兼容(尾部补零)。 */
+    const char *help;
 } et_atcmd_entry_t;
 
 typedef void (*et_atcmd_unknown_fn)(const char *name, uint16_t name_len,

@@ -52,8 +52,8 @@ static void on_unknown(const char *name, uint16_t name_len,
 }
 
 static const et_atcmd_entry_t g_cmds[] = {
-    { "PING", cmd_ping },
-    { "ECHO", cmd_echo },
+    { "PING", cmd_ping, NULL },
+    { "ECHO", cmd_echo, NULL },
 };
 
 static bool feed_str(et_atcmd_proc_t *p, const char *s)

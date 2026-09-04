@@ -24,6 +24,7 @@ extern const et_test_case_t *test_kv_cases(size_t *count);
 extern const et_test_case_t *test_softclock_cases(size_t *count);
 extern const et_test_case_t *test_fsm_cases(size_t *count);
 extern const et_test_case_t *test_xmodem_cases(size_t *count);
+extern const et_test_case_t *test_shell_cases(size_t *count);
 
 typedef const et_test_case_t *(*et_suite_get_fn)(size_t *count);
 
@@ -53,6 +54,7 @@ static const et_suite_t g_suites[] = {
     { "sys/softclock", test_softclock_cases },
     { "algo/fsm",     test_fsm_cases     },
     { "proto/xmodem", test_xmodem_cases  },
+    { "debug/shell",  test_shell_cases   },
 };
 
 int main(void)
