@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.4.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.4开发计划：命令交互与传输生态.md](v1.4开发计划：命令交互与传输生态.md)**
+> 当前版本：**v1.5.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.5开发计划：安全升级与运行防护.md](v1.5开发计划：安全升级与运行防护.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -112,6 +112,11 @@ if (!et_kv_init(&kv, &lay)) { et_kv_format(&kv, &lay); (void)et_kv_init(&kv, &la
 uint32_t n = 0u;
 et_kv_get(&kv, 1, &n, sizeof(n), NULL);  n++;
 et_kv_set(&kv, 1, &n, sizeof(n));          /* 即时持久化，断电自愈 */
+
+/* 诊断导出: 枚举全部有效 key (v1.4) */
+et_kv_iter_t it;  uint16_t k, len;
+et_kv_iter_init(&kv, &it);
+while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 ```
 
 ## 移植指南
@@ -158,7 +163,7 @@ et_kv_set(&kv, 1, &n, sizeof(n));          /* 即时持久化，断电自愈 */
 
 发布/交付文档中每一项"已完成"声明必须可验证。打 tag（触发 `release.yml`）前逐条核对：
 
-1. **文档同步逐文件核对**：`README.md`、`docs/API_GUIDE.md`、`Makefile`、`port/*/README.md` —— 用 `grep` 确认版本号/新模块名/新目录均已出现在对应文件（例：`grep -c et_kv README.md` 非 0），不能只改一处；
+1. **文档同步逐文件核对（v1.5 起脚本化）**：运行 `sh tools/docsync.sh` 必须全绿——任何"文档已同步"声明必须对应脚本内断言，无断言的声明视为未同步（根治 v1.2/v1.4 两次"声称未做"复发）；
 2. **版本钉三方一致**：`et_config.h` 的 `ET_VERSION_STRING` = git tag = 交付文档版本行（`gcc -E -dM et_config.h | grep ET_VERSION_STRING` 复现）；
 3. **量化声明附复现命令**：用例数（`make test` 输出 RESULT 行）、覆盖率（`gcovr --print-summary`）、ARM 体积（`arm-none-eabi-size`）、零警告（`-Wall -Wextra -pedantic` 下无输出）；
 4. **主机回归全绿**：`make test` 本地跑一遍后再打 tag，不以"CI 会跑"替代本地验证；

@@ -48,8 +48,14 @@ arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -
 arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bin
 ```
 
-实测（GNU Tools for STM32 13.3.rel1）：**`-Wall -Wextra -pedantic` 零警告**。
-v1.1：`text=7976 data=4 bss=216`；v1.2：`text=10892 data=4 bss=276`；v1.3：`text=11208 data=4 bss=276`（Flash 17%，RAM 1.4%）。
+实测：**`-Wall -Wextra -pedantic` 零警告**。体积测量环境：GNU Tools for STM32 **13.3.rel1**（STM32CubeCLT 1.18.0），Git Bash 下 `-Os -g` 构建，`arm-none-eabi-size build/stm32f103_demo.elf` 读数（跨编译器版本存在布局级 ±16B 差异，以本环境复现为准）：
+
+| 版本 | text | data | bss | 备注 |
+|---|---|---|---|---|
+| v1.1 | 7976 | 4 | 216 | 16 模块 |
+| v1.2 | 10892 | 4 | 276 | +et_kv+et_softclock |
+| v1.3 | 11208 | 4 | 276 | +et_fsm（demo 含 kv 重启计数） |
+| v1.4 | 12276 | 4 | 276 | +et_xmodem+et_shell（demo 不新增调用） |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 

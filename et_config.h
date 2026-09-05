@@ -17,9 +17,9 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        1
-#define ET_VERSION_MINOR        4
+#define ET_VERSION_MINOR        5
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x010400 = 1.4.0, 便于条件编译比较: #if ET_VERSION >= 0x010400 */
+/* 整数编码 0x010500 = 1.5.0, 便于条件编译比较: #if ET_VERSION >= 0x010500 */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
