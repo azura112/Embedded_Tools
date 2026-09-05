@@ -83,6 +83,9 @@ extern "C" {
 #ifndef ET_MODULE_KV
 #define ET_MODULE_KV            1   /* storage: flash 键值掉电存储      */
 #endif
+#ifndef ET_MODULE_BOOTCTL
+#define ET_MODULE_BOOTCTL       1   /* storage: 安全升级控制(A/B 状态机)*/
+#endif
 #ifndef ET_MODULE_SOFTCLOCK
 #define ET_MODULE_SOFTCLOCK     1   /* sys: 软时钟(毫秒 tick→日历时钟)  */
 #endif
