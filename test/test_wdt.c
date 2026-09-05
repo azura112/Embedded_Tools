@@ -17,7 +17,6 @@
 
 static int      g_fire_cnt;
 static uint32_t g_guard_calls;
-static bool     g_guard_ret;                    /* guard 任务返回值注入 */
 
 static void on_fire(void *user)
 {

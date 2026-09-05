@@ -38,7 +38,7 @@ LIB_SRC     := $(CORE_SRC) $(ALGO_SRC) $(SYS_SRC) $(PROTO_SRC) $(DRIVERS_SRC) $(
 TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempool.c \
             test/test_list.c test/test_filter.c test/test_fsm.c \
             test/test_stimer.c test/test_sched.c test/test_event.c test/test_softclock.c \
-            test/test_crc.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_shell.c \
+            test/test_crc.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_shell.c test/test_shell_hist.c \
             test/test_key.c test/test_led.c test/test_spwm.c \
             test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c test/test_main.c
 

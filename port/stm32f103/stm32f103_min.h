@@ -51,6 +51,8 @@
 /* ===================== SCB ===================== */
 #define SCB_SCR                 REG32(0xE000ED10u)
 #define SCB_SCR_SLEEPDEEP       (1u << 2)
+#define SCB_AIRCR               REG32(0xE000ED0Cu)      /* 应用中断/复位控制 */
+#define SCB_AIRCR_SYSRESETREQ   0x05FA0004u             /* VECTKEY | SYSRESETREQ */
 
 /* ===================== FLASH (PM0056) ===================== */
 /* 映射: 0x40022000-0x40022013; 仅用中容量 F103 相关的 ACR/KEYR/SR/CR */

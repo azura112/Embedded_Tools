@@ -7,7 +7,8 @@
  *  - et_atcmd 仍可独立使用 —— shell 是可选增强, 不做解析重复, 行编辑
  *    语义(退格删字/超长丢弃)全部由底层 atcmd 决定, shell 只负责"回显
  *    什么";
- *  - 不做: 历史记录 / Tab 补全 / 多行编辑 / 脚本解释器 (Non-goals, v1.5 再议)。
+ *  - v1.5: 可选命令历史 (ET_SHELL_HISTORY_N + 静态环形缓冲, 上/下键回放);
+ *  - 不做: Tab 补全 / 多行编辑 / 模糊历史匹配 (Non-goals 维持)。
  *
  * 回显规则:
  *  - 可见字符(0x20~0x7E)原样回显;
@@ -35,6 +36,12 @@
 
 #if ET_MODULE_SHELL
 
+/* 历史条目编译期容量: 默认 0 = 关闭(ESC[A/B 字节直透, 行为零变化);
+ * 置 N>0 后可用 et_shell_set_history 挂接静态环形历史缓冲 */
+#ifndef ET_SHELL_HISTORY_N
+#define ET_SHELL_HISTORY_N      0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,7 +53,16 @@ typedef struct et_shell {
     const char     *prompt;         /* 提示符(NULL=不打印), 勿动 */
     bool            echo;           /* 回显开关, 勿动 */
     bool            erase_seq;      /* 退格 ANSI 擦写序列开关, 勿动 */
-    bool            cr_pending;     /* 内部: 上一字节是 '\r' */
+    bool            cr_pending;     /* 内部: 上一字节是回车 */
+
+    /* v1.5 追加: 可选历史 (只增不改; set_history 后生效), 勿动 */
+    char    *hist_buf;              /* 环形条目存储(调用方提供) */
+    uint16_t hist_n;                /* 条目数 */
+    uint16_t hist_cap;              /* 单条容量(含 NUL) */
+    uint16_t hist_count;            /* 有效条数 */
+    uint16_t hist_head;             /* 下一个写入槽 */
+    int16_t  hist_view;             /* 浏览游标: -1=实时行, 0=最新, ... */
+    uint8_t  esc_state;             /* 转义序列状态: 0/见ESC/见'[' */
 } et_shell_t;
 
 typedef void (*et_shell_putc_fn)(void *user, char ch);
@@ -80,6 +96,12 @@ void et_shell_puts(et_shell_t *sh, const char *s);
 /* 预置 help 命令处理函数: 用法 = 命令表加 {"HELP", et_shell_help_cmd},
  * 且 et_atcmd_init 的 user 传 et_shell_t* */
 void et_shell_help_cmd(char *args, void *user);
+
+/* 可选历史 (v1.5, 仅 ET_SHELL_HISTORY_N>0 时可用):
+ * storage 为 entries × entry_cap 字节静态环形缓冲(调用方持有);
+ * 未挂接或编译期关闭时, ESC[A/B 字节直透 atcmd (v1.4 行为)。🏠MAIN */
+bool et_shell_set_history(et_shell_t *sh, char *storage,
+                          uint16_t entries, uint16_t entry_cap);
 
 #ifdef __cplusplus
 }

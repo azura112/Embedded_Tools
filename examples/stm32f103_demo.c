@@ -26,6 +26,7 @@
  */
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "et_config.h"
 #include "et_log.h"
@@ -35,6 +36,11 @@
 #include "et_spwm.h"
 #include "et_kv.h"
 #include "et_softclock.h"
+#include "et_bootctl.h"
+#include "et_xmodem.h"
+#include "et_atcmd.h"
+#include "et_shell.h"
+#include "et_crc.h"
 #include "port.h"
 #include "port_stm32f103.h"
 #include "stm32f103_min.h"
@@ -49,13 +55,240 @@
 #define SC_PERSIST_MS       30000u      /* 软时钟持久化周期 */
 #define UNIX_2026_01_01     1767225600u /* 无保存值时的时间起点 (UTC) */
 
+/* v1.5 升级链路布局: 槽 A/B + 状态扇区 (均参数区内, 与 kv 不重叠) */
+#define BOOT_SLOT_A         11u
+#define BOOT_SLOT_B         12u
+#define BOOT_STATE_SEC      13u
+#define BOOT_MAX_ATTEMPTS   2u
+
 static et_led_t       g_led;
 static et_key_t       g_key;
 static et_stimer_t    g_hb;
 static et_kv_t        g_kv;
 static et_softclock_t g_sc;
+static et_bootctl_t   g_bc;
+static et_bootctl_cfg_t g_bcfg = { BOOT_STATE_SEC,
+                                   { BOOT_SLOT_A, BOOT_SLOT_B },
+                                   PORT_FLASH_SECTOR_SIZE, BOOT_MAX_ATTEMPTS };
+static et_xmodem_t    g_xm;
+static et_shell_t     g_sh;
+static et_atcmd_proc_t g_at;
+static uint8_t        g_xmbuf[132];
+static char           g_cmdline[48];
 static uint32_t       g_boot_count = 0u;
 static uint32_t       g_sc_save_at  = 0u;
+
+/* ===================== v1.5 升级链路 (shell → xmodem → bootctl) ===================== */
+
+static void shell_put(void *user, char ch)
+{
+    (void)user;
+    port_putc(ch);                          /* 回显/提示符 → USART1 */
+}
+
+static void boot_reset(void)
+{
+    uint32_t i;
+
+    for (i = 0u; i < 200000u; i++) {        /* ~数十 ms: 等日志/应答发完 */
+        __asm__ __volatile__ ("nop");
+    }
+    SCB_AIRCR = SCB_AIRCR_SYSRESETREQ;
+    for (;;) {
+        __asm__ __volatile__ ("wfi");
+    }
+}
+
+static void cmd_ver(char *args, void *user)
+{
+    (void)args;
+    (void)user;
+    ET_LOGI("at", "ver=%s boot=%u", ET_VERSION_STRING,
+            (unsigned)g_boot_count);
+}
+
+static void cmd_bootinfo(char *args, void *user)
+{
+    et_bootctl_state_t st;
+
+    (void)args;
+    (void)user;
+    et_bootctl_state(&g_bc, &st);
+    ET_LOGI("at", "staged=%d confirmed=%d attempts=%u",
+            (int)st.staged_slot, (int)st.confirmed_slot,
+            (unsigned)st.attempts);
+}
+
+/* xmodem sink: 首块前擦 B 槽, 数据顺序写入 (头 32B + 镜像体) */
+static bool xm_sink(void *user, uint32_t off, const uint8_t *d, uint32_t len)
+{
+    (void)user;
+    if (off == 0u) {
+        if (!port_flash_erase_sector(BOOT_SLOT_B)) {
+            return false;
+        }
+    }
+    return port_flash_write(BOOT_SLOT_B * PORT_FLASH_SECTOR_SIZE + off,
+                            d, len) == len;
+}
+
+static void xmodem_reply(et_xm_act_t act)
+{
+    switch (act) {
+    case ET_XM_ACK: port_putc((char)ET_XM_ACK_BYTE); break;
+    case ET_XM_NAK: port_putc((char)ET_XM_NAK_BYTE); break;
+    case ET_XM_CAN: port_putc((char)ET_XM_CAN_BYTE); break;
+    default: break;
+    }
+}
+
+/* AT+UPGRADE: 阻塞收一轮 xmodem (期间主循环/心跳暂停) */
+static void cmd_upgrade(char *args, void *user)
+{
+    bool done = false;
+
+    (void)args;
+    (void)user;
+    ET_LOGW("at", "send image via XMODEM-CRC (slot B)...");
+    et_xmodem_rx_init(&g_xm, g_xmbuf, sizeof(g_xmbuf), xm_sink, NULL);
+    while (!done) {
+        uint32_t   now = port_tick_get_ms();
+        et_xm_act_t a;
+
+        if ((USART1_SR & USART_SR_RXNE) != 0u) {
+            a = et_xmodem_rx(&g_xm, (uint8_t)USART1_DR, now);
+            xmodem_reply(a);
+            if ((a == ET_XM_DONE) || (a == ET_XM_CAN) || (a == ET_XM_ERR)) {
+                done = true;
+            }
+        } else {
+            a = et_xmodem_rx_tick(&g_xm, now);
+            xmodem_reply(a);
+            if ((a == ET_XM_ERR) || (a == ET_XM_CAN)) {
+                done = true;
+            }
+        }
+    }
+    if ((g_xm.total > 0u) &&
+        et_bootctl_verify_image(&g_bc, BOOT_SLOT_B) &&
+        et_bootctl_stage(&g_bc, BOOT_SLOT_B)) {
+        ET_LOGW("at", "UPGRADE STAGED, rebooting...");
+        boot_reset();
+    }
+    ET_LOGE("at", "upgrade failed/aborted");
+}
+
+/* AT+SIMUPGRADE <ver>: 合成 64B 假镜像写 B 槽 (免上位机, 演示全状态机)。
+ * ver 为偶数 → 模拟"自检失败"路径; 奇数 → 自检通过可确认 */
+static void cmd_simupgrade(char *args, void *user)
+{
+    uint8_t hdr[32];
+    uint8_t img[64];
+    char    *cursor = args;
+    char    *av = et_atcmd_next_arg(&cursor);
+    uint32_t ver = 1u;
+    uint32_t crc;
+    uint32_t i;
+
+    (void)user;
+    if (av != NULL) {
+        while ((*av >= '0') && (*av <= '9')) {
+            ver = (ver * 10u) + (uint32_t)(*av - '0');
+            av++;
+        }
+    }
+    for (i = 0u; i < sizeof(img); i++) {
+        img[i] = (uint8_t)(0xC0u + (uint8_t)i);
+    }
+    memset(hdr, 0, sizeof(hdr));
+    hdr[0] = 0x45u; hdr[1] = 0x54u; hdr[2] = 0x42u; hdr[3] = 0x49u; /* 'ETBI' */
+    hdr[4] = (uint8_t)ET_BOOT_HDR_VER;
+    hdr[6] = (uint8_t)ET_BOOT_HDR_SIZE;
+    hdr[8]  = (uint8_t)sizeof(img);
+    hdr[12] = 0u; hdr[13] = 0u; hdr[14] = 0u; hdr[15] = 0u;     /* 先占位 */
+    hdr[16] = (uint8_t)(ver);
+    hdr[17] = (uint8_t)(ver >> 8);
+    crc = et_crc32_update(ET_CRC32_INIT, img, sizeof(img)) ^ ET_CRC32_INIT;
+    hdr[12] = (uint8_t)(crc);
+    hdr[13] = (uint8_t)(crc >> 8);
+    hdr[14] = (uint8_t)(crc >> 16);
+    hdr[15] = (uint8_t)(crc >> 24);
+    crc = et_crc32(hdr, 28u);
+    hdr[28] = (uint8_t)(crc);
+    hdr[29] = (uint8_t)(crc >> 8);
+    hdr[30] = (uint8_t)(crc >> 16);
+    hdr[31] = (uint8_t)(crc >> 24);
+
+    if (!port_flash_erase_sector(BOOT_SLOT_B)) {
+        ET_LOGE("at", "erase slot B failed");
+        return;
+    }
+    if ((port_flash_write(BOOT_SLOT_B * PORT_FLASH_SECTOR_SIZE, hdr, sizeof(hdr)) !=
+         sizeof(hdr)) ||
+        (port_flash_write(BOOT_SLOT_B * PORT_FLASH_SECTOR_SIZE + sizeof(hdr),
+                          img, sizeof(img)) != sizeof(img))) {
+        ET_LOGE("at", "write slot B failed");
+        return;
+    }
+    ET_LOGI("at", "sim image ver=%u written", (unsigned)ver);
+    if (et_bootctl_verify_image(&g_bc, BOOT_SLOT_B) &&
+        et_bootctl_stage(&g_bc, BOOT_SLOT_B)) {
+        ET_LOGW("at", "STAGED slot B, rebooting...");
+        boot_reset();
+    }
+    ET_LOGE("at", "verify/stage failed");
+}
+
+static const et_atcmd_entry_t g_atcmds[] = {
+    { "VER",        cmd_ver,        "print version" },
+    { "BOOTINFO",   cmd_bootinfo,   "show bootctl state" },
+    { "SIMUPGRADE", cmd_simupgrade, "synthetic image -> slot B (even ver = bad self-check)" },
+    { "UPGRADE",    cmd_upgrade,    "xmodem receive -> slot B" },
+    { "HELP",       et_shell_help_cmd, "list commands" },
+};
+
+/* 开机引导决策段 (bootloader 职责的应用内演示) */
+static void boot_flow(void)
+{
+    et_bootctl_state_t st;
+    uint8_t  hdr[32];
+    uint32_t img_ver = 0u;
+
+    if (!et_bootctl_init(&g_bc, &g_bcfg)) {
+        ET_LOGE("boot", "bootctl init failed");
+        return;
+    }
+    et_bootctl_state(&g_bc, &st);
+    if (st.staged_slot < 0) {
+        ET_LOGI("boot", "no staged slot");
+        return;
+    }
+    {
+        uint32_t n = et_bootctl_boot_attempt(&g_bc, (uint32_t)st.staged_slot);
+        uint32_t slot_sec = ((uint32_t)st.staged_slot == 0u) ?
+                            BOOT_SLOT_A : BOOT_SLOT_B;
+
+        ET_LOGW("boot", "boot slot %d attempt %u", (int)st.staged_slot,
+                (unsigned)n);
+        if (et_bootctl_should_rollback(&g_bc, (uint32_t)st.staged_slot)) {
+            ET_LOGE("boot", "ROLLBACK: attempts exhausted");
+            (void)et_bootctl_abandon(&g_bc);
+            return;
+        }
+        /* 演示自检: 读镜像版本号, 奇数 = 自检通过可确认 */
+        if (port_flash_read(slot_sec * PORT_FLASH_SECTOR_SIZE, hdr, sizeof(hdr))) {
+            img_ver = (uint32_t)hdr[16] | ((uint32_t)hdr[17] << 8);
+        }
+        if ((img_ver % 2u) != 0u) {
+            if (et_bootctl_confirm(&g_bc, (uint32_t)st.staged_slot)) {
+                ET_LOGI("boot", "slot %d CONFIRMED (self-check ok)",
+                        (int)st.staged_slot);
+            }
+        } else {
+            ET_LOGW("boot", "self-check FAILED (even ver), not confirmed");
+        }
+    }
+}
 
 /* ---- 应用硬件: LED 电平 (经软件 PWM 通道驱动) ---- */
 
@@ -196,10 +429,18 @@ int main(void)
             ET_VERSION_STRING, (unsigned)ET_VERSION);
 
     kv_boot_setup();                        /* et_kv + 重启计数 + 时间恢复 */
+    boot_flow();                            /* v1.5: staged 槽引导决策段 */
 
     /* 软件 PWM: 500Hz (2ms), 分辨率 1/2ms —— 见 et_spwm.h 分辨率假设 */
     (void)et_spwm_init(SPWM_CH_LED, spwm_led_write, NULL, 2u);
     (void)et_led_init(&g_led, led_brightness_out, NULL);
+
+    /* v1.5 交互壳: USART1 RX (PA10 浮空输入) + AT 命令表 */
+    GPIOA_CRH = (GPIOA_CRH & ~(0xFu << 8)) | (0x4u << 8);   /* PA10 浮空输入 */
+    USART1_CR1 |= USART_CR1_RE;
+    (void)et_atcmd_init(&g_at, g_atcmds, 5u, g_cmdline, sizeof(g_cmdline), &g_sh);
+    (void)et_shell_init(&g_sh, &g_at, shell_put, NULL);
+    et_shell_set_prompt(&g_sh, "ET> ");
 
     /* 开机连闪 3 次: 400ms 周期闪 3 个周期后自熄 */
     (void)et_led_set_blink(&g_led, 400u, 50u, 3u);
@@ -215,6 +456,9 @@ int main(void)
     for (;;) {
         now = port_tick_get_ms();
 
+        if ((USART1_SR & USART_SR_RXNE) != 0u) {
+            (void)et_shell_feed(&g_sh, (char)USART1_DR);    /* 交互壳收字节 */
+        }
         et_softclock_poll(&g_sc, now);      /* 每 1ms 一次: ms 累计 → 秒进位 */
         et_stimer_poll(now);
         et_led_poll(&g_led, now);
