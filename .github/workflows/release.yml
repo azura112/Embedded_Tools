@@ -77,6 +77,11 @@ jobs:
           arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bin
           arm-none-eabi-size build/stm32f103_demo.elf
 
+      - name: Generate SHA256SUMS
+        run: |
+          cd build
+          sha256sum stm32f103_demo.elf stm32f103_demo.bin demo.exe > SHA256SUMS
+
       - name: Draft GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
         with:
@@ -85,4 +90,5 @@ jobs:
             build/stm32f103_demo.elf
             build/stm32f103_demo.bin
             build/demo.exe
+            build/SHA256SUMS
           fail_on_unmatched_files: false

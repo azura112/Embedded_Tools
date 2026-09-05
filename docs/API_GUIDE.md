@@ -20,6 +20,7 @@
   - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
   - [4.3 et_event 事件标志组](#43-et_event-事件标志组)
   - [4.4 et_softclock 软时钟](#44-et_softclock-软时钟)
+  - [4.5 et_wdt 看门狗封装](#45-et_wdt-看门狗封装)
 - [5. protocol 协议层](#5-protocol-协议层)
   - [5.1 et_crc 校验计算](#51-et_crc-校验计算)
   - [5.2 et_frame 帧解析器](#52-et_frame-帧解析器)
@@ -27,6 +28,7 @@
   - [5.4 et_xmodem XMODEM-CRC 接收器](#54-et_xmodem-xmodem-crc-接收器)
 - [6. storage 存储层](#6-storage-存储层)
   - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
+  - [6.2 et_bootctl 安全升级控制](#62-et_bootctl-安全升级控制)
 - [7. drivers 设备驱动层](#7-drivers-设备驱动层)
   - [7.1 et_key 按键](#71-et_key-按键)
   - [7.2 et_led LED](#72-et_led-led)
@@ -450,6 +452,17 @@ while (1) {
 
 已覆盖：闰年/闰世纪、月末进位、回绕、多实例、毫秒余数累计等 13 例单测（`test/test_softclock.c`）。
 
+### 4.5 et_wdt 看门狗封装（含阻塞段保护）
+
+port_wdt 三件套（`ET_MODULE_WDT=1` 时为必选契约，见 9 章）之上的库层封装：统一契约下限校验（`timeout ≥ PORT_FLASH_ERASE_MS_MAX×2`，与 flash 擦除喂狗指引闭环）+ `et_wdt_guard` 阻塞段保护。F103 IWDG 启动后**不可停**——`et_wdt_disable` 返回 false 即"仍在运行"。
+
+| API | 说明 |
+|---|---|
+| `et_wdt_enable(timeout_ms)` | 启动；低于下限拒绝（零副作用）；重复调用 = 重配置 |
+| `et_wdt_feed()` | 喂狗，🔒ISR-safe |
+| `et_wdt_disable()` | 尽力而为；IWDG 恒 false |
+| `et_wdt_guard(fn, user)` | 长操作保护：前喂狗 → fn → 后喂狗；透传 fn 返回值 |
+
 ---
 
 ## 5. protocol 协议层
@@ -670,6 +683,39 @@ et_kv_set(&kv, 1, &boot, sizeof(boot));   /* 即时持久化 */
 
 覆盖：首启格式化、追加/覆盖/删除、页头截断、记录截断、压缩前/中/后各断点、半扇区残留、seq 仲裁、写违例注入 —— 28 例全绿；掉电点靠宿主机 flash 模拟器“一次性截断 + 位写约束”注入（见 port/host/）。
 
+### 6.2 et_bootctl 安全升级控制（A/B 试运行/确认/回滚）
+
+"固件可更新 → 安全更新"闭环（xmodem 收镜像 → 写槽位 → 本模块校验与状态记录）。交付库组件，跳转/搬运属 bootloader 工程。镜像完整性只做 CRC32（加密/签名/防回滚为 Non-goal）。
+
+**镜像头 32B**（版本化 `hdr_ver`/`hdr_size`，头 CRC + 全镜像 CRC 双校验），布局图见 `storage/et_bootctl.h` 头注。
+
+**状态扇区**：独立于 et_kv（bootloader 场景可不启用 kv），append-only 事件记录（STG/CNF/ATT，val+inv 双字互斥），0→1 位写天然满足；半写记录=脏尾自动丢弃——任意断电只丢最后一步；状态头损坏 init 自愈重建。
+
+| API | 说明 |
+|---|---|
+| `et_bootctl_init(bc, cfg)` | cfg 校验（扇区互异/阈值≥1）+ 状态扇区自愈 |
+| `et_bootctl_verify_image(bc, slot)` | 头 5 项检查 + 全镜像 CRC（分块流式） |
+| `et_bootctl_stage / confirm` | 置试运行（同槽幂等、双槽互斥）/ 确认 |
+| `et_bootctl_boot_attempt(bc, slot)` | bootloader 开机计数 +1，返回新计数 |
+| `et_bootctl_should_rollback(bc, slot)` | staged 且未确认且计数 ≥ max → true |
+| `et_bootctl_state / abandon` | 快照查询 / 擦状态扇区重置 |
+
+单测 24 例：掉电矩阵（stage/confirm/attempt 三类断点各 ≥2）+ 双槽互斥 + 计数耗尽 + 坏头/坏 CRC 拒绝 + 状态扇区自愈 + 容量满。
+
+```c
+/* bootloader 开机决策（应用内演示见 stm32f103_demo 的 boot_flow） */
+et_bootctl_init(&bc, &cfg);
+st: et_bootctl_state(&bc, &st);
+if (st.staged_slot >= 0) {
+    uint32_t n = et_bootctl_boot_attempt(&bc, st.staged_slot);
+    if (et_bootctl_should_rollback(&bc, st.staged_slot)) {
+        et_bootctl_abandon(&bc);            /* 回滚到 A 槽 */
+    } else if (self_check_ok()) {
+        et_bootctl_confirm(&bc, st.staged_slot);
+    }
+}
+```
+
 ---
 
 ## 7. drivers 设备驱动层
@@ -843,7 +889,9 @@ ET_DBG_ASSERT(queue != NULL);      /* 仅调试构建存在 */
 | `et_shell_print_help(sh)` | 扫描命令表逐行 "NAME - 帮助文本"（help 字段 NULL 只出名称） |
 | `et_shell_help_cmd(args, user)` | 预置 help 命令：命令表加 `{"HELP", et_shell_help_cmd}` 且 atcmd user 指到 shell |
 
-命令表尾部追加了可选 `help` 字段（只增不改，既有 `{name, fn}` 位置初始化器仍兼容）。不做历史/Tab 补全/多行编辑（Non-goals，v1.5 再议）。
+命令表尾部追加了可选 `help` 字段（只增不改，既有 `{name, fn}` 位置初始化器仍兼容）。
+
+**可选历史（v1.5）**：`ET_SHELL_HISTORY_N>0` 编译 + `et_shell_set_history(sh, storage, entries, entry_cap)` 挂接静态环形缓冲后，上/下键（`ESC[A/B`）回放历史、行内可编辑后回车（编辑后的行入史）；环形覆盖最旧。未挂接或编译期关闭时 ESC 字节直透 atcmd（v1.4 行为）。Tab 补全 / 多行编辑 / 模糊匹配维持 Non-goal。
 
 ```c
 static const et_atcmd_entry_t cmds[] = {
@@ -897,18 +945,19 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / FSM / STIMER / SCHED / EVENT / SOFTCLOCK / CRC / FRAME / ATCMD / XMODEM / KV / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
 | `ET_MEMPOOL_STRICT` | 1 | free 时校验指针归属/重复释放 |
 | `ET_SPWM_CH_MAX` | 4 | 软件 PWM 静态通道数 |
 | `ET_XM_1K` | 0 | et_xmodem 1K 大块(STX)开关，打开后暂存 ≥1028B |
+| `ET_SHELL_HISTORY_N` | 0 | shell 历史条目编译期容量；0=关闭(ESC 字节直透) |
 | `ET_CRC_TABLE` | 0 | CRC16-CCITT 查表优化(256 项静态表驻只读段)；默认位算法零 RAM |
 | `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |
 | `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |
 | `PORT_FLASH_SECTOR_COUNT` | 16 | 参数区扇区数（et_kv 用其中两扇区） |
 | `PORT_FLASH_ERASE_MS_MAX` | 20 | 单扇区擦除耗时上限（ms，喂狗参考） |
-| `ET_VERSION_STRING / ET_VERSION` | "1.4.0" / 0x010400 | 版本标识，发布时须与 git tag 一致 |
+| `ET_VERSION_STRING / ET_VERSION` | "1.5.0" / 0x010500 | 版本标识，发布时须与 git tag 一致 |
 | `ET_ASSERT(cond)` | 空实现 | 库内断言映射，可指向自身故障钩子 |
 | `ET_LOG_MAX_LEVEL` | 0 (TRACE) | 日志编译期裁剪线（数值=最详细级别） |
 | `ET_LOG_LINE_MAX` 等 | 见 et_log.h | 日志行为细节 |
@@ -1055,3 +1104,28 @@ if (et_kv_get(&kv, 2, &line, sizeof(line), NULL)) {
 ```
 
 要点：故障信息与业务参数同区不同键；boot 计数键在钩子内自增（每次复位即一次故障记录）；`et_kv_iter` 可把全部诊断键批量导出给上位机。
+
+### 11.7 看门狗与 flash 擦除组合（et_wdt × port_flash）
+
+契约闭环：看门狗超时 ≥ `PORT_FLASH_ERASE_MS_MAX×2`，单扇区擦除期间天然有喂狗窗口；批量烧写用 guard + 扇区间喂狗：
+
+```c
+static bool burn_one(void *u) {
+    uint32_t i = *(uint32_t *)u;
+    if (!port_flash_erase_sector(i)) return false;
+    write_payload(i);
+    et_wdt_feed();                       /* 每扇区后喂狗 */
+    return true;
+}
+
+bool burn_all(void) {
+    uint32_t i = 0u;
+    while (i < SECTORS) {
+        if (!et_wdt_guard(burn_one, &i)) return false;  /* 前后自动喂狗 */
+        i++;
+    }
+    return true;
+}
+```
+
+升级链路总配方：shell `AT+UPGRADE` → et_xmodem（sink=port_flash_write 写槽）→ `et_bootctl_verify_image` → `stage` → 复位 → 引导决策（`boot_attempt`/`should_rollback`/`confirm`），完整演示见 `examples/stm32f103_demo.c`。

@@ -17,10 +17,12 @@
 | algorithm/ | `et_filter` | 定点滤波器组：滑动均值 / Q15 一阶低通 / 斜率限制（纯算法层，禁 port.h） |
 |  | `et_fsm` | 表驱动状态机：const 迁移表可驻 flash，guard 回退链，零分配 |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
+|  | `et_wdt` | 看门狗封装 + et_wdt_guard 阻塞段保护（F103 IWDG 直驱） |
 |  | `et_sched` | 协作式周期任务调度器（主循环轮询） |
 |  | `et_event` | 32 位事件标志组（ISR 置位/主循环消费） |
 |  | `et_softclock` | 软时钟：ms tick → UTC 日历（Hinnant 整数算法，1970–2106） |
 | storage/ | `et_kv` | flash 键值掉电存储：双扇区乒乓 + 逐条 CRC + 断电自愈 |
+|  | `et_bootctl` | 安全升级：镜像头校验 + A/B 试运行/确认/回滚状态机 |
 | protocol/ | `et_crc` | CRC8/CRC16-MODBUS/CCITT/CRC32，流式增量 API（可选查表加速） |
 |  | `et_frame` | 字节流帧解析状态机，协议格式可配置，配套组帧函数 |
 |  | `et_atcmd` | 行式 AT 命令解析器 |
@@ -41,7 +43,7 @@
 │   ├── port.h         # 平台适配契约（唯一碰硬件的层，v1.2 起含 flash 三件套）
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   └── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
-├── test/              # 迷你框架 + 245 个单元用例（kv 断电矩阵 28 + xmodem 矩阵 17）
+├── test/              # 迷你框架 + 279 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
 ├── examples/
 │   ├── posix_demo.c   # 全栈联动演示
 │   └── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -140,11 +142,11 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，245 用例覆盖回绕/并发边界/畸形输入/掉电恢复/传输对端矩阵/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，279 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（245 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（279 例）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译 × **Renode F103 仿真 smoke（断言 kv/重启计数日志）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。

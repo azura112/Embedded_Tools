@@ -69,6 +69,8 @@ assert_grep "Makefile" "storage/et_kv.c"      "Makefile 含 et_kv"
 # ---- 测试套件注册 ----
 assert_grep "test/test_main.c" "test_xmodem_cases"  "test_main 注册 xmodem 套件"
 assert_grep "test/test_main.c" "test_shell_cases"   "test_main 注册 shell 套件"
+assert_grep "test/test_main.c" "test_bootctl_cases" "test_main 注册 bootctl 套件"
+assert_grep "test/test_main.c" "test_wdt_cases"     "test_main 注册 wdt 套件"
 assert_grep "test/test_main.c" "test_fsm_cases"     "test_main 注册 fsm 套件"
 assert_grep "test/test_main.c" "test_kv_cases"      "test_main 注册 kv 套件"
 
@@ -79,6 +81,8 @@ assert_grep "README.md" "et_kv"        "README 特性表: kv"
 assert_grep "README.md" "et_fsm"       "README 特性表: fsm"
 assert_grep "README.md" "et_xmodem"    "README 特性表: xmodem"
 assert_grep "README.md" "et_shell"     "README 特性表: shell"
+assert_grep "README.md" "et_bootctl"   "README 特性表: bootctl"
+assert_grep "README.md" "et_wdt"       "README 特性表: wdt"
 assert_grep "README.md" "et_kv_iter"   "README 速查/正文: kv_iter"
 
 # ---- API_GUIDE 章节锚点 (v1.2~v1.4 新章) ----
@@ -88,6 +92,11 @@ assert_grep "docs/API_GUIDE.md" "8.3 et_shell"           "API_GUIDE: shell 章�
 assert_grep "docs/API_GUIDE.md" "4.4 et_softclock"       "API_GUIDE: softclock 章节"
 assert_grep "docs/API_GUIDE.md" "3.2 et_fsm"             "API_GUIDE: fsm 章节"
 assert_grep "docs/API_GUIDE.md" "ET_XM_1K"               "API_GUIDE 配置表: ET_XM_1K"
+assert_grep "docs/API_GUIDE.md" "6.2 et_bootctl"         "API_GUIDE: bootctl 章节"
+assert_grep "docs/API_GUIDE.md" "4.5 et_wdt"             "API_GUIDE: wdt 章节"
+assert_grep "docs/API_GUIDE.md" "ET_SHELL_HISTORY_N"     "API_GUIDE 配置表: shell 历史"
+assert_grep "Makefile" "storage/et_bootctl.c" "Makefile 含 et_bootctl"
+assert_grep "Makefile" "sys/et_wdt.c"         "Makefile 含 et_wdt"
 assert_grep "docs/API_GUIDE.md" "flash 契约"             "API_GUIDE: port flash 契约小节"
 
 # ---- Renode smoke 资产自洽 (脚本断言与文档一致) ----
