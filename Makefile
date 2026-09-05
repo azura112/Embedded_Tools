@@ -27,7 +27,7 @@ OBJDIR  := build
 
 CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c
 ALGO_SRC    := algorithm/et_filter.c algorithm/et_fsm.c
-SYS_SRC     := sys/et_stimer.c sys/et_sched.c sys/et_event.c sys/et_softclock.c
+SYS_SRC     := sys/et_stimer.c sys/et_sched.c sys/et_event.c sys/et_softclock.c sys/et_wdt.c
 PROTO_SRC   := protocol/et_crc.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c
 DRIVERS_SRC := drivers/et_key.c drivers/et_led.c drivers/et_spwm.c
 DEBUG_SRC   := debug/et_log.c debug/et_assert.c debug/et_shell.c
@@ -40,7 +40,7 @@ TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempo
             test/test_stimer.c test/test_sched.c test/test_event.c test/test_softclock.c \
             test/test_crc.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_shell.c \
             test/test_key.c test/test_led.c test/test_spwm.c \
-            test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_main.c
+            test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c test/test_main.c
 
 DEMO_SRC := examples/posix_demo.c
 

@@ -192,6 +192,60 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
     return done;
 }
 
+/* 看门狗 (RM0008 IWDG): LSI≈40kHz, 超时 = (RLR+1)*div/40kHz。
+ * 契约下限 = PORT_FLASH_ERASE_MS_MAX*2 保证擦除期间有喂狗窗口;
+ * IWDG 启动后不可停 → port_wdt_disable 恒返回 false (契约明示)。 */
+bool port_wdt_enable(uint32_t timeout_ms)
+{
+    static const uint32_t div_tab[7] = { 4u, 8u, 16u, 32u, 64u, 128u, 256u };
+    uint32_t ticks, div, rlr;
+    uint32_t idx;
+    uint32_t guard;
+
+    if (timeout_ms < PORT_FLASH_ERASE_MS_MAX * 2u) {
+        return false;                           /* 契约下限 */
+    }
+    ticks = timeout_ms * 40u;                   /* 40kHz → 40 tick/ms */
+    div   = 0u;
+    rlr   = 0u;
+    for (idx = 0u; idx < 7u; idx++) {
+        div = div_tab[idx];
+        rlr  = ticks / div;
+        if ((ticks % div) != 0u) {
+            rlr++;
+        }
+        if (rlr <= 0xFFFu) {
+            break;                              /* 12 位 RLR 可容纳 */
+        }
+    }
+    if (idx >= 7u) {
+        return false;                           /* 超出 IWDG 可表达上限 */
+    }
+    rlr -= 1u;
+
+    PORT_CRITICAL_ENTER();
+    IWDG_KR = IWDG_KEY_UNLOCK;                  /* 解锁 PR/RLR */
+    IWDG_PR = idx;
+    IWDG_RLR = rlr;
+    guard = FLASH_BUSY_TIMEOUT;                 /* 等 PVU/RVU 同步完成 */
+    while (((IWDG_SR & (IWDG_SR_PVU | IWDG_SR_RVU)) != 0u) && (guard != 0u)) {
+        guard--;
+    }
+    IWDG_KR = IWDG_KEY_START;                   /* 启动 (不可停) */
+    PORT_CRITICAL_EXIT();
+    return (guard != 0u);
+}
+
+void port_wdt_feed(void)
+{
+    IWDG_KR = IWDG_KEY_FEED;                    /* 🔒ISR-safe: 单寄存器写 */
+}
+
+bool port_wdt_disable(void)
+{
+    return false;                               /* IWDG 语义: 不可停 */
+}
+
 bool port_flash_erase_sector(uint32_t sector_index)
 {
     bool ok = false;

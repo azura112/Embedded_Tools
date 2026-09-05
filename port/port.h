@@ -61,6 +61,20 @@ bool     port_flash_read(uint32_t offset, void *buf, uint32_t len);
 uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len);
 bool     port_flash_erase_sector(uint32_t sector_index);
 
+/* ===================== 看门狗 (v1.5 契约演进, 纯增量) =====================
+ * 仅 ET_MODULE_WDT=1 时为必选契约 (et_wdt 使用); 关闭该模块的老平台零影响。
+ * 语义约定 (v1.5 评审决议, 见 docs/API_GUIDE.md §9):
+ *  - port_wdt_enable(timeout_ms): 启动并配置超时; timeout 低于
+ *    PORT_FLASH_ERASE_MS_MAX*2 时拒绝(返回 false)——保证 flash 擦除期间
+ *    有足够的喂狗窗口; 重复 enable = 重新配置并重置窗口;
+ *  - port_wdt_feed(): 喂狗; 🔒ISR-safe (单写寄存器/单调用);
+ *  - port_wdt_disable(): 尽力而为——IWDG 类硬件启动后不可停, 返回 false
+ *    表示"实际仍在运行"(F103 语义); enable/disable 仅 🏠MAIN。
+ */
+bool port_wdt_enable(uint32_t timeout_ms);
+void port_wdt_feed(void);
+bool port_wdt_disable(void);
+
 #ifdef __cplusplus
 }
 #endif

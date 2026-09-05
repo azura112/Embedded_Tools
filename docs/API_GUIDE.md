@@ -871,6 +871,7 @@ while (1) { if (uart_rx_ready()) et_shell_feed(&sh, uart_getc()); }
 | `port_tick_get_ms()` | 毫秒单调时基，由中断维护，允许自然回绕 | SysTick 中断累加 |
 | `port_putc(c)` | 阻塞式单字符输出（日志底层） | USART 轮询发送 |
 | `port_flash_read/write/erase_sector` + 几何宏 | **仅 ET_MODULE_KV=1 时必选**：参数区 4B 对齐只擦写、只允许 1→0 写、短写如实上报（掉电/故障部分写入） | F103: FLASH 寄存器直驱（PM0056） |
+| `port_wdt_enable/feed/disable` | **仅 ET_MODULE_WDT=1 时必选**（v1.5 决议）：enable 校验 `timeout ≥ PORT_FLASH_ERASE_MS_MAX×2`（与擦除喂狗指引闭环）；feed 🔒ISR-safe；disable 尽力而为——F103 IWDG 启动后**不可停**，返回 false 即"仍在运行"；enable/disable 仅 🏠MAIN | F103: IWDG 寄存器直驱（RM0008 §IWDG，LSI 40kHz，PR 4~256 分频 + 12 位 RLR） |
 
 flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contract.md`）：
 - 参数区 = `PORT_FLASH_SECTOR_SIZE × PORT_FLASH_SECTOR_COUNT` 连续扇区，`PORT_FLASH_ERASE_MS_MAX` 给调用方喂狗参考；

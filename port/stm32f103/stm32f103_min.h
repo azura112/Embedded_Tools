@@ -76,4 +76,17 @@
 #define FLASH_KEY1              0x45670123u
 #define FLASH_KEY2              0xCDEF89ABu
 
+/* ===================== IWDG (RM0008 独立看门狗章) ===================== */
+/* 映射: 0x40003000-0x4000300C; LSI ≈ 40kHz, 计数时钟 = 40kHz/分频 */
+#define IWDG_KR                 REG32(0x40003000u)      /* 键寄存器 */
+#define IWDG_PR                 REG32(0x40003004u)      /* 预分频 (0..6 → 4..256) */
+#define IWDG_RLR                REG32(0x40003008u)      /* 重装载 (12 位有效) */
+#define IWDG_SR                 REG32(0x4000300Cu)      /* 状态: bit0 PVU / bit1 RVU */
+
+#define IWDG_KEY_FEED           0xAAAAu                 /* 喂狗 */
+#define IWDG_KEY_UNLOCK         0x5555u                 /* 解锁 PR/RLR 写入 */
+#define IWDG_KEY_START          0xCCCCu                 /* 启动(启动后不可停) */
+#define IWDG_SR_PVU             (1u << 0)
+#define IWDG_SR_RVU             (1u << 1)
+
 #endif /* STM32F103_MIN_H */

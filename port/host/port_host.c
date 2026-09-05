@@ -175,3 +175,68 @@ bool port_flash_erase_sector(uint32_t sector_index)
     memset(&g_flash[base], 0xFF, n);
     return true;
 }
+
+/* ===================== 看门狗软件模拟 (et_wdt 测试用) ===================== */
+
+static port_host_wdt_cb_t g_wdt_cb   = NULL;    /* 超时回调 */
+static void              *g_wdt_user = NULL;
+static uint32_t           g_wdt_timeout = 0u;   /* 0 = 未启用 */
+static uint32_t           g_wdt_last_feed = 0u; /* 最近一次喂狗时刻 */
+static uint32_t           g_wdt_feeds = 0u;     /* 累计喂狗计数 */
+static bool               g_wdt_fired = false;  /* 超时已触发(不重复) */
+
+bool port_wdt_enable(uint32_t timeout_ms)
+{
+    if (timeout_ms < PORT_FLASH_ERASE_MS_MAX * 2u) {
+        return false;                           /* 契约下限: 擦除窗口 ×2 */
+    }
+    g_wdt_timeout   = timeout_ms;
+    g_wdt_last_feed = port_tick_get_ms();
+    g_wdt_fired     = false;
+    return true;
+}
+
+void port_wdt_feed(void)
+{
+    if (g_wdt_timeout != 0u) {
+        g_wdt_last_feed = port_tick_get_ms();
+        g_wdt_feeds++;
+    }
+}
+
+bool port_wdt_disable(void)
+{
+    /* host 模拟可停 (真实 IWDG 不可停, 返回 false) */
+    g_wdt_timeout = 0u;
+    return true;
+}
+
+void port_host_wdt_install(port_host_wdt_cb_t cb, void *user)
+{
+    g_wdt_cb   = cb;
+    g_wdt_user = user;
+}
+
+void port_host_wdt_poll(void)
+{
+    if ((g_wdt_timeout != 0u) && (!g_wdt_fired) && (g_wdt_cb != NULL) &&
+        ((port_tick_get_ms() - g_wdt_last_feed) >= g_wdt_timeout)) {
+        g_wdt_fired = true;
+        g_wdt_cb(g_wdt_user);
+    }
+}
+
+uint32_t port_host_wdt_feeds(void)
+{
+    return g_wdt_feeds;
+}
+
+void port_host_wdt_reset(void)
+{
+    g_wdt_timeout   = 0u;
+    g_wdt_last_feed = 0u;
+    g_wdt_feeds     = 0u;
+    g_wdt_fired     = false;
+    g_wdt_cb        = NULL;
+    g_wdt_user      = NULL;
+}

@@ -57,6 +57,22 @@ void     port_host_flash_erase_fail_once(void);
 /* 累计写入字节数(验证"del 不存在 key 零写入"等) */
 uint32_t port_host_flash_written(void);
 
+/* ===================== 看门狗软件模拟 (et_wdt 测试用) ===================== */
+
+typedef void (*port_host_wdt_cb_t)(void *user);
+
+/* 安装超时回调(触发一次后不再重复, 重新 enable 后复位); 传 NULL 卸载 */
+void     port_host_wdt_install(port_host_wdt_cb_t cb, void *user);
+
+/* 测试驱动: 按虚拟时基检查超时窗口 (真实硬件由 IWDG 硬件自主计时) */
+void     port_host_wdt_poll(void);
+
+/* 累计喂狗次数 (guard 前后喂狗断言用) */
+uint32_t port_host_wdt_feeds(void);
+
+/* 清零模拟状态 (enable/feed 计数/触发标记) */
+void     port_host_wdt_reset(void);
+
 #ifdef __cplusplus
 }
 #endif

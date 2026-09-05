@@ -56,6 +56,9 @@ extern "C" {
 #ifndef ET_MODULE_SCHED
 #define ET_MODULE_SCHED         1   /* sys  : 协作式周期任务调度器      */
 #endif
+#ifndef ET_MODULE_WDT
+#define ET_MODULE_WDT           1   /* sys  : 看门狗封装+阻塞段保护     */
+#endif
 #ifndef ET_MODULE_EVENT
 #define ET_MODULE_EVENT         1   /* sys  : 32 位事件标志组           */
 #endif
