@@ -29,7 +29,7 @@ jobs:
           arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
             -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
             -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/et_kv.c \
+            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
             port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
             examples/stm32f103_demo.c \
             -o build/stm32f103_demo.elf
@@ -70,7 +70,7 @@ jobs:
           arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
             -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
             -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/et_kv.c \
+            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
             port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
             examples/stm32f103_demo.c \
             -o build/stm32f103_demo.elf
