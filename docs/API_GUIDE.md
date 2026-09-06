@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v1.6.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v1.7.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -930,11 +930,30 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 分层纪律：**core/algorithm 层禁止包含 port.h**（保证纯逻辑可 PC 测试）；sys/drivers/debug/storage 仅经此契约触硬件。
 
+### 8.4 et_selftest 板上自测组件 (v1.7)
+
+验证金字塔封顶：PC 单测(279+) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_selftest_run_all(report, user)` | 🏠MAIN | 跑全部套件；返回 false = 有失败套件 |
+| `bool et_selftest_run_suite(name, report, user)` | 🏠MAIN | 单套件（含动态注册）；未知名返回 false |
+| `bool et_selftest_register(name, fn)` | 🏠MAIN | 动态注册应用自有套件（容量 4，重名拒绝） |
+| `void et_selftest_set_kv_layout(lay)` | 🏠MAIN | 存储门控：配置后 kv 套件实跑（**擦写所配扇区**） |
+| `void et_selftest_set_bootctl_cfg(cfg)` | 🏠MAIN | 存储门控：配置后 bootctl 套件实跑（**破坏性**） |
+| `uint16_t et_selftest_suite_count(void)` | 读 | 内建 + 动态套件总数 |
+
+- **报告**：结构化事件回调 `et_selftest_report_fn(user, evt, suite, num)`——BEGIN/SUITE_PASS/SUITE_FAIL/SUITE_SKIP/CHECK_FAIL(带行号)/DONE；组件内不做格式化，接 et_log 或 shell 由应用决定；
+- **17 内建套件**：ringbuf/queue/mempool/list/filter/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
+- **覆盖边界**：冒烟非对等 host 300 用例，掉电注入类 host-only 用例不移植；
+- **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
+- **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
+
 ### 9.1 已验证平台
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 291 用例 | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 300 用例 | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
 | STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 
@@ -955,6 +974,8 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `ET_SPWM_CH_MAX` | 4 | 软件 PWM 静态通道数 |
 | `ET_XM_1K` | 0 | et_xmodem 1K 大块(STX)开关，打开后暂存 ≥1028B |
 | `ET_SHELL_HISTORY_N` | 0 | shell 历史条目编译期容量；0=关闭(ESC 字节直透) |
+| `ET_MODULE_SELFTEST` | 0 | 板上自测组件（v1.7）：发布默认裁剪；host 测试/自测固件以 `-D=1` 启用 |
+| `ET_SELFTEST_MAX_EXTRA` | 4 | et_selftest 动态注册套件槽位数 |
 | `ET_CRC_TABLE` | 0 | CRC16-CCITT 查表优化(256 项静态表驻只读段)；默认位算法零 RAM |
 | `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |
 | `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |

@@ -17,9 +17,9 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        1
-#define ET_VERSION_MINOR        6
+#define ET_VERSION_MINOR        7
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x010600 = 1.6.0, 便于条件编译比较: #if ET_VERSION >= 0x010600 */
+/* 整数编码 0x010700 = 1.7.0, 便于条件编译比较: #if ET_VERSION >= 0x010700 */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
@@ -94,6 +94,11 @@ extern "C" {
 #endif
 #ifndef ET_MODULE_SHELL
 #define ET_MODULE_SHELL         1   /* debug: 行式交互壳(atcmd 之上)    */
+#endif
+
+#ifndef ET_MODULE_SELFTEST
+#define ET_MODULE_SELFTEST      0   /* debug: 板上自测组件(v1.7, 发布默认裁剪;
+                                        *   host 测试/需自测的固件以 -D=1 启用) */
 #endif
 #ifndef ET_MODULE_LOG
 #define ET_MODULE_LOG           1   /* debug: 分级日志                  */

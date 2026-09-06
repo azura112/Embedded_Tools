@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.6.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.6开发计划：升级链真机闭环与双平台回归.md](v1.6开发计划：升级链真机闭环与双平台回归.md)**
+> 当前版本：**v1.7.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.7开发计划：板上自测与性能量化.md](v1.7开发计划：板上自测与性能量化.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -33,6 +33,7 @@
 | debug/ | `et_shell` | 行式交互壳（atcmd 之上）：回显/退格擦写/提示符/help 自动生成 |
 |  | `et_log` | 分级日志：运行时过滤 + 编译期裁剪 + 自带格式化器 + hexdump |
 |  | `et_assert` | 断言：失败钩子可插拔（记录/停机/复位） |
+|  | `et_selftest` | 板上自测组件（v1.7）：17 内建套件 + 结构化报告回调 + 存储门控，默认裁剪 |
 
 ## 目录结构
 
@@ -44,7 +45,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 291 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
+├── test/              # 迷你框架 + 300 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -56,7 +57,7 @@
 
 ```sh
 make test    # Windows 无 make 环境用 mingw32-make；或直接：
-gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
+gcc -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
     -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
     port/host/port_host.c test/*.c
 ./build/et_tests.exe
@@ -146,11 +147,14 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，291 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，300 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（291 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（300 例）；
+- **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
+- **板上自测**（v1.7）：`debug/et_selftest` 库组件，17 套件一条命令冒烟（host/板上结果可比对）；
+- **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译 × **Renode F103 仿真 smoke（断言 kv/重启计数日志）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。

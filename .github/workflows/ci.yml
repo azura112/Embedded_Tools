@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build
-          gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
+          gcc -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
               -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
               port/host/port_host.c test/*.c
           ./build/et_tests.exe
@@ -52,7 +52,7 @@ jobs:
       - name: Build & run tests with coverage
         run: |
           mkdir -p build
-          gcc -std=c99 -Wall -Wextra -pedantic --coverage \
+          gcc -std=c99 -Wall -Wextra -pedantic --coverage -DET_MODULE_SELFTEST=1 \
               -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
               -o build/et_tests_cov.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
               port/host/port_host.c test/*.c
