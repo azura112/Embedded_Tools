@@ -17,7 +17,7 @@
 | algorithm/ | `et_filter` | 定点滤波器组：滑动均值 / Q15 一阶低通 / 斜率限制（纯算法层，禁 port.h） |
 |  | `et_fsm` | 表驱动状态机：const 迁移表可驻 flash，guard 回退链，零分配 |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
-|  | `et_wdt` | 看门狗封装 + et_wdt_guard 阻塞段保护（F103 IWDG 直驱） |
+|  | `et_wdt` | 看门狗封装 + et_wdt_guard 阻塞段保护（F103/G474 IWDG 直驱） |
 |  | `et_sched` | 协作式周期任务调度器（主循环轮询） |
 |  | `et_event` | 32 位事件标志组（ISR 置位/主循环消费） |
 |  | `et_softclock` | 软时钟：ms tick → UTC 日历（Hinnant 整数算法，1970–2106） |
@@ -42,11 +42,13 @@
 ├── port/
 │   ├── port.h         # 平台适配契约（唯一碰硬件的层，v1.2 起含 flash 三件套）
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
-│   └── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
+│   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
+│   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
 ├── test/              # 迷你框架 + 279 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
 ├── examples/
-│   ├── posix_demo.c   # 全栈联动演示
-│   └── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
+│   ├── posix_demo.c       # 全栈联动演示
+│   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
+│   └── stm32g474_demo.c   # G474VET6 真机 demo（同 f103 全栈 + 交互壳/升级链路）
 └── Makefile
 ```
 
@@ -62,7 +64,7 @@ gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Id
 make demo    # 全栈演示（虚拟 UART + 定时器 + 按键 + LED + kv）
 ```
 
-STM32F103 真机构建/烧录见 [port/stm32f103/README.md](port/stm32f103/README.md)。
+STM32F103 真机构建/烧录见 [port/stm32f103/README.md](port/stm32f103/README.md)；STM32G474 见 [port/stm32g474/README.md](port/stm32g474/README.md)。
 
 ## 使用速查
 
@@ -132,7 +134,7 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 | `port_putc()` | 阻塞式字符输出（日志底层） |
 | `port_flash_read/write/erase_sector` | 仅 `ET_MODULE_KV=1` 时必选：4B 对齐擦写、只允许 1→0 写、短写如实上报（掉电/故障截断） |
 
-已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`，零警告编译 + 片内 flash 参数区，真机记录见其 README）。
+已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已上板实测（kv 掉电持久化 + 全模块自测 13/13，经 CubeMX/HAL 集成版 port，记录见该工程 `移植stm32实机记录.md`），F103 真机记录见其 README。
 
 裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关（支持 `-D` 覆盖），未启用的模块不参与编译（对应 `.c` 亦移出构建列表）。
 

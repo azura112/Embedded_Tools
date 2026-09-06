@@ -56,6 +56,9 @@ void    port_putc(char c);
  *  - erase/write 仅限 🏠MAIN 上下文, port 内部以临界区包住完整擦写序列;
  *  - 擦除为 ms 级阻塞操作, 看门狗喂狗/调度暂停由【调用方】负责;
  *  - write 返回实际写入字节数(掉电/故障可部分写入, 调用方校验)。
+ *  - 编程粒度是平台特性: F1 为 16 位半字且允许位 1→0 重复编程; G4/L4 类为
+ *    64 位双字且单次编程(目标双字非全 1 → 故障截断)。storage(et_kv/bootctl)
+ *    已按 8B 槽适配两种粒度, 见 port/stm32g474/README.md "flash 约束"。
  */
 bool     port_flash_read(uint32_t offset, void *buf, uint32_t len);
 uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len);

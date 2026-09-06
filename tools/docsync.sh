@@ -103,6 +103,15 @@ assert_grep "docs/API_GUIDE.md" "flash 契约"             "API_GUIDE: port flas
 assert_grep "port/stm32f103/README.md" "smoke.sh"        "port README 引用 smoke.sh"
 assert_grep "port/stm32f103/renode/smoke.sh" "boot #2"   "smoke.sh 断言: 复位后 boot #2"
 
+# ---- STM32G474 平台 (port/stm32g474) 文档与构建要素 ----
+assert_grep "port/stm32g474/README.md" "DPORT_FLASH_SECTOR_SIZE=2048" "port README 含 G4 flash 几何 -D 构建选项"
+assert_grep "port/stm32g474/README.md" "RM0440"                      "port README 含 RM0440 规范引用"
+assert_grep "port/stm32g474/README.md" "GNU Tools for STM32"         "port README 体积测量环境注记 (工具链版本)"
+assert_grep "port/stm32g474/README.md" "15836"                       "port README 体积表 v1.5 行 (text=15836)"
+assert_grep "README.md" "port/stm32g474"                             "根 README 目录结构含 stm32g474"
+assert_grep "docs/API_GUIDE.md" "STM32G474VET6"                      "API_GUIDE 平台清单含 G474"
+assert_grep "port/stm32g474/port_stm32g474.c" "PORT_FLASH_SECTOR_SIZE != 2048" "port 层几何 #error 守卫"
+
 echo "----------------------------------------"
 echo "docsync: pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

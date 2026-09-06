@@ -56,7 +56,7 @@ arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bi
 | v1.2 | 10892 | 4 | 276 | +et_kv+et_softclock |
 | v1.3 | 11208 | 4 | 276 | +et_fsm（demo 含 kv 重启计数） |
 | v1.4 | 12276 | 4 | 276 |
-| v1.5 | 15440 | 24 | 596 | +et_xmodem+et_shell（demo 不新增调用） |
+| v1.5 | 15468 | 24 | 596 | +et_xmodem+et_shell；kv/bootctl 8B 槽适配（G474 双字约束）后复测 |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 

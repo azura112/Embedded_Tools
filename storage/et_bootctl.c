@@ -12,7 +12,8 @@
 #if ET_MODULE_BOOTCTL
 
 /* 状态扇区几何 */
-#define ST_HDR_SIZE         12u                 /* magic(4)+ver/rsvd(4)+crc(4) */
+#define ST_HDR_SIZE         16u                 /* magic(4)+ver/rsvd(4)+crc(4)+rsvd(4)
+                                                 * 8B 对齐: G4 双字单次编程约束 (同 et_kv) */
 #define ST_REC_SIZE         8u                  /* val + inv */
 
 /* 事件 val 编码 (ASCII 标识 + 槽号) */
@@ -70,6 +71,10 @@ static bool state_hdr_write(et_bootctl_t *bc)
     raw[6] = 0u;
     raw[7] = 0u;
     wr32(&raw[8], et_crc32(raw, 8u));
+    raw[12] = 0xFFu;                        /* 尾部保留区保持擦除态, 1→0 扩展 */
+    raw[13] = 0xFFu;
+    raw[14] = 0xFFu;
+    raw[15] = 0xFFu;
     return port_flash_write(state_base(bc), raw, ST_HDR_SIZE) == ST_HDR_SIZE;
 }
 

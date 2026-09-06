@@ -932,10 +932,11 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 245 用例 | v1.0 起 |
-| STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | — | — | v1.1/v1.2 编译级，实测顺延补录 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 279 用例 | v1.0 起 |
+| STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
+| STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 
-新平台移植步骤：实现基础四项契约 →（用 `ET_MODULE_KV` 时）再实现 flash 三件套与几何 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。
+新平台移植步骤：实现基础四项契约 →（用 `ET_MODULE_KV` 时）再实现 flash 三件套与几何 → 以 `examples/stm32f103_demo.c` 为模板跑通最小 demo → 回填本表。注意 flash 编程粒度差异（F1 半字可 1→0 重写；G4/L4 类为 64 位双字单次编程，storage 已按 8B 槽适配）。
 
 ---
 

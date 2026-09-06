@@ -87,7 +87,7 @@ static void write_image(uint32_t slot, uint32_t img_size, uint32_t img_ver,
 /* 白盒: 直接读状态记录区第 idx 条 (0 起) 的 8B 引用 */
 static uint8_t *rec_mem(uint32_t idx)
 {
-    uint8_t *mem = port_host_flash_mem(ST_SEC * SZ + 12u + idx * 8u);
+    uint8_t *mem = port_host_flash_mem(ST_SEC * SZ + 16u + idx * 8u);
 
     ET_CHECK(mem != NULL);
     return mem;
@@ -95,7 +95,7 @@ static uint8_t *rec_mem(uint32_t idx)
 
 static uint32_t rec_count(void)
 {
-    uint32_t off = 12u, n = 0u;
+    uint32_t off = 16u, n = 0u;
     const uint8_t *mem = port_host_flash_mem(ST_SEC * SZ);
 
     while ((off + 8u) <= SZ) {
@@ -458,7 +458,7 @@ static void records_full_rejected(void)
     uint32_t i, cap;
 
     bc_fresh();
-    cap = (SZ - 12u) / 8u;                              /* 记录区容量 */
+    cap = (SZ - 16u) / 8u;                              /* 记录区容量 */
     ET_CHECK(et_bootctl_stage(&g_bc, SLOT_B));          /* 1 条 */
     for (i = 1u; i < cap; i++) {
         ET_CHECK_U32_EQ(i, et_bootctl_boot_attempt(&g_bc, SLOT_B));

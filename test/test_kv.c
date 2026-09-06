@@ -76,7 +76,7 @@ static void assert_page_clean(uint32_t sector)
 
         ET_CHECK((enc_key & 0x8000u) == 0u);            /* 无 tombstone */
         ET_CHECK_U32_EQ((uint32_t)et_crc32(&mem[off + 8u], len), vcrc);
-        off += 8u + (((uint32_t)len + 3u) & ~3u);
+        off += 8u + (((uint32_t)len + 7u) & ~7u);       /* 槽 8B 对齐 (G4 约束) */
     }
 }
 
@@ -447,14 +447,14 @@ static void kv_stats_fields(void)
     et_kv_stats_t st;
 
     kv_fresh();
-    ET_CHECK(et_kv_set(&g_kv, 1u, "1234", 4u));         /* 16 + 8 + 4 = 28 */
-    ET_CHECK(et_kv_set(&g_kv, 2u, NULL, 0u));           /* 28 + 8 = 36 */
+    ET_CHECK(et_kv_set(&g_kv, 1u, "1234", 4u));         /* 16 + slot(4)=16 = 32 */
+    ET_CHECK(et_kv_set(&g_kv, 2u, NULL, 0u));           /* 32 + slot(0)=8 = 40 */
     et_kv_stats(&g_kv, &st);
     ET_CHECK_U32_EQ(1u,  st.seq);
     ET_CHECK_U32_EQ(1u,  st.erase_cnt_a);
     ET_CHECK_U32_EQ(1u,  st.erase_cnt_b);
-    ET_CHECK_U32_EQ(36u, st.used_bytes);
-    ET_CHECK_U32_EQ(SZ - 36u, st.free_bytes);
+    ET_CHECK_U32_EQ(40u, st.used_bytes);
+    ET_CHECK_U32_EQ(SZ - 40u, st.free_bytes);
     ET_CHECK_U32_EQ(2u,  st.record_count);
     ET_CHECK_U32_EQ(2u,  st.key_count);
 
@@ -558,7 +558,7 @@ static void pcut_compact_header(void)
     uint8_t  out[8];
     uint32_t w, i;
 
-    for (i = 0u; i < 2u; i++) {                         /* 断点: magic 后 / crc 前 */
+    for (i = 0u; i < 2u; i++) {                         /* 断点: DW0 内 / DW0 后首记录中 */
         kv_fresh();
         ET_CHECK(et_kv_set(&g_kv, 1u, "safe", 4u));
         ET_CHECK(et_kv_set(&g_kv, 2u, "k2", 2u));
@@ -583,14 +583,15 @@ static void pcut_compact_mid_migrate(void)
     fill_buf(v, 32u, 8u);
     for (i = 0u; i < 2u; i++) {                         /* 断点: 首记录中段 / 末记录中段 */
         kv_fresh();
-        ET_CHECK(et_kv_set(&g_kv, 1u, v, 32u));         /* 8+32=40 */
-        ET_CHECK(et_kv_set(&g_kv, 2u, "k2", 2u));       /* 8+4=12 */
-        ET_CHECK(et_kv_set(&g_kv, 3u, "k3", 2u));       /* 8+4=12; used=80 */
+        ET_CHECK(et_kv_set(&g_kv, 1u, v, 32u));         /* slot(32)=40 */
+        ET_CHECK(et_kv_set(&g_kv, 2u, "k2", 2u));       /* slot(2)=16 */
+        ET_CHECK(et_kv_set(&g_kv, 3u, "k3", 2u));       /* slot(2)=16; used=88 */
         et_kv_stats(&g_kv, &used_stats);
         used = used_stats.used_bytes;
 
         w = port_host_flash_written();
-        port_host_flash_fail_after(w + 16u + ((i == 0u) ? 8u : ((used - 16u) - 8u)));
+        /* 页头 DW0=8B + 搬迁槽; 断点 16=8+8(首记录中) / used-16=末记录中 */
+        port_host_flash_fail_after(w + ((i == 0u) ? 16u : (used - 16u)));
         ET_CHECK(!et_kv_commit(&g_kv));                 /* 搬迁中断, COMMITTED 未写 */
 
         kv_reopen();                                    /* 对页 MOVING 弃用 */
@@ -615,7 +616,7 @@ static void pcut_compact_pre_commit(void)
     ET_CHECK(et_kv_del(&g_kv, 2u));                     /* tombstone: 8(不搬) */
 
     w = port_host_flash_written();
-    port_host_flash_fail_after(w + 16u + 40u);          /* 搬迁体写完, state 提交前 */
+    port_host_flash_fail_after(w + 8u + 40u);           /* DW0+搬迁槽写完, DW1 提交前 */
     ET_CHECK(!et_kv_commit(&g_kv));                     /* state 写不进 */
 
     kv_reopen();

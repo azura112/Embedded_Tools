@@ -32,6 +32,12 @@
 #define KV_STATE_COMMITTED  0x00000000u
 #define KV_TOMBSTONE_BIT    0x8000u
 #define KV_ALIGN4(x)        (((uint32_t)(x) + 3u) & ~3u)
+#define KV_ALIGN8(x)        (((uint32_t)(x) + 7u) & ~7u)
+/* 记录槽 = 记录头 + payload 向上对齐 8B。原因: G4 类 flash 以 64 位双字为
+ * 编程粒度且每双字只允许编程一次 (目标非全 1 → PROGERR), 8B 槽保证所有
+ * 写入起止的双字完整性 (F1 16 位粒度下仅多浪费 ≤4B/条)。
+ * 详见 port/stm32g474/README.md "flash 约束"。 */
+#define KV_REC_SLOT(len)    KV_ALIGN8(KV_REC_HDR_SIZE + (uint32_t)(len))
 
 #define KV_PAGE_SIZE        ((uint32_t)PORT_FLASH_SECTOR_SIZE)
 /* 单记录 payload 上限(对齐前): 页容量 - 页头 - 记录头 */
@@ -108,24 +114,38 @@ static kv_page_state page_probe(uint32_t sector, uint32_t *seq_out)
     return KV_PG_VALID;
 }
 
+/* 页头拆成两笔 8B 双字写入 (G4 双字单次编程约束, 见 KV_REC_SLOT 注):
+ *   DW0 = magic|seq   : 页被认领的标记, 先写;
+ *   DW1 = state|crc   : 内容就绪后由 page_commit_state 一笔写入生效。
+ * 两笔之间掉电 → DW1 保持全 1 → kv_page_state 判 INVALID 弃页,
+ * 两阶段提交语义与旧版 (16B 页头 + 4B 提交字) 完全一致。 */
 static bool page_write_header(uint32_t sector, uint32_t seq)
 {
-    uint8_t  raw[KV_HDR_SIZE];
-    uint32_t crc;
+    uint8_t raw[8];
 
     wr32(raw, KV_MAGIC);
     wr32(raw + 4, seq);
-    wr32(raw + 8, 0xFFFFFFFFu);                 /* state = MOVING */
-    crc = et_crc32(raw, 8u);                    /* crc 仅覆盖 magic|seq(稳定字段) */
-    wr32(raw + 12, crc);
-    return port_flash_write(sector * KV_PAGE_SIZE, raw, KV_HDR_SIZE) == KV_HDR_SIZE;
+    return port_flash_write(sector * KV_PAGE_SIZE, raw, 8u) == 8u;
 }
 
-static bool page_commit_state(uint32_t sector)
+/* DW1 = state(COMMITTED) + crc。crc 仅覆盖 magic|seq (稳定字段),
+ * 与 kv_page_state 读侧布局一致: state @+8, crc @+12。 */
+static bool page_commit_state(uint32_t sector, uint32_t seq)
 {
-    static const uint8_t zero[4] = { 0u, 0u, 0u, 0u };
+    uint8_t  raw[8];
+    uint32_t crc;
 
-    return port_flash_write(sector * KV_PAGE_SIZE + 8u, zero, 4u) == 4u;
+    crc = 0u;
+    {
+        uint8_t ms[8];
+
+        wr32(ms, KV_MAGIC);
+        wr32(ms + 4, seq);
+        crc = et_crc32(ms, 8u);
+    }
+    wr32(raw, KV_STATE_COMMITTED);
+    wr32(raw + 4, crc);
+    return port_flash_write(sector * KV_PAGE_SIZE + 8u, raw, 8u) == 8u;
 }
 
 /* ---- 记录遍历 ---- */
@@ -208,7 +228,7 @@ static kv_scan_res_t page_scan(uint32_t sector, kv_visit_fn fn, void *user)
         ri.crc_ok  = rec_crc_ok(base, off + KV_REC_HDR_SIZE, len, vcrc);
 
         res.rec_cnt++;
-        off += KV_REC_HDR_SIZE + KV_ALIGN4(len);
+        off += KV_REC_SLOT(len);
         res.end_off = off;
         if (fn != NULL) {
             fn(&ri, user);
@@ -284,7 +304,7 @@ static bool kv_append(et_kv_t *kv, uint32_t dst_sector, uint32_t dst_off,
     uint32_t base = dst_sector * KV_PAGE_SIZE;
     uint32_t crc;
     uint16_t enc;
-    uint32_t n4, tail;
+    uint32_t n8, tail;
     const uint8_t *p = (const uint8_t *)val;
 
     (void)kv;
@@ -308,21 +328,26 @@ static bool kv_append(et_kv_t *kv, uint32_t dst_sector, uint32_t dst_off,
         return true;
     }
 
-    n4 = (uint32_t)len & ~3u;                   /* 整 4B 部分 */
-    if (n4 > 0u) {
-        if (port_flash_write(base + dst_off + KV_REC_HDR_SIZE, p, n4) != n4) {
+    /* payload: 起点 8B 对齐 (dst_off 为槽起点), 整双字分块直写;
+     * 余量 (0/4/8B) 以 0xFF 补齐后单笔写入 —— 其伴随字是槽内 slack,
+     * 必为未编程状态, 满足 G4 双字单次编程约束 */
+    n8 = (uint32_t)len & ~7u;                   /* 整 8B 部分 */
+    if (n8 > 0u) {
+        if (port_flash_write(base + dst_off + KV_REC_HDR_SIZE, p, n8) != n8) {
             return false;
         }
     }
-    tail = (uint32_t)len - n4;                  /* 尾部 0xFF 填充对齐 */
+    tail = KV_ALIGN4((uint32_t)len) - n8;       /* 余量 0/4/8B */
     if (tail > 0u) {
-        uint8_t t4[4] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        uint8_t t8[8] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu,
+                          0xFFu, 0xFFu, 0xFFu, 0xFFu };
         uint32_t i;
 
-        for (i = 0u; i < tail; i++) {
-            t4[i] = p[n4 + i];
+        for (i = 0u; i < ((uint32_t)len - n8); i++) {
+            t8[i] = p[n8 + i];
         }
-        if (port_flash_write(base + dst_off + KV_REC_HDR_SIZE + n4, t4, 4u) != 4u) {
+        if (port_flash_write(base + dst_off + KV_REC_HDR_SIZE + n8,
+                             t8, tail) != tail) {
             return false;
         }
     }
@@ -349,7 +374,7 @@ static void migrate_visit(const kv_recinfo_t *ri, void *user)
         rec_has_newer(m->src_sector, ri)) {
         return;                                 /* 坏记录/tombstone/旧版本: 不搬 */
     }
-    rec_size = KV_REC_HDR_SIZE + KV_ALIGN4(ri->len);
+    rec_size = KV_REC_SLOT(ri->len);
     if (!flash_copy(m->dst_base + m->dst_off, m->src_base + ri->off, rec_size)) {
         m->fail = true;
         return;
@@ -392,7 +417,7 @@ static bool kv_compact(et_kv_t *kv)
     }
 
     /* 4. 置 COMMITTED —— 页生效的最后一笔写 */
-    if (!page_commit_state(kv->alt_sector)) {
+    if (!page_commit_state(kv->alt_sector, new_seq)) {
         return false;
     }
 
@@ -457,7 +482,7 @@ bool et_kv_init(et_kv_t *kv, const et_kv_layout_t *layout)
         if (!page_write_header(layout->sector_a, 1u)) {
             return false;
         }
-        if (!page_commit_state(layout->sector_a)) {
+        if (!page_commit_state(layout->sector_a, 1u)) {
             return false;
         }
         act = layout->sector_a;
@@ -500,7 +525,7 @@ bool et_kv_format(et_kv_t *kv, const et_kv_layout_t *layout)
     if (!page_write_header(layout->sector_a, 1u)) {
         return false;
     }
-    if (!page_commit_state(layout->sector_a)) {
+    if (!page_commit_state(layout->sector_a, 1u)) {
         return false;
     }
     kv->act_sector = layout->sector_a;
@@ -526,7 +551,7 @@ bool et_kv_set(et_kv_t *kv, uint16_t key, const void *val, uint16_t len)
         return false;
     }
 
-    rec_size = KV_REC_HDR_SIZE + KV_ALIGN4(len);
+    rec_size = KV_REC_SLOT(len);
     if ((kv->write_off + rec_size) > KV_PAGE_SIZE) {
         if (!kv_compact(kv)) {
             return false;
@@ -711,7 +736,7 @@ bool et_kv_iter_next(const et_kv_t *kv, et_kv_iter_t *it,
         ri.off     = it->off;
         ri.crc_ok  = rec_crc_ok(base, it->off + KV_REC_HDR_SIZE, rlen, vcrc);
 
-        it->off += KV_REC_HDR_SIZE + KV_ALIGN4(rlen);
+        it->off += KV_REC_SLOT(rlen);
 
         /* 仅输出: CRC 有效 + 非 tombstone + 无更新版本(去重) */
         if (ri.crc_ok && (!ri.deleted) && !rec_has_newer(it->sector, &ri)) {
