@@ -93,6 +93,39 @@ jobs:
             -o build/stm32f103_demo.elf
           arm-none-eabi-size build/stm32f103_demo.elf
 
+  # STM32G474 移植编译验证 (v1.6 双平台回归, Cortex-M4, 零警告门槛):
+  # -D 三宏 = G4 flash 几何(2KB 页), port 层 #error 守卫验证漏配即编译失败
+  cross-stm32g474:
+    name: cross stm32g474
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Build stm32g474 demo
+        run: |
+          mkdir -p build
+          arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
+            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32g474 \
+            -DPORT_FLASH_SECTOR_SIZE=2048 -DPORT_FLASH_SECTOR_COUNT=16 -DPORT_FLASH_ERASE_MS_MAX=40 \
+            -T port/stm32g474/stm32g474vet6.ld -nostartfiles \
+            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
+            port/stm32g474/port_stm32g474.c port/stm32g474/startup_stm32g474.c \
+            examples/stm32g474_demo.c \
+            -o build/stm32g474_demo.elf
+          arm-none-eabi-size build/stm32g474_demo.elf
+
+      - name: Verify geometry #error guard (build without -D must fail)
+        run: |
+          if arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -std=c99 -Wall -Wextra -pedantic -Os \
+            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32g474 \
+            -c port/stm32g474/port_stm32g474.c -o /dev/null 2>/dev/null; then
+            echo "ERROR: geometry guard did not fire"; exit 1
+          fi
+          echo "geometry #error guard verified"
+
   # Renode 仿真常设门 (v1.3): headless 跑 F103 demo, 断言串口关键日志
   # (横幅 / kv stats / UTC 心跳 / boot #1 / 复位后 boot #2) —— 仿真验收
   # 从"本地截图"升级为 CI 门, v1.1 起的仿真挂账就此闭环

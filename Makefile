@@ -44,7 +44,10 @@ TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempo
 
 DEMO_SRC := examples/posix_demo.c
 
-.PHONY: all test demo clean
+# G4 flash 几何变体 (v1.6 双几何回归): storage 布局类改动必须 F1/G4 双几何全绿
+G4FLAGS := -DPORT_FLASH_SECTOR_SIZE=2048 -DPORT_FLASH_SECTOR_COUNT=16 -DPORT_FLASH_ERASE_MS_MAX=40
+
+.PHONY: all test demo test-g4 clean
 
 all: test
 
@@ -54,6 +57,14 @@ test: $(OBJDIR)/et_tests.exe
 $(OBJDIR)/et_tests.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 	-mkdir $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+
+# 双几何变体: G474 2KB 页几何下同一套用例 (与默认 F1 1KB 几何互为回归矩阵)
+test-g4: $(OBJDIR)/et_tests_g4.exe
+	./$(OBJDIR)/et_tests_g4.exe
+
+$(OBJDIR)/et_tests_g4.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(CFLAGS) $(G4FLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 
 demo: $(OBJDIR)/demo.exe
 	./$(OBJDIR)/demo.exe

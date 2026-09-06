@@ -112,6 +112,18 @@ assert_grep "README.md" "port/stm32g474"                             "根 README
 assert_grep "docs/API_GUIDE.md" "STM32G474VET6"                      "API_GUIDE 平台清单含 G474"
 assert_grep "port/stm32g474/port_stm32g474.c" "PORT_FLASH_SECTOR_SIZE != 2048" "port 层几何 #error 守卫"
 
+# ---- v1.6 双几何回归 / tickless / 升级链工具 ----
+assert_grep "Makefile" "et_tests_g4"                          "Makefile 含双几何变体目标 test-g4"
+assert_grep "README.md" "test-g4"                             "README 记载双几何变体命令"
+assert_grep ".github/workflows/ci.yml" "cross-stm32g474"      "CI 含 G474 交叉编译 job"
+assert_grep "storage/et_kv.h" "ET_KV_VAL_MAX"                 "et_kv 公开容量宏(双几何用例基石)"
+assert_grep "docs/API_GUIDE.md" "et_sched_next_due"           "API_GUIDE: sched tickless API"
+assert_grep "docs/API_GUIDE.md" "et_stimer_next_due"          "API_GUIDE: stimer tickless API"
+assert_grep "docs/API_GUIDE.md" "11.8 tickless"               "API_GUIDE: tickless 配方(WFI/RX 唤醒约束)"
+assert_grep "port/port.h" "PORT_TICK_WAIT_FOREVER"            "port.h tickless 哨兵宏"
+assert_grep "tools/xmodem_send.py" "XMODEM-CRC"               "xmodem 发送端脚本入库"
+assert_grep "移植stm32实机记录.md" "升级链真机走单"            "实机记录含升级链走单章节"
+
 echo "----------------------------------------"
 echo "docsync: pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

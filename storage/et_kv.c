@@ -40,8 +40,8 @@
 #define KV_REC_SLOT(len)    KV_ALIGN8(KV_REC_HDR_SIZE + (uint32_t)(len))
 
 #define KV_PAGE_SIZE        ((uint32_t)PORT_FLASH_SECTOR_SIZE)
-/* 单记录 payload 上限(对齐前): 页容量 - 页头 - 记录头 */
-#define KV_VAL_MAX          ((uint16_t)(KV_PAGE_SIZE - KV_HDR_SIZE - KV_REC_HDR_SIZE))
+/* 单记录 payload 上限(对齐前): 公开宏 ET_KV_VAL_MAX(et_kv.h), 页容量 - 页头 - 记录头 */
+#define KV_VAL_MAX          ((uint16_t)ET_KV_VAL_MAX)
 
 /* ---- 字节打包(小端, 平台无关) ---- */
 static uint32_t rd32(const uint8_t *p)

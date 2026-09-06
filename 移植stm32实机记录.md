@@ -89,7 +89,71 @@ ET>
 
 复现:烧录后发送 `AT+SELFTEST`(约 0.5s,期间心跳因周期追赶语义后补)。
 
-## 5. 问题记录(实机暴露 → 定位 → 修复)
+## 5. 升级链真机走单 (v1.6, ★ 核心)
+
+> 前置: 烧录 v1.6 固件(含 AT+WDTEST 与复位原因日志)。走单结果逐条回填下表;
+> xmodem 发送端工具 `tools/xmodem_send.py` 已对 host 端到端自测(128B/1K 双块型,
+> 镜像逐字节一致, 含 0x1A 尾块填充), 真机走单不依赖串口助手手工操作。
+
+### 走单 1: SIMUPGRADE even → 超次回滚
+
+```
+ET> AT+SIMUPGRADE 2      (even ver = 自检失败, 不确认)
+ET> (等待复位/手动复位)   → boot slot B attempt 1/2 → self-check FAILED
+ET> (再复位 ×2)          → attempt 递增 → ROLLBACK: attempts exhausted
+ET> AT+BOOTINFO          → staged=-1 (回滚后旧镜像续走)
+```
+| 项 | 结果 |
+|---|---|
+| attempt 计数递增 | 【待上板执行】 |
+| ROLLBACK 日志 | 【待上板执行】 |
+| 回滚后 boot 续走 | 【待上板执行】 |
+
+### 走单 2: SIMUPGRADE odd → 自检通过 → confirm
+
+```
+ET> AT+SIMUPGRADE 3      (odd ver = 自检通过)
+ET> (复位)               → boot slot B attempt 1 → CONFIRMED (self-check ok)
+ET> AT+BOOTINFO          → confirmed=1; 再复位 attempt 不再累计
+```
+| 项 | 结果 |
+|---|---|
+| stage→confirm 迁移 | 【待上板执行】 |
+| 确认后 attempt 不累计 | 【待上板执行】 |
+
+### 走单 3: AT+UPGRADE xmodem 真传输
+
+```
+ET> AT+UPGRADE
+(主机) python tools/xmodem_send.py --port COMx --baud 115200 --file 镜像.bin --verbose
+       (或 --xmodem-1k; 镜像须以 'ETBI' 头封装, 用 SIMUPGRADE 路径生成或打包工具)
+```
+| 项 | 结果 |
+|---|---|
+| 收包字节数/块数与发送端一致 | 【待上板执行】 |
+| 镜像 CRC 通过 → STAGED → 复位 | 【待上板执行】 |
+| host 预验证 | ✅ 128B/1K 双块型端到端逐字节一致(2026-09-06, tools/xmodem_send.py --emit + xmodem_host_recv) |
+
+### 走单 4: IWDG 真超时复位
+
+```
+ET> AT+WDTEST            → IWDG armed 200ms, stop feeding -> reset expected
+(~200ms 后复位)
+开机日志: reset cause: IWDG (watchdog timeout) + boot #n+1
+```
+| 项 | 结果 |
+|---|---|
+| 复位由 IWDG 触发(原因寄存器) | 【待上板执行】 |
+| 复位后 boot#n+1 / 自检正常 | 【待上板执行】 |
+
+### 走单 5: LED 极性 / 按键补录
+
+| 项 | 结果 |
+|---|---|
+| PC0 极性实测(上电 3 连闪是否可见) | 【待上板执行】 |
+| PD15 短按 → blink on / 长按 → breath on | 【待上板执行】 |
+
+## 6. 问题记录(实机暴露 → 定位 → 修复)
 
 ### 问题 1:UART RX 批量发送全丢(真机缺陷,已修复)
 
@@ -114,7 +178,7 @@ G4 flash 以 64 位双字为编程粒度且**每双字只允许编程一次**(�
 
 自测套件先在 host 预跑,修正 4 处断言预期:mempool 存储区需含位图/对齐开销;`et_lpf1` 首样本直通(primed)语义;`et_fsm` 扁平表**无源状态域**(同事件按表序首个 guard 通过者生效);list 遍历自删时被删节点不应计入访问序。修正后 host 11/11 PASS。
 
-## 6. 挂账项(未验证,如实记录)
+## 7. 挂账项(未验证,如实记录)
 
 | 项 | 状态 |
 |---|---|
@@ -125,7 +189,7 @@ G4 flash 以 64 位双字为编程粒度且**每双字只允许编程一次**(�
 | USB(源工程 PCD 初始化) | 无应用语义,未移植 |
 | Renode 仿真 | G4 模型未验证,沿用库内 F103 smoke 模式挂账 |
 
-## 7. 复现命令汇总
+## 8. 复现命令汇总
 
 ```sh
 # 构建(零警告门)

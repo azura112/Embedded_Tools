@@ -125,6 +125,34 @@ void et_stimer_poll(uint32_t now)
     }
 }
 
+port_tick_ms_t et_stimer_next_due(void)
+{
+    uint32_t    now = port_tick_get_ms();
+    uint32_t    min_rem = PORT_TICK_WAIT_FOREVER;
+    et_stimer_t *it;
+
+    PORT_CRITICAL_ENTER();
+    it = g_head;
+    while (it != NULL) {
+        if (it->running) {
+            /* 到期判定与 poll 同一算法: int32 差值 (时基回绕安全) */
+            uint32_t rem;
+
+            if ((int32_t)(now - it->expire_at) >= 0) {
+                rem = 0u;                   /* 已到期, 应立即 poll */
+            } else {
+                rem = it->expire_at - now;
+            }
+            if (rem < min_rem) {
+                min_rem = rem;
+            }
+        }
+        it = it->next;
+    }
+    PORT_CRITICAL_EXIT();
+    return min_rem;                     /* 无运行中定时器: WAIT_FOREVER */
+}
+
 void et_stimer_reset_all(void)
 {
     et_stimer_t *it;

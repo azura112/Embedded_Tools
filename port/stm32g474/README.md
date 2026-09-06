@@ -69,6 +69,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | 版本 | text | data | bss | 备注 |
 |---|---|---|---|---|
 | v1.5 | 15836 | 28 | 596 | 与 F103 demo 同全栈（含 8B 槽适配后的 kv/bootctl） |
+| v1.6 | 15944 | 28 | 596 | +tickless 增量 API（next_due×2，demo 未调用） |
 
 ## 烧录与运行
 
@@ -82,7 +83,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 
 | 项 | 状态 |
 |---|---|
-| host 回归 | ✅ 279 例 ALL PASS（含 kv/bootctl 8B 槽适配后的掉电矩阵） |
+| host 回归 | ✅ 291 例 ALL PASS（含 kv/bootctl 8B 槽适配后的掉电矩阵） |
 | ARM 编译 | ✅ 零警告（GNU Tools for STM32 13.3.rel1） |
 | **真机实测** | ✅ **G474VET6 上板通过**（boot #n 跨上电递增、AT 交互、AT+SELFTEST 13/13）——经 CubeMX/HAL 集成版 port（同 port.h 契约,HAL_GetTick/HAL_FLASH 实现）完成,记录见 `D:\code\STM32CubeMX\G474VET6_ET_TEST\移植stm32实机记录.md`;**本目录裸机 port 本体未单独上板** |
 | Renode 仿真 | 挂账（G4 平台模型待验证,模式参照 `port/stm32f103/renode/`） |

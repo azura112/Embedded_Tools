@@ -36,6 +36,11 @@ extern "C" {
 /* 用户 key 上限: [1, ET_KV_KEY_MAX]; 0x7FFF 保留(0xFFFF 为"未写"哨兵, 见决议 C) */
 #define ET_KV_KEY_MAX           ((uint16_t)0x7FFEu)
 
+/* 单记录 payload 上限(字节) = 页大小 - 页头(16) - 记录头(8)。
+ * 随 flash 几何宏(-DPORT_FLASH_SECTOR_SIZE)变化, 调用方据它定缓冲/校验长度,
+ * v1.6 起公开 —— 双几何回归的教训: 用例不得硬编码容量数字。 */
+#define ET_KV_VAL_MAX           ((uint32_t)PORT_FLASH_SECTOR_SIZE - 24u)
+
 typedef struct {
     uint32_t sector_a;      /* 参数区内扇区序号, < PORT_FLASH_SECTOR_COUNT */
     uint32_t sector_b;      /* 与 sector_a 不同 */

@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "et_config.h"
+#include "port.h"           /* port_tick_ms_t / PORT_TICK_WAIT_FOREVER (tickless) */
 
 #if ET_MODULE_SCHED
 
@@ -48,6 +49,15 @@ bool et_sched_unregister(et_task_t *t);
 
 /* 扫描一遍到期任务并逐个执行后返回(非阻塞, 适合主循环 + WFI 低功耗模式) */
 void et_sched_poll_once(void);
+
+/* tickless: 最近到期任务还需多少毫秒(相对值, 0=已到期应立即 poll_once);
+ * 无注册任务返回 PORT_TICK_WAIT_FOREVER。跨回绕用无符号减法; 注销任务后
+ * 下次调用自然重算。🏠MAIN(与模块其余 API 同上下文约束)。
+ *
+ * ⚠ WFI 配对约束: 依返回值休眠前必须确保唤醒源已使能(串口 RX 中断等)。
+ *   "RX 轮询 + WFI"会丢失睡眠窗口内的字节 —— G474 实机教训,
+ *   见 移植stm32实机记录.md 问题1 与 API_GUIDE tickless 配方。 */
+port_tick_ms_t et_sched_next_due(void);
 
 /* 复位: 注销全部任务(热复位场景/测试隔离用) */
 void et_sched_reset(void);

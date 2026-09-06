@@ -57,6 +57,7 @@ arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bi
 | v1.3 | 11208 | 4 | 276 | +et_fsm（demo 含 kv 重启计数） |
 | v1.4 | 12276 | 4 | 276 |
 | v1.5 | 15468 | 24 | 596 | +et_xmodem+et_shell；kv/bootctl 8B 槽适配（G474 双字约束）后复测 |
+| v1.6 | 15576 | 24 | 596 | +tickless 增量 API（next_due×2，demo 未调用；-nostartfiles 无 gc-sections 全量入 ELF） |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 
@@ -89,7 +90,7 @@ CI：`.github/workflows/ci.yml` 的 `renode-smoke` job（Renode 固定 1.16.1，
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟 flash+时基单测） | ✅ 279 用例 | v1.0 起 |
+| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟 flash+时基单测） | ✅ 291 用例 | v1.0 起 |
 | STM32F103C8T6 (arm-none-eabi-gcc 13.3) | ✅ 零警告 | ✅ Renode smoke（本机+CI 门） | 待硬件（常设挂账，**不阻塞发布**） | v1.1 编译 / v1.3 仿真闭环 |
 
 > **v1.3 政策**：Renode CI 门作为 F103 的功能验收线（断言 kv/重启计数等日志）；真机记录转常设挂账，硬件到位后按 checklist 补录（重启计数 `boot #n` 递增即为最直观验收），不再随版本顺延阻塞。

@@ -27,6 +27,10 @@ extern "C" {
 
 typedef uint32_t port_tick_ms_t;
 
+/* tickless 语义: "无近期到期者"的哨兵值 (et_sched_next_due / et_stimer_next_due)。
+ * 睡眠时长须另受唤醒源约束 —— 串口 RX 中断等必须保持使能, 见 API_GUIDE 配方。 */
+#define PORT_TICK_WAIT_FOREVER  0xFFFFFFFFu
+
 /* 进入临界区: 保存并关闭中断(或等效机制), 与 EXIT 必须成对且可嵌套 */
 #define PORT_CRITICAL_ENTER()   port_critical_enter()
 #define PORT_CRITICAL_EXIT()    port_critical_exit()

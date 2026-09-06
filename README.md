@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.5.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.5开发计划：安全升级与运行防护.md](v1.5开发计划：安全升级与运行防护.md)**
+> 当前版本：**v1.6.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[v1.6开发计划：升级链真机闭环与双平台回归.md](v1.6开发计划：升级链真机闭环与双平台回归.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -44,7 +44,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 279 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
+├── test/              # 迷你框架 + 291 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -60,6 +60,8 @@ gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Ialgorithm -Isys -Iprotocol -Id
     -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
     port/host/port_host.c test/*.c
 ./build/et_tests.exe
+
+make test-g4 # v1.6 双几何回归: G474 2KB 页几何下同一套用例（storage 布局改动必须双几何全绿）
 
 make demo    # 全栈演示（虚拟 UART + 定时器 + 按键 + LED + kv）
 ```
@@ -144,11 +146,11 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，279 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，291 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（279 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（291 例）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译 × **Renode F103 仿真 smoke（断言 kv/重启计数日志）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。

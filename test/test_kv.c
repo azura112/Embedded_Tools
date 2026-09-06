@@ -137,6 +137,7 @@ static void kv_set_get_roundtrip(void)
 
 static void kv_set_validation(void)
 {
+    static uint8_t big[ET_KV_VAL_MAX + 1u];     /* 供拒绝路径引用, 不被读取 */
     uint8_t  v = 1u;
     uint32_t before = port_host_flash_written();
 
@@ -146,7 +147,7 @@ static void kv_set_validation(void)
     ET_CHECK(!et_kv_set(&g_kv, 0x7FFFu, &v, 1u));       /* 保留 key(哨兵冲突) */
     ET_CHECK(!et_kv_set(&g_kv, (uint16_t)(ET_KV_KEY_MAX + 1u), &v, 1u));
     ET_CHECK(!et_kv_set(&g_kv, 1u, NULL, 5u));          /* NULL 值 */
-    ET_CHECK(!et_kv_set(&g_kv, 1u, &v, 1001u));         /* 超单记录上限(1000) */
+    ET_CHECK(!et_kv_set(&g_kv, 1u, big, (uint16_t)(ET_KV_VAL_MAX + 1u)));
     ET_CHECK_U32_EQ(before, port_host_flash_written()); /* 全部拒绝, 零写入 */
 }
 
@@ -339,16 +340,16 @@ static void kv_auto_compact_on_full(void)
 
 static void kv_overlong_rejected(void)
 {
-    static uint8_t v[1024];
+    static uint8_t v[ET_KV_VAL_MAX + 1u];
 
     kv_fresh();
-    fill_buf(v, 1000u, 7u);
-    ET_CHECK(et_kv_set(&g_kv, 1u, v, 1000u));           /* 恰好填满整页 */
-    ET_CHECK_U32_EQ(1000u, et_kv_size(&g_kv, 1u));
+    fill_buf(v, ET_KV_VAL_MAX, 7u);
+    ET_CHECK(et_kv_set(&g_kv, 1u, v, ET_KV_VAL_MAX));   /* 恰好达单记录上限 */
+    ET_CHECK_U32_EQ(ET_KV_VAL_MAX, et_kv_size(&g_kv, 1u));
     kv_reopen();                                        /* 重启仍在 */
-    ET_CHECK_U32_EQ(1000u, et_kv_size(&g_kv, 1u));
+    ET_CHECK_U32_EQ(ET_KV_VAL_MAX, et_kv_size(&g_kv, 1u));
 
-    ET_CHECK(!et_kv_set(&g_kv, 2u, v, 1001u));          /* 超长拒绝 */
+    ET_CHECK(!et_kv_set(&g_kv, 2u, v, (uint16_t)(ET_KV_VAL_MAX + 1u)));  /* 超长拒绝 */
 }
 
 static void kv_get_buffer_short(void)
@@ -631,32 +632,36 @@ static void pcut_erase_half_sector(void)
     static uint8_t v[16], out[16];
     uint8_t *mem;
     uint32_t i;
+    uint32_t half;      /* 页半区(几何相对): 半擦只擦前半 */
+    uint32_t n1;        /* A 页记录数: 记录区尾越过半区 */
 
     kv_fresh();
     fill_buf(v, 16u, 6u);
-    for (i = 0u; i < 30u; i++) {                        /* A: 30x24B = 720B 存活 */
+    half = SZ / 2u;
+    n1 = ((half - 16u) / 24u) + 2u;                     /* 槽 24B(头8+值16) */
+    for (i = 0u; i < n1; i++) {                         /* A: n1 条存活, 尾越过 half */
         v[0] = (uint8_t)i;
         ET_CHECK(et_kv_set(&g_kv, (uint16_t)(i + 1u), v, 16u));
     }
-    ET_CHECK(et_kv_commit(&g_kv));                      /* → B 活跃, A 残留 720B 旧数据 */
+    ET_CHECK(et_kv_commit(&g_kv));                      /* → B 活跃, A 残留旧数据 */
 
-    /* 残留区 [512, 736) 篡改为全 0: 半擦后这部分未被擦除,
+    /* 残留区 [half, 16+n1*24) 篡改为全 0: 半擦后这部分未被擦除,
        搬迁写入的任何非 0 字节都触发位写违约(0 不可写成 1) */
     mem = port_host_flash_mem(PAGE_A * SZ);
     ET_CHECK(mem != NULL);
-    memset(mem + SZ / 2u, 0x00, (720u + 16u) - SZ / 2u);
+    memset(mem + half, 0x00, (16u + n1 * 24u) - half);
 
-    for (i = 30u; i < 40u; i++) {                       /* B: +10 条 (合计 960B) */
+    for (i = n1; i < (n1 + 10u); i++) {                 /* B: +10 条 */
         v[0] = (uint8_t)i;
         ET_CHECK(et_kv_set(&g_kv, (uint16_t)(i + 1u), v, 16u));
     }
 
-    port_host_flash_erase_fail_once();                  /* 擦 A 只擦前 512B → 残留 0x00 区 */
-    ET_CHECK(!et_kv_commit(&g_kv));                     /* 搬迁跨 512B 写违约 → 失败 */
+    port_host_flash_erase_fail_once();                  /* 擦 A 只擦前半 → 残留 0x00 区 */
+    ET_CHECK(!et_kv_commit(&g_kv));                     /* 搬迁跨半区写违约 → 失败 */
 
     kv_reopen();                                        /* A 页头 MOVING/半擦 → 弃用 */
     ET_CHECK_U32_EQ(2u, g_kv.act_seq);                  /* B(seq=2) 数据完好 */
-    for (i = 0u; i < 40u; i++) {
+    for (i = 0u; i < (n1 + 10u); i++) {
         ET_CHECK(et_kv_get(&g_kv, (uint16_t)(i + 1u), out, sizeof(out), NULL));
         ET_CHECK_U32_EQ((uint32_t)(uint8_t)i, out[0]); /* v[0] = i */
         ET_CHECK(buf_is(out + 1u, 15u, 7u));            /* 其余 = 7..21 */

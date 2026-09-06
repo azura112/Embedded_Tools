@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "et_config.h"
+#include "port.h"           /* port_tick_ms_t / PORT_TICK_WAIT_FOREVER (tickless) */
 
 #if ET_MODULE_STIMER
 
@@ -59,6 +60,16 @@ bool et_stimer_is_running(const et_stimer_t *t);
 
 /* 分发所有到期回调; now 为当前毫秒时基(通常传 port_tick_get_ms()) */
 void et_stimer_poll(uint32_t now);
+
+/* tickless: 最近到期定时器还需多少毫秒(相对值, 0=已到期应立即 poll);
+ * 无运行中定时器返回 PORT_TICK_WAIT_FOREVER。到期判定与 poll 同一算法
+ * (int32 差值), ISR 启停后下次调用自然重算。🏠MAIN(只读遍历, 内部临界区)。
+ *
+ * ⚠ WFI 配对约束: 依返回值休眠前必须确保唤醒源已使能(串口 RX 中断等)。
+ *   "RX 轮询 + WFI"会丢失睡眠窗口内的字节 —— G474 实机教训,
+ *   见 移植stm32实机记录.md 问题1 与 API_GUIDE tickless 配方。
+ * 注: 单次延迟/周期 ≥ 2^31 ms 本模块不支持, 不会与 WAIT_FOREVER 哨兵混淆。 */
+port_tick_ms_t et_stimer_next_due(void);
 
 /* 复位模块: 解除全部注册并停止全部定时器(热复位场景/测试隔离用) */
 void et_stimer_reset_all(void);

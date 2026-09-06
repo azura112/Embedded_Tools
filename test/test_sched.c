@@ -156,6 +156,81 @@ static void sc_reset_clears_all(void)
     ET_CHECK_U32_EQ(1u, g_run_c);
 }
 
+/* ---- tickless: et_sched_next_due (v1.6) ---- */
+
+static void sc_next_due_empty(void)
+{
+    setup();
+    ET_CHECK_U32_EQ(PORT_TICK_WAIT_FOREVER, et_sched_next_due());
+}
+
+static void sc_next_due_single(void)
+{
+    static et_task_t t;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 100u));
+    ET_CHECK_U32_EQ(100u, et_sched_next_due());         /* 注册时刻起算 */
+    port_host_tick_advance(40u);
+    ET_CHECK_U32_EQ(60u, et_sched_next_due());
+    port_host_tick_advance(60u);
+    ET_CHECK_U32_EQ(0u, et_sched_next_due());           /* 已到期 → 立即 poll */
+}
+
+static void sc_next_due_min_of_multi(void)
+{
+    static et_task_t ta;
+    static et_task_t tb;
+
+    setup();
+    ET_CHECK(et_sched_register(&ta, cb_run_a, NULL, 100u));
+    ET_CHECK(et_sched_register(&tb, cb_run_b, NULL, 30u));
+    ET_CHECK_U32_EQ(30u, et_sched_next_due());          /* 取最近到期者 */
+    port_host_tick_advance(30u);
+    ET_CHECK_U32_EQ(0u, et_sched_next_due());           /* tb 已到期 → 0 */
+    ET_CHECK(et_sched_unregister(&tb));
+    ET_CHECK_U32_EQ(70u, et_sched_next_due());          /* 注销后看 ta */
+}
+
+static void sc_next_due_unregister_recalc(void)
+{
+    static et_task_t ta;
+    static et_task_t tb;
+
+    setup();
+    ET_CHECK(et_sched_register(&ta, cb_run_a, NULL, 100u));
+    ET_CHECK(et_sched_register(&tb, cb_run_b, NULL, 30u));
+    ET_CHECK(et_sched_unregister(&tb));
+    ET_CHECK_U32_EQ(100u, et_sched_next_due());         /* 注销后重算 */
+}
+
+static void sc_next_due_matches_poll(void)
+{
+    static et_task_t t;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    port_host_tick_advance(10u);
+    ET_CHECK_U32_EQ(0u, et_sched_next_due());
+    et_sched_poll_once();                               /* poll 重锚定 last_run */
+    ET_CHECK_U32_EQ(10u, et_sched_next_due());          /* 下一周期重新起算 */
+    ET_CHECK_U32_EQ(1u, g_run_a);
+}
+
+static void sc_next_due_wraparound(void)
+{
+    static et_task_t t;
+
+    setup();
+    port_host_tick_set(0xFFFFFFF0u);                    /* 距回绕 16ms */
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 32u));
+    ET_CHECK_U32_EQ(32u, et_sched_next_due());          /* 周期跨回绕仍正确 */
+    port_host_tick_advance(0x20u);                      /* 回绕到 0x10 */
+    ET_CHECK_U32_EQ(0u, et_sched_next_due());           /* elapsed=32(无符号) */
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(1u, g_run_a);
+}
+
 const et_test_case_t *test_sched_cases(size_t *count)
 {
     static const et_test_case_t tbl[] = {
@@ -166,6 +241,12 @@ const et_test_case_t *test_sched_cases(size_t *count)
         {"sched.missed_absorbed",      sc_missed_periods_absorbed},
         {"sched.reregister_ok",        sc_reregister_after_unregister},
         {"sched.reset_clears",         sc_reset_clears_all},
+        {"sched.next_due_empty",       sc_next_due_empty},
+        {"sched.next_due_single",      sc_next_due_single},
+        {"sched.next_due_min_multi",   sc_next_due_min_of_multi},
+        {"sched.next_due_recalc",      sc_next_due_unregister_recalc},
+        {"sched.next_due_match_poll",  sc_next_due_matches_poll},
+        {"sched.next_due_wraparound",  sc_next_due_wraparound},
     };
     *count = sizeof(tbl) / sizeof(tbl[0]);
     return tbl;

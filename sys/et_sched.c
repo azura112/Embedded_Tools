@@ -95,6 +95,25 @@ void et_sched_poll_once(void)
     }
 }
 
+port_tick_ms_t et_sched_next_due(void)
+{
+    uint32_t    now = port_tick_get_ms();
+    et_task_t  *it  = g_head;
+    uint32_t    min_rem = PORT_TICK_WAIT_FOREVER;
+
+    while (it != NULL) {
+        /* 与 poll_once 相同的无符号回绕算法: elapsed 已越过周期 → 0 */
+        uint32_t elapsed = now - it->last_run;
+        uint32_t rem = (elapsed >= it->period_ms) ? 0u
+                                                  : (it->period_ms - elapsed);
+        if (rem < min_rem) {
+            min_rem = rem;
+        }
+        it = it->next;
+    }
+    return min_rem;                     /* 空表: PORT_TICK_WAIT_FOREVER */
+}
+
 void et_sched_reset(void)
 {
     et_task_t *it = g_head;

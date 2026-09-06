@@ -212,6 +212,87 @@ static void st_u32_wraparound(void)
     ET_CHECK_U32_EQ(5u, g_cnt_a);
 }
 
+/* ---- tickless: et_stimer_next_due (v1.6) ---- */
+
+static void st_next_due_empty(void)
+{
+    setup();
+    ET_CHECK_U32_EQ(PORT_TICK_WAIT_FOREVER, et_stimer_next_due());
+}
+
+static void st_next_due_oneshot(void)
+{
+    static et_stimer_t t;
+
+    setup();
+    ET_CHECK(et_stimer_init(&t, cb_inc_a, NULL));
+    ET_CHECK(et_stimer_start_oneshot(&t, 50u));
+    ET_CHECK_U32_EQ(50u, et_stimer_next_due());
+    port_host_tick_advance(20u);
+    ET_CHECK_U32_EQ(30u, et_stimer_next_due());
+    port_host_tick_advance(30u);
+    ET_CHECK_U32_EQ(0u, et_stimer_next_due());          /* 已到期 → 立即 poll */
+    et_stimer_poll(port_host_tick_now());
+    ET_CHECK_U32_EQ(1u, g_cnt_a);
+    ET_CHECK_U32_EQ(PORT_TICK_WAIT_FOREVER, et_stimer_next_due());  /* 单次后空表 */
+}
+
+static void st_next_due_periodic(void)
+{
+    static et_stimer_t t;
+
+    setup();
+    ET_CHECK(et_stimer_init(&t, cb_inc_a, NULL));
+    ET_CHECK(et_stimer_start_periodic(&t, 20u));
+    port_host_tick_advance(20u);
+    ET_CHECK_U32_EQ(0u, et_stimer_next_due());
+    et_stimer_poll(port_host_tick_now());               /* 追赶: expire_at += 周期 */
+    ET_CHECK_U32_EQ(20u, et_stimer_next_due());         /* 下一周期重新起算 */
+    ET_CHECK_U32_EQ(1u, g_cnt_a);
+}
+
+static void st_next_due_min_multi(void)
+{
+    static et_stimer_t ta;
+    static et_stimer_t tb;
+
+    setup();
+    ET_CHECK(et_stimer_init(&ta, cb_inc_a, NULL));
+    ET_CHECK(et_stimer_init(&tb, cb_inc_b, NULL));
+    ET_CHECK(et_stimer_start_oneshot(&ta, 50u));
+    ET_CHECK(et_stimer_start_periodic(&tb, 10u));
+    ET_CHECK_U32_EQ(10u, et_stimer_next_due());         /* 取最近到期者 */
+    ET_CHECK(et_stimer_stop(&tb));
+    ET_CHECK_U32_EQ(50u, et_stimer_next_due());         /* stop 后重算 */
+}
+
+static void st_next_due_isr_stop_recalc(void)
+{
+    static et_stimer_t t;
+
+    setup();
+    ET_CHECK(et_stimer_init(&t, cb_inc_a, NULL));
+    ET_CHECK(et_stimer_start_oneshot(&t, 40u));
+    ET_CHECK_U32_EQ(40u, et_stimer_next_due());
+    (void)et_stimer_stop(&t);                           /* stop(🏠/🔒皆可) */
+    ET_CHECK_U32_EQ(PORT_TICK_WAIT_FOREVER, et_stimer_next_due());  /* 重算 */
+}
+
+static void st_next_due_wraparound(void)
+{
+    static et_stimer_t t;
+
+    setup();
+    port_host_tick_set(0xFFFFFFF0u);                    /* 距回绕 16ms */
+    ET_CHECK(et_stimer_init(&t, cb_inc_a, NULL));
+    ET_CHECK(et_stimer_start_oneshot(&t, 16u));         /* expire_at 恰跨回绕点 */
+    ET_CHECK_U32_EQ(16u, et_stimer_next_due());
+    port_host_tick_advance(0x10u);                      /* 回绕到 0x0 */
+    ET_CHECK_U32_EQ(0u, et_stimer_next_due());
+    et_stimer_poll(port_host_tick_now());
+    ET_CHECK_U32_EQ(1u, g_cnt_a);
+}
+
 const et_test_case_t *test_stimer_cases(size_t *count)
 {
     static const et_test_case_t tbl[] = {
@@ -225,6 +306,12 @@ const et_test_case_t *test_stimer_cases(size_t *count)
         {"stimer.multi_independent",   st_multi_timers_independent},
         {"stimer.cb_mutates_list",     st_callback_mutates_list},
         {"stimer.u32_wraparound",      st_u32_wraparound},
+        {"stimer.next_due_empty",      st_next_due_empty},
+        {"stimer.next_due_oneshot",    st_next_due_oneshot},
+        {"stimer.next_due_periodic",   st_next_due_periodic},
+        {"stimer.next_due_min_multi",  st_next_due_min_multi},
+        {"stimer.next_due_stop_recalc", st_next_due_isr_stop_recalc},
+        {"stimer.next_due_wraparound", st_next_due_wraparound},
     };
     *count = sizeof(tbl) / sizeof(tbl[0]);
     return tbl;

@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v1.5.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v1.6.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -353,6 +353,7 @@ et_fsm_state(&led_fsm);                          /* ST_ON */
 | `bool et_stimer_stop(t)` | 🔒ISR | 未在运行返回 false |
 | `bool et_stimer_is_running(t)` | 读 | 状态 |
 | `void et_stimer_poll(now)` | 🏠MAIN | 分发全部到期回调，now 通常取 `port_tick_get_ms()` |
+| `port_tick_ms_t et_stimer_next_due(void)` | 🏠MAIN | v1.6 tickless：最近到期定时器剩余毫秒（0=已到期应立即 poll）；无运行中定时器返回 `PORT_TICK_WAIT_FOREVER` |
 | `void et_stimer_reset_all(void)` | 🏠MAIN | 解除全部注册并停止（热复位场景） |
 
 **周期追赶语义**：错过多个周期时逐次补发（平均频率不变）。若不希望停顿后出现补发脉冲，请改用单次模式自行重挂载。
@@ -382,6 +383,7 @@ while (1) {
 | `bool et_sched_register(t, fn, arg, period_ms)` | 🏠MAIN | period ≥ 1；重复注册同一任务拒绝 |
 | `bool et_sched_unregister(t)` | 🏠MAIN | 未注册返回 false |
 | `void et_sched_poll_once(void)` | 🏠MAIN | 扫描并执行一遍到期任务后返回（非阻塞，可配 WFI） |
+| `port_tick_ms_t et_sched_next_due(void)` | 🏠MAIN | v1.6 tickless：最近到期任务剩余毫秒（0=已到期应立即 poll_once）；无注册任务返回 `PORT_TICK_WAIT_FOREVER` |
 | `void et_sched_reset(void)` | 🏠MAIN | 注销全部 |
 
 ⚠️ 与 stimer 不同，本模块**全部 API 仅限主循环**——因此内部零临界区。ISR 与调度任务的交互请走 `et_event` 或 `et_queue`。
@@ -932,7 +934,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 279 用例 | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 291 用例 | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
 | STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 
@@ -1130,3 +1132,27 @@ bool burn_all(void) {
 ```
 
 升级链路总配方：shell `AT+UPGRADE` → et_xmodem（sink=port_flash_write 写槽）→ `et_bootctl_verify_image` → `stage` → 复位 → 引导决策（`boot_attempt`/`should_rollback`/`confirm`），完整演示见 `examples/stm32f103_demo.c`。
+
+### 11.8 tickless 休眠（next_due + WFI，v1.6）
+
+`et_sched_next_due()` / `et_stimer_next_due()` 返回"距最近到期还有多少 ms"（0 = 已到期应立即 poll），主循环据此决定睡多久：
+
+```c
+for (;;) {
+    uint32_t wait = et_sched_next_due();
+    uint32_t t_wait = et_stimer_next_due();
+    if (t_wait < wait) wait = t_wait;
+
+    if (wait == 0u) {
+        /* 已有到期者: 先处理再算 */
+    } else if (wait != PORT_TICK_WAIT_FOREVER) {
+        /* 按 wait 配置低功耗定时唤醒（如 SysTick 比较匹配 / LPTIM）后 WFI */
+    } else {
+        /* 无任何到期项: 仅保留事件类唤醒源, 睡到中断 */
+    }
+    et_sched_poll_once();
+    et_stimer_poll(port_tick_get_ms());
+}
+```
+
+**⚠ WFI 配对约束（G474 实机教训，必查项）**：休眠前必须确认**串口 RX 中断等唤醒源已使能**。反例：v1.5 的 G474 demo 曾用"主循环轮询 RXNE + 每 1ms WFI"——RDR 只有 1 字节深度，睡眠窗口内到达的字节全部溢出丢失，批量发送必然残缺（完整复盘见 `移植stm32实机记录.md` 问题 1）。正确姿势：**RX 中断 = 唤醒源**，ISR 把字节写入 `et_ringbuf` 并置 `et_event`，WFI 被唤醒后主循环排空环再 poll。投喂流程 = 中断置事件 → WFI 醒 → poll；事件未置且 next_due 未到才继续睡。
