@@ -42,7 +42,7 @@ TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempo
             test/test_stimer.c test/test_sched.c test/test_event.c test/test_softclock.c \
             test/test_crc.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_shell.c test/test_shell_hist.c \
             test/test_key.c test/test_led.c test/test_spwm.c \
-            test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c 
+            test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c \
             test/test_selftest.c test/test_main.c
 
 DEMO_SRC := examples/posix_demo.c
