@@ -489,6 +489,10 @@ int main(void)
     ET_LOGI("demo", "Embedded_Tools v%s (0x%x)",
             ET_VERSION_STRING, (unsigned)ET_VERSION);
 
+    /* v1.8: 开机自跑库级 selftest (Renode smoke 断言载体;
+     * 15 PASS + 2 SKIP —— kv/bootctl 为破坏性存储套件, 默认门控跳过) */
+    (void)et_selftest_run_all(st_selftest_report, NULL);
+
     kv_boot_setup();                        /* et_kv + 重启计数 + 时间恢复 */
     boot_flow();                            /* v1.5: staged 槽引导决策段 */
 
