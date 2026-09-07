@@ -89,69 +89,100 @@ ET>
 
 复现:烧录后发送 `AT+SELFTEST`(约 0.5s,期间心跳因周期追赶语义后补)。
 
-## 5. 升级链真机走单 (v1.6, ★ 核心)
+### 4.5 AT+SELFTEST 库化版板上记录 —— **17/17 PASS**(2026-09-08 v1.9.0 固件收口,v1.7 DoD)
 
-> 前置: 烧录 v1.6 固件(含 AT+WDTEST 与复位原因日志)。走单结果逐条回填下表;
-> xmodem 发送端工具 `tools/xmodem_send.py` 已对 host 端到端自测(128B/1K 双块型,
-> 镜像逐字节一致, 含 0x1A 尾块填充), 真机走单不依赖串口助手手工操作。
+v1.7 交付的 `debug/et_selftest` 库组件在 G474 真机正式跑通(取代 §4.4 私有版 13 套件;
+xmodem 套件为 v1.8 升级版 **tx→rx 内存回环**,新增 atcmd/shell/kv/bootctl 覆盖):
+
+| 套件 | 结果 | 套件 | 结果 |
+|---|---|---|---|
+| ringbuf / queue / mempool / list | PASS | filter / fsm / sched / event | PASS |
+| stimer / crc / frame / softclock | PASS | wdt / atcmd | PASS |
+| xmodem(tx→rx 回环) | PASS | kv / bootctl | SKIP(存储门控,默认裁剪) |
+
+- 汇总行:`SELFTEST: 17/17 PASS`(15 PASS + 2 SKIP 计入),全程 **59ms**(17 套件);
+- `AT+SELFSTOR`(破坏性存储套件实跑):`kv PASS` + `bootctl PASS` → `STORAGE SELFTEST PASS`,
+  收尾 demo kv 自动重建(`kv: seq=1 …`、boot 计数归 1)——bootctl 套件含 v1.9 干净态修复(问题 8)。
+
+### 4.6 tickless + RX 中断唤醒板面验证(v1.8 DoD,2026-09-08)
+
+主循环为 tickless(next_due 门控 + WFI,RX 中断 = 唤醒源):深空闲 ≥20s(约 10 个心跳周期)
+后敲 `AT+VER` **立即应答**(`ver=1.9.0 boot=1`),心跳/软时钟全程无丢拍——
+RX 中断唤醒链路在 v1.9 固件上实证(问题 1 的修法经三版迭代最终板面闭环)。
+
+## 5. 升级链真机走单 (v1.6, ★ 核心) —— 2026-09-08 收口执行
+
+> 会话工具链(本版自动化): STM32CubeProgrammer CLI **v2.19.0**(ST-Link V2J47,烧录+`-Rst`) ×
+> CH343 USB 串口 COM12 × Python 3.12 + pyserial 自研控制台(命令/复位窗口连续采集) ×
+> `tools/pack_image.py` + `tools/xmodem_send.py`(走单 3 发送端)。
+> 固件: v1.9.0(`0x10900`) 正式记录;走单暴露的 8 处缺陷(问题 3~10)修复全部由本版合入,全部由本版合入。
 
 ### 走单 1: SIMUPGRADE even → 超次回滚
 
 ```
-ET> AT+SIMUPGRADE 2      (even ver = 自检失败, 不确认)
-ET> (等待复位/手动复位)   → boot slot B attempt 1/2 → self-check FAILED
-ET> (再复位 ×2)          → attempt 递增 → ROLLBACK: attempts exhausted
-ET> AT+BOOTINFO          → staged=-1 (回滚后旧镜像续走)
+ET> AT+SIMUPGRADE 2        → [at] sim image ver=2 written → STAGED slot B, rebooting
+(复位 #1)                  → [boot] boot slot 1 attempt 1 → self-check FAILED (even ver), not confirmed
+(复位 #2)                  → [boot] boot slot 1 attempt 2 → [boot] ROLLBACK: attempts exhausted
+(复位 #3)                  → [boot] no staged slot
+ET> AT+BOOTINFO            → staged=-1 confirmed=-1 attempts=0
 ```
 | 项 | 结果 |
 |---|---|
-| attempt 计数递增 | 【待上板执行】 |
-| ROLLBACK 日志 | 【待上板执行】 |
-| 回滚后 boot 续走 | 【待上板执行】 |
+| attempt 计数递增 | ✅ attempt 1 → 2(两次复位日志逐行实证) |
+| ROLLBACK 日志 | ✅ `ROLLBACK: attempts exhausted`(max_attempts=2,第 2 次失败即回滚) |
+| 回滚后 boot 续走 | ✅ 第三次复位 `no staged slot`,BOOTINFO 全清零,旧镜像续走 |
 
 ### 走单 2: SIMUPGRADE odd → 自检通过 → confirm
 
 ```
-ET> AT+SIMUPGRADE 3      (odd ver = 自检通过)
-ET> (复位)               → boot slot B attempt 1 → CONFIRMED (self-check ok)
-ET> AT+BOOTINFO          → confirmed=1; 再复位 attempt 不再累计
+ET> AT+SIMUPGRADE 3        → STAGED → (复位) → [boot] attempt 1 → [boot] slot 1 CONFIRMED (self-check ok)
+(再复位)                   → [boot] boot slot 1 attempt 0   ← 已确认槽不再计数
+ET> AT+BOOTINFO            → staged=1 confirmed=1 attempts=1 (恒定)
 ```
 | 项 | 结果 |
 |---|---|
-| stage→confirm 迁移 | 【待上板执行】 |
-| 确认后 attempt 不累计 | 【待上板执行】 |
+| stage→confirm 迁移 | ✅ attempt 1 自检(奇数版本判据)通过 → CONFIRMED 日志 |
+| 确认后 attempt 不累计 | ✅ 再复位 `attempt 0`、attempts 冻结于 1(staged 保留=已确认语义,见 et_bootctl.h 状态机) |
 
 ### 走单 3: AT+UPGRADE xmodem 真传输
 
 ```
-ET> AT+UPGRADE
-(主机) python tools/xmodem_send.py --port COMx --baud 115200 --file 镜像.bin --verbose
-       (或 --xmodem-1k; 镜像须以 'ETBI' 头封装, 用 SIMUPGRADE 路径生成或打包工具)
+ET> AT+UPGRADE                        → [at] send image via XMODEM-CRC (slot B)...
+(主机) python tools/xmodem_send.py --port COM12 --file image.bin --timeout 60 --verbose
+       → transfer done: 1932 bytes in 16 blocks (exit 0, CRC16 逐块 ACK, EOT 二段确认)
+(板上) verify → abandon→STAGED → 复位 → [boot] attempt 1 → [boot] slot 1 CONFIRMED
 ```
 | 项 | 结果 |
 |---|---|
-| 收包字节数/块数与发送端一致 | 【待上板执行】 |
-| 镜像 CRC 通过 → STAGED → 复位 | 【待上板执行】 |
-| host 预验证 | ✅ 128B/1K 双块型端到端逐字节一致(2026-09-06, tools/xmodem_send.py --emit + xmodem_host_recv) |
+| 收包字节数/块数与发送端一致 | ✅ host `1932 bytes in 16 blocks` = 板端 `total=1932`(32B ETBI 头+1900B 体;镜像经 `tools/pack_image.py` 打包,ver=7 奇数) |
+| 镜像 CRC 通过 → STAGED → 复位 | ✅ `et_bootctl_verify_image` 通过 → STAGED → 复位后自检 CONFIRMED |
+| host 预验证 | ✅ 128B/1K 双块型端到端逐字节一致(2026-09-06,`--emit` + xmodem_host_recv) |
+| 附注 | 槽容量=1 扇区(2KB),镜像上限 `slot_size−32`=2016B;`xm_sink` 本版加越界守卫(问题 6) |
 
 ### 走单 4: IWDG 真超时复位
 
 ```
-ET> AT+WDTEST            → IWDG armed 200ms, stop feeding -> reset expected
+ET> AT+WDTEST              → [at] IWDG armed 200ms, stop feeding -> reset expected (命令不复返)
 (~200ms 后复位)
-开机日志: reset cause: IWDG (watchdog timeout) + boot #n+1
+开机日志: [demo] reset cause: IWDG (watchdog timeout) + kv/boot 正常续走
 ```
 | 项 | 结果 |
 |---|---|
-| 复位由 IWDG 触发(原因寄存器) | 【待上板执行】 |
-| 复位后 boot#n+1 / 自检正常 | 【待上板执行】 |
+| 复位由 IWDG 触发(原因寄存器) | ✅ RCC IWDGRSTF 经 `reset cause: IWDG` 日志读出(判据先于 SFTRST 检查) |
+| 复位后 boot#n+1 / 自检正常 | ✅ boot 计数 +1、kv/升级链照常(此前一次 WDTEST 后进入自愈喂狗,见问题 7/10) |
+| 附加证据 | IWDG 启动后不可停:复位后 demo 检测 IWDGRSTF 自愈进入每循环 `et_wdt_feed()`,心跳连续(56s+ 稳定) |
 
 ### 走单 5: LED 极性 / 按键补录
 
 | 项 | 结果 |
 |---|---|
-| PC0 极性实测(上电 3 连闪是否可见) | 【待上板执行】 |
-| PD15 短按 → blink on / 长按 → breath on | 【待上板执行】 |
+| PC0 极性实测(上电 3 连闪是否可见) | 【待上板人目视】 |
+| PD15 短按 → blink on / 长按 → breath on | 【待上板人按键现场】 |
+
+> 执行法(目视会话 ~1 分钟): 复位板上电观察 PC0 LED 是否 3 连闪(400ms 周期);
+> 短按 PD15 应 `demo: blink on`(慢闪),长按 ≥600ms 应 `demo: breath on`(2s 呼吸,
+> 呼吸态 LED 亮度渐变可见)。若上电无闪而低电平常亮逻辑相反 → PC0 为低有效,
+> 对调 `spwm_led_write` 高低分支(§7 挂账保留本条)。
 
 ## 6. 问题记录(实机暴露 → 定位 → 修复)
 
@@ -174,6 +205,43 @@ G4 flash 以 64 位双字为编程粒度且**每双字只允许编程一次**(�
 - `et_bootctl` 状态头 12B → 16B(尾部保留区保持擦除态);
 - host 侧 279 例全量回归 ALL PASS(含掉电矩阵),board 日志 `free/rec` 数值与 8B 槽布局吻合(§4.2)为该适配的真机证据。
 
+### 问题 3~6:升级链 demo 四连缺陷(v1.9 走单首轮暴露,demo 层)
+
+| # | 缺陷 | 现象→根因→修复 |
+|---|---|---|
+| 3 | `et_bootctl_verify_image/stage` 误传**扇区号**(12) 而非**槽序号**(1) | 走单 1 首轮 `verify/stage failed`。API 首行 `slot > 1u` 拒绝 → 该路径自 v1.5 起在真机从未通过(Renode/CI 均未触发)。三 demo 统一 `BOOT_IDX_B=1u`,定义处注释两层"槽"语义(扇区号 vs 槽序号) |
+| 4 | `SIMUPGRADE <ver>` 数字解析不归零(`ver=1u` 起步) | `AT+SIMUPGRADE 2` 打出 `ver=12`(1*10+2)。奇偶语义侥幸未坏但属解析 bug;入环前 `ver=0u` |
+| 5 | 升级前未 `abandon()` | 状态机明示"confirm 后 stage 拒绝(先 abandon)",demo 未做 → 走单 2 后走单 3 必败。stage 链路前置 `et_bootctl_abandon(&g_bc) &&` |
+| 6 | `xm_sink` 无槽容量守卫 | 误传 32KB 大镜像时 off 越过扇区 12 → 直接踩邻接**状态扇区 13**(G4 双字重编程 PROGERR)。补 `off+len > PORT_FLASH_SECTOR_SIZE` 拒绝;镜像上限 = 槽容量(2016B) |
+
+### 问题 7:IWDG port 冷启动时序错误(F103/G474/CubeMX 三 port,v1.9 走单 4 暴露)
+
+| 阶段 | 内容 |
+|---|---|
+| 现象 | `AT+WDTEST(200ms)` 打印 `wdt enable rejected (< 2x ERASE_MS_MAX)`,但契约下限=80ms 不该拒;且拒绝后 ~2s 板子真发生 IWDG 复位(一次性) |
+| 取证 | 寄存器现场:PR/RLR 保持复位值、LSI 未起振;拒绝路径 `et_wdt_enable`→`port_wdt_enable` 返回 false 但**硬件已被启动** |
+| 根因 | 旧时序 UNLOCK→PR/RLR→**等 PVU/RVU 清零**→START。软件模式下 **LSI 仅在 START(0xCCCC) 后起振**,PVU/RVU 是 LSI 时钟域同步标志——LSI 停振时永不清零 → guard(百万次)必然超时返回 false,而 START 又无条件写入 → 配置传输未完成狗已跑,首周期按缺省 RLR 超时(与 ~2s 观测吻合) |
+| 修复 | 改参考 `HAL_IWDG_Init` 时序:UNLOCK→PR/RLR→**START(先起 LSI)**→等 PVU/RVU 清零→立即 `KR=FEED`(首周期完整)。三 port 同步修复;头注记录教训 |
+| 教训 | 冷启动配置顺序是硅约定不是代码风格;`disable 不可逆`的硬件,失败路径必须保证"什么都没启动" |
+
+### 问题 8:selftest bootctl 套件假设干净态(v1.9 SELFSTOR 首轮 6 断言连锁误报)
+
+板上跑过真实升级(staged/confirmed 残留)后再跑 `AT+SELFSTOR`:初始态检查、stage、attempt、
+confirm 连锁失败(6 checks)——套件隐含"从干净状态起步"却未执行。host 侧 flash 模拟器每跑全新,
+永不暴露。修复:init 后强制 `et_bootctl_abandon()`(破坏性门控内合法且必要)。
+**行号映射方法**:`check fail L849/876/880/882/883/884` 逐行回查 et_selftest.c,
+一条根因解释全部 6 处(而非 6 个 bug)——断言行号 + 源码回查是板上失败定位的主路径。
+
+### 问题 9:xmodem 会话成功判定用 `total`(DONE 时被清零)+ DONE 动作未回收尾 ACK(demo)
+
+- `g_xm.total > 0u` 在 rx DONE 的 `session_reset` 后恒为 0 → STAGED 永不可达(与 v1.8 host 测试踩过的同一坑,demo 侧当时未修);改用**动作判定** `ok = (a == ET_XM_DONE)`;
+- rx 对第二段 EOT 返回 `ET_XM_DONE` 动作,`xmodem_reply` 的 default 分支不回字节 → 发送端 `xmodem_send.py` 等 ACK 超时判失败。协议规定接收方对二段 EOT 回 ACK——DONE 分支补 `port_putc(ACK_BYTE)`;
+- 附加防护:无对端时 rx tickless 静默重催块会让 demo 阻塞循环无限挂住(心跳消失,需复位救)——`cmd_upgrade` 加 60s 墙钟上限让出主循环。
+
+### 问题 10:CubeMX demo WDTEST 复位后无自愈(v1.9 走单 4)
+
+IWDG 启动后不可停(仅断电清除),而 demo 常规主循环不喂狗 → WDTEST 后每次复位 ~200ms 内必再复位(复位循环)。修复:开机复位原因检测 IWDGRSTF → `g_wdt_running=true` 进入每循环 `et_wdt_feed()` 自愈(1ms 主循环对 200ms 周期裕量充足),板子复位后恢复正常功能;`AT+WDTEST` 命令注释同步(不复返/自愈/仅断电清除)。
+
 ### 附:自测断言预期修正(host 预验证阶段发现,非库缺陷)
 
 自测套件先在 host 预跑,修正 4 处断言预期:mempool 存储区需含位图/对齐开销;`et_lpf1` 首样本直通(primed)语义;`et_fsm` 扁平表**无源状态域**(同事件按表序首个 guard 通过者生效);list 遍历自删时被删节点不应计入访问序。修正后 host 11/11 PASS。
@@ -182,12 +250,12 @@ G4 flash 以 64 位双字为编程粒度且**每双字只允许编程一次**(�
 
 | 项 | 状态 |
 |---|---|
-| LED 点亮极性 / 按键短按长按 | demo 已实现,未做正式记录(PC0 高电平点亮为假定,低亮板需对调 `spwm_led_write`) |
-| `AT+SIMUPGRADE` / `AT+UPGRADE`(xmodem→bootctl 升级链) | 代码在位、交互命令可用,未做真机走单记录 |
-| IWDG 真超时复位 | 自测仅契约负样本;真超时复位行为未实测 |
+| LED 点亮极性 / 按键短按长按 | 走单 5:软件侧全通(命令/日志),**LED 可见性与按键手感待上板人目视**(§5 执行法) |
+| `AT+SIMUPGRADE` / `AT+UPGRADE`(xmodem→bootctl 升级链) | ✅ v1.9 走单 1~3 收口(2026-09-08),暴露缺陷 3~6/9 已修 |
+| IWDG 真超时复位 | ✅ v1.9 走单 4 收口:原因寄存器 IWDG + 自愈喂狗(暴露缺陷 7/10 已修) |
 | 库内裸机移植轨(port/stm32g474) | 未单独上板(真机验证经 HAL 版 port,同契约) |
 | USB(源工程 PCD 初始化) | 无应用语义,未移植 |
-| Renode 仿真 | v1.7 政策关闭(不排期):G474 真机(AT+SELFTEST 13/13 + 走单)已承担 G4 验证职责 |
+| Renode 仿真 | v1.7 政策关闭(不排期):G474 真机(AT+SELFTEST 17/17 + v1.6~v1.9 走单全套)已承担 G4 验证职责 |
 
 ## 8. 复现命令汇总
 
@@ -198,4 +266,12 @@ cmake --preset Release && cmake --build build/Release --clean-first
 arm-none-eabi-objcopy -O binary build/Release/G474VET6_ET_TEST.elf build/Release/G474VET6_ET_TEST.bin
 # 烧录: STM32CubeProgrammer @0x08000000,串口 PA9/PA10 115200-8-N-1
 # 验证: AT+VER → AT+SELFTEST (期望 13/13 PASS) → 断电重启看 boot #n 递增
+
+# ==== v1.9 走单收口会话 (2026-09-08, 自动化三件套) ====
+# 烧录+复位: STM32_Programmer_CLI -c port=SWD -w build/Release/*.elf -v -rst
+#                                    / -c port=SWD -Rst
+# 打包镜像(ETBI 头+体, ver 奇=自检过):  python tools/pack_image.py --in body.bin --ver 7 --out image.bin
+# 走单3 传输:                          (板上)AT+UPGRADE → (主机)python tools/xmodem_send.py #                                        --port COM12 --file image.bin --timeout 60 --verbose
+# 走单1/2/4 + SELFTEST/SELFSTOR:       pyserial 控制台逐命令采集(见 board_final.log 样式)
+# 期望: SELFTEST 17/17 PASS (59ms); SELFSTOR kv+bootctl PASS; WDTEST 后 reset cause: IWDG + 自愈
 ```

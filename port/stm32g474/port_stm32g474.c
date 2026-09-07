@@ -285,11 +285,19 @@ bool port_wdt_enable(uint32_t timeout_ms)
     IWDG_KR = IWDG_KEY_UNLOCK;                  /* 解锁 PR/RLR */
     IWDG_PR = idx;
     IWDG_RLR = rlr;
+    /* 顺序关键 (v1.9 走单④实机教训): 软件模式下 LSI 仅在 START 后起振,
+     * PVU/RVU 传输须等 LSI 时钟 —— 旧实现先等 SR 清零再 START, 冷启动时
+     * guard 必然超时返回 false, 而 START 已写入 → 狗按缺省周期跑一周期。
+     * 参考 HAL_IWDG_Init 时序: 先 START, 再等同步, 最后立即喂狗保证
+     * 首周期为完整 timeout。 */
+    IWDG_KR = IWDG_KEY_START;                   /* 启动 (不可停) */
     guard = FLASH_BUSY_TIMEOUT;                 /* 等 PVU/RVU 同步完成 */
     while (((IWDG_SR & (IWDG_SR_PVU | IWDG_SR_RVU)) != 0u) && (guard != 0u)) {
         guard--;
     }
-    IWDG_KR = IWDG_KEY_START;                   /* 启动 (不可停) */
+    if (guard != 0u) {
+        IWDG_KR = IWDG_KEY_FEED;                /* 复位计数器: 首周期完整 */
+    }
     PORT_CRITICAL_EXIT();
     return (guard != 0u);
 }

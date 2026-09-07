@@ -845,6 +845,10 @@ static bool st_bootctl(st_ctx_t *ctx)
 
     memset(&bc, 0, sizeof(bc));
     ST_CHECK(et_bootctl_init(&bc, cfg));
+    /* 从确定干净态起步: 板上本套件可跑于真实升级之后 (staged/confirmed 残留
+     * 会让全套断言连锁失败 — v1.9 走单 SELFSTOR 实机暴露)。破坏性门控内
+     * abandon 合法且必要。 */
+    ST_CHECK(et_bootctl_abandon(&bc));
     et_bootctl_state(&bc, &st);
     ST_CHECK((st.staged_slot < 0) && (st.confirmed_slot < 0));
 

@@ -62,6 +62,7 @@
 /* v1.5 升级链路布局: 槽 A/B + 状态扇区 (均参数区内, 与 kv 不重叠) */
 #define BOOT_SLOT_A         11u
 #define BOOT_SLOT_B         12u
+#define BOOT_IDX_B          1u   /* 槽序号: bootctl API 收 0=A/1=B, 非扇区号 */
 #define BOOT_STATE_SEC      13u
 #define BOOT_MAX_ATTEMPTS   2u
 
@@ -141,6 +142,9 @@ static void cmd_bootinfo(char *args, void *user)
 static bool xm_sink(void *user, uint32_t off, const uint8_t *d, uint32_t len)
 {
     (void)user;
+    if (off + len > PORT_FLASH_SECTOR_SIZE) {
+        return false;       /* 超槽容量: 拒绝跨界写 (v1.9 走单实测教训) */
+    }
     if (off == 0u) {
         if (!port_flash_erase_sector(BOOT_SLOT_B)) {
             return false;
@@ -156,6 +160,7 @@ static void xmodem_reply(et_xm_act_t act)
     case ET_XM_ACK: port_putc((char)ET_XM_ACK_BYTE); break;
     case ET_XM_NAK: port_putc((char)ET_XM_NAK_BYTE); break;
     case ET_XM_CAN: port_putc((char)ET_XM_CAN_BYTE); break;
+    case ET_XM_DONE: port_putc((char)ET_XM_ACK_BYTE); break;  /* 二段 EOT 收尾 ACK */
     default: break;
     }
 }
@@ -164,6 +169,8 @@ static void xmodem_reply(et_xm_act_t act)
 static void cmd_upgrade(char *args, void *user)
 {
     bool     done = false;
+    bool     ok   = false;
+    uint32_t t_beg = port_tick_get_ms();
     uint8_t  xmb;
 
     (void)args;
@@ -179,6 +186,7 @@ static void cmd_upgrade(char *args, void *user)
             xmodem_reply(a);
             if ((a == ET_XM_DONE) || (a == ET_XM_CAN) || (a == ET_XM_ERR)) {
                 done = true;
+                ok   = (a == ET_XM_DONE);
             }
         } else {
             a = et_xmodem_rx_tick(&g_xm, now);
@@ -186,11 +194,16 @@ static void cmd_upgrade(char *args, void *user)
             if ((a == ET_XM_ERR) || (a == ET_XM_CAN)) {
                 done = true;
             }
+            if ((uint32_t)(now - t_beg) > 60000u) {
+                ET_LOGE("at", "upgrade timeout (no peer)");
+                done = true;                  /* 60s 无对端: 让出主循环 */
+            }
         }
     }
-    if ((g_xm.total > 0u) &&
-        et_bootctl_verify_image(&g_bc, BOOT_SLOT_B) &&
-        et_bootctl_stage(&g_bc, BOOT_SLOT_B)) {
+    if (ok &&
+        et_bootctl_abandon(&g_bc) &&      /* 新一轮升级: 清旧 staged/confirmed */
+        et_bootctl_verify_image(&g_bc, BOOT_IDX_B) &&
+        et_bootctl_stage(&g_bc, BOOT_IDX_B)) {
         ET_LOGW("at", "UPGRADE STAGED, rebooting...");
         boot_reset();
     }
@@ -211,6 +224,7 @@ static void cmd_simupgrade(char *args, void *user)
 
     (void)user;
     if (av != NULL) {
+        ver = 0u;
         while ((*av >= '0') && (*av <= '9')) {
             ver = (ver * 10u) + (uint32_t)(*av - '0');
             av++;
@@ -250,8 +264,9 @@ static void cmd_simupgrade(char *args, void *user)
         return;
     }
     ET_LOGI("at", "sim image ver=%u written", (unsigned)ver);
-    if (et_bootctl_verify_image(&g_bc, BOOT_SLOT_B) &&
-        et_bootctl_stage(&g_bc, BOOT_SLOT_B)) {
+    if (et_bootctl_abandon(&g_bc) &&      /* 新一轮升级: 清旧 staged/confirmed */
+        et_bootctl_verify_image(&g_bc, BOOT_IDX_B) &&
+        et_bootctl_stage(&g_bc, BOOT_IDX_B)) {
         ET_LOGW("at", "STAGED slot B, rebooting...");
         boot_reset();
     }
@@ -458,7 +473,9 @@ int main(void)
     (void)et_ringbuf_init(&g_rxrb, g_rxmem, sizeof(g_rxmem));
     NVIC_ISER1 = (1u << (37u - 32u));       /* IRQ37 USART1 */
     USART1_CR1 |= USART_CR1_RE | USART_CR1_RXNEIE;
-    (void)et_atcmd_init(&g_at, g_atcmds, 5u, g_cmdline, sizeof(g_cmdline), &g_sh);
+    (void)et_atcmd_init(&g_at, g_atcmds,
+                                sizeof(g_atcmds) / sizeof(g_atcmds[0]),
+                                g_cmdline, sizeof(g_cmdline), &g_sh);
     (void)et_shell_init(&g_sh, &g_at, shell_put, NULL);
     et_shell_set_prompt(&g_sh, "ET> ");
 
