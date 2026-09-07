@@ -159,7 +159,7 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，17 套件一条命令冒烟（host/板上结果可比对）；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
-- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.8%）× ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 17/17）**；
+- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 97.0%）× ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 17/17）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
 ## 测试策略亮点
