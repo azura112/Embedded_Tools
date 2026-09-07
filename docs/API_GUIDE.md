@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v1.8.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v1.9.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -12,6 +12,8 @@
   - [2.2 et_queue 定长消息队列](#22-et_queue-定长消息队列)
   - [2.3 et_mempool 固定块内存池](#23-et_mempool-固定块内存池)
   - [2.4 et_list 侵入式双向链表](#24-et_list-侵入式双向链表)
+  - [2.5 et_map 定容映射 (u32 键值)](#25-et_map-定容映射-u32-键值-v18)
+  - [2.6 et_smap 定容字符串键映射](#26-et_smap-定容字符串键映射-v19)
 - [3. algorithm 纯算法层](#3-algorithm-纯算法层)
   - [3.1 et_filter 定点滤波器组](#31-et_filter-定点滤波器组)
   - [3.2 et_fsm 表驱动状态机](#32-et_fsm-表驱动状态机)
@@ -26,6 +28,7 @@
   - [5.2 et_frame 帧解析器](#52-et_frame-帧解析器)
   - [5.3 et_atcmd 命令解析器](#53-et_atcmd-命令解析器)
   - [5.4 et_xmodem XMODEM-CRC 接收器](#54-et_xmodem-xmodem-crc-接收器)
+  - [5.5 et_xmodem_tx 发送器](#55-et_xmodem_tx-发送器-v18-mcu-作发送方)
 - [6. storage 存储层](#6-storage-存储层)
   - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
   - [6.2 et_bootctl 安全升级控制](#62-et_bootctl-安全升级控制)
@@ -37,9 +40,13 @@
   - [8.1 et_log 日志](#81-et_log-日志)
   - [8.2 et_assert 断言](#82-et_assert-断言)
   - [8.3 et_shell 行式交互壳](#83-et_shell-行式交互壳)
+  - [8.4 et_selftest 板上自测组件](#84-et_selftest-板上自测组件-v17)
 - [9. port 平台适配契约](#9-port-平台适配契约)
 - [10. 配置项参考](#10-配置项参考)
 - [11. 典型组合配方](#11-典型组合配方)
+  - [11.7 看门狗与 flash 擦除组合](#117-看门狗与-flash-擦除组合et_wdt--port_flash)
+  - [11.8 tickless 休眠](#118-tickless-休眠next_due--wfiv16)
+  - [11.9 字符串键配置表与命令路由](#119-字符串键配置表与命令路由et_smap--et_shellv19)
 
 ---
 
@@ -274,6 +281,25 @@ et_map_put(&map, 0x1234, (uint32_t)(uintptr_t)&some_resource);
 uint32_t v;
 if (et_map_get(&map, 0x1234, &v)) { use((void *)(uintptr_t)v); }
 ```
+
+### 2.6 et_smap 定容字符串键映射 (v1.9)
+
+FNV-1a 32 位哈希 + 线性探测 + 内嵌键存储池：命令路由表、配置项查表、名称到句柄注册等小容量字符串键场景。**探测/墓碑/拒绝/满表语义与 et_map 完全一致**（见 2.5 容量指引，不重复定义），差异仅在键型与池管理。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_smap_init(m, storage, cap, keybuf, keybuf_size, probe_limit)` | 🏠MAIN | 整表+池清零；池须装得下 1 条最坏键 |
+| `bool et_smap_put(m, key, val)` | 🏠MAIN | 键拷入池（调用方可释放原串）；空/超长/池满/超限拒绝 |
+| `bool et_smap_get(m, key, &val)` | 🏠MAIN | 命中写 *val；哈希缓存+键长预比较 |
+| `bool et_smap_del(m, key)` | 🏠MAIN | 置墓碑（池空间不回收，clear 才回收） |
+| `uint32_t et_smap_count(m)` / `et_smap_pool_free(m)` | 读 | 有效数 / 池剩余字节 |
+| `void et_smap_clear(m)` | 🏠MAIN | 整表回空 + 池水位复位 |
+| `bool et_smap_foreach(m, fn, user)` | 🏠MAIN | 回调签名 (user, key, val*)；遍历中 et_smap_del 安全 |
+
+**键约束**：非空、NUL 结尾、≤ ET_SMAP_KEY_MAX（默认 16，`-D` 可覆盖），大小写敏感。
+
+**FAQ：为什么 et_map 维持键 0 保留、不做"全 u32 键域"？**（v1.9 决议）
+空槽/墓碑标记是**实现事实**而非文档约定：键 0 与 0xFFFFFFFF 参与槽状态编码，改键域需要重设计状态标记（如独立状态字，槽体积 +4B 或引入位图双结构），收益不成比例。确有需要键 0 的应用走 **key+1 偏移**（应用侧一行数学），库不提供变体。u32 全键域且可区分删除的容器需求 = 字符串键之外再评估 v2.0。
 
 ### 3.1 et_filter 定点滤波器组
 
@@ -1017,8 +1043,10 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `ET_SHELL_HISTORY_N` | 0 | shell 历史条目编译期容量；0=关闭(ESC 字节直透) |
 | `ET_MODULE_SELFTEST` | 0 | 板上自测组件（v1.7）：发布默认裁剪；host 测试/自测固件以 `-D=1` 启用 |
 | `ET_MODULE_MAP` | 1 | 定容映射（v1.8，core） |
+| `ET_MODULE_SMAP` | 1 | 定容字符串键映射（v1.9，core） |
+| `ET_SMAP_KEY_MAX` | 16 | et_smap 键长上限（字节，不含 NUL）；`-D` 覆盖需同步扩池预算 |
 | `ET_SELFTEST_MAX_EXTRA` | 4 | et_selftest 动态注册套件槽位数 |
-| `ET_CRC_TABLE` | 0 | CRC16-CCITT 查表优化(256 项静态表驻只读段)；默认位算法零 RAM |
+| `ET_CRC_TABLE` | 0 | 查表加速：CRC16-CCITT(512B 表) 与 CRC32/IEEE(1KB 表) 同开关（v1.9 扩展 CRC32），静态表驻只读段；默认位算法零 RAM |
 | `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |
 | `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |
 | `PORT_FLASH_SECTOR_COUNT` | 16 | 参数区扇区数（et_kv 用其中两扇区） |
@@ -1219,3 +1247,34 @@ for (;;) {
 ```
 
 **⚠ WFI 配对约束（G474 实机教训，必查项）**：休眠前必须确认**串口 RX 中断等唤醒源已使能**。反例：v1.5 的 G474 demo 曾用"主循环轮询 RXNE + 每 1ms WFI"——RDR 只有 1 字节深度，睡眠窗口内到达的字节全部溢出丢失，批量发送必然残缺（完整复盘见 `移植stm32实机记录.md` 问题 1）。正确姿势：**RX 中断 = 唤醒源**，ISR 把字节写入 `et_ringbuf` 并置 `et_event`，WFI 被唤醒后主循环排空环再 poll。投喂流程 = 中断置事件 → WFI 醒 → poll；事件未置且 next_due 未到才继续睡。
+
+### 11.9 字符串键配置表与命令路由（et_smap × et_shell，v1.9）
+
+场景：AT/shell 命令背后挂一张"名称 → 设备句柄/参数"的 O(1) 查表（命令路由、配置项、传感器名索引）。atcmd 表负责"命令存在性"，smap 负责"命令参数的语义对象"——两级解耦。
+
+```c
+/* 引脚名 → 寄存器位模式 (值可存指针位模式, 见 et_smap.h 最小示例) */
+#define LED_TBL_CAP   17u                     /* 质数, 负载建议 <=0.7 */
+static et_smap_t       pin_map;
+static et_smap_slot_t  pin_slots[LED_TBL_CAP];
+static uint8_t         pin_pool[128];         /* 预算: 4 + 池内键数*对齐(键长+1) */
+
+static bool pin_lookup(const char *name, uint32_t *addr)
+{
+    return et_smap_get(&pin_map, name, addr);
+}
+
+void app_init(void)
+{
+    uint32_t addr;
+    (void)et_smap_init(&pin_map, pin_slots, LED_TBL_CAP,
+                       pin_pool, sizeof(pin_pool), LED_TBL_CAP);
+    (void)et_smap_put(&pin_map, "PC13", 0x40011014u);   /* 示例位模式 */
+    (void)et_smap_put(&pin_map, "PA0",  0x40010018u);
+    if (pin_lookup("PC13", &addr)) { use(addr); }
+}
+```
+
+AT 命令用法（`AT+PIN? PC13`）：`et_atcmd_next_arg()` 取名字参数 → `pin_lookup()` → 命中输出值。
+**池预算**：每条键占 `(len+1)` 上取 4B 对齐；最坏键长 = `ET_SMAP_KEY_MAX`；池满 put 拒绝且无副作用（先定位后分配）。
+**注意**：smap 与 atcmd 的定长命令表是两个模型——命令表 <32 条用 et_atcmd 顺序匹配即可（本配方演示的是数据侧查表）；命令表上百条再考虑 smap 化路由（v2.0 候选，无需求不动 shell 层）。

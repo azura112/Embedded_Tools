@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.8.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.8开发计划：定容映射与互传对称化.md](v1.8开发计划：定容映射与互传对称化.md)**
+> 当前版本：**v1.9.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.9开发交付：板上收口与字符串映射.md](v1.9开发交付：板上收口与字符串映射.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -15,6 +15,7 @@
 |  | `et_mempool` | 固定块内存池，位图管理，STRICT 防重复释放 |
 |  | `et_list` | 侵入式双向链表，O(1) 插删，遍历中自删安全 |
 |  | `et_map` | 定容开放寻址哈希表（v1.8）：u32 键值、线性探测+探测上限、墓碑删除 |
+|  | `et_smap` | 定容字符串键映射（v1.9）：FNV-1a + 内嵌键池拷入语义，探测/墓碑与 et_map 同规则 |
 | algorithm/ | `et_filter` | 定点滤波器组：滑动均值 / Q15 一阶低通 / 斜率限制（纯算法层，禁 port.h） |
 |  | `et_fsm` | 表驱动状态机：const 迁移表可驻 flash，guard 回退链，零分配 |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
@@ -47,7 +48,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 326 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
+├── test/              # 迷你框架 + 340 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 31 + map 13 + smap 14）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -139,7 +140,7 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 | `port_putc()` | 阻塞式字符输出（日志底层） |
 | `port_flash_read/write/erase_sector` | 仅 `ET_MODULE_KV=1` 时必选：4B 对齐擦写、只允许 1→0 写、短写如实上报（掉电/故障截断） |
 
-已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已上板实测（kv 掉电持久化 + 全模块自测 13/13，经 CubeMX/HAL 集成版 port，记录见该工程 `移植stm32实机记录.md`），F103 真机记录见其 README。
+已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已完成 **v1.6~v1.9 板面收口**（升级链真机走单 5 条 / 库化 selftest 17 套件 / tickless+RX 中断唤醒实测，记录见仓库根 `移植stm32实机记录.md`），F103 真机维持常设挂账（编译+Renode 仿真门）。
 
 裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关（支持 `-D` 覆盖），未启用的模块不参与编译（对应 `.c` 亦移出构建列表）。
 
@@ -149,16 +150,16 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，326 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，340 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（326 例，另 1K 变体 327 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（340 例，另 1K 变体 341 例）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，17 套件一条命令冒烟（host/板上结果可比对）；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
-- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.9%）× ARM 零警告交叉编译 × **Renode F103 仿真 smoke（断言 kv/重启计数日志）**；
+- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85%（实测 96.8%）× ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 17/17）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
 ## 测试策略亮点
@@ -181,3 +182,4 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 4. **主机回归全绿**：`make test` 本地跑一遍后再打 tag，不以"CI 会跑"替代本地验证；
 5. **交付文档命名**：`v<版本号>开发交付：<重点概况>.md`（全角冒号），里程碑对照提交哈希逐条可回溯；
 6. **量化声明附复现命令 + 环境注记**（v1.3 验收教训）：任何体积/覆盖率/用例数声明必须注明测量工具链精确版本与 shell，并给出可复现命令（例：`arm-none-eabi-size` + GNU Tools for STM32 13.3.rel1；`gcovr --print-summary` 于 MinGW gcc 16.1）——无环境注记的裸数字视为无效。
+7. **数字回刷纪律（v1.9 P1-4）**：交付定稿后凡改变可观测数字的提交（体积表/用例数/docsync 断言数/smoke 计数），**同一提交内回刷所有引用处**（README / port README / 实机记录 / 交付文档）并在 commit message 注明"数字回刷"；文档命令由 CI `docbuild` job 以 ```docbuild 定界块原样执行守护（v1.8 三处滞后数字的制度化根治）。

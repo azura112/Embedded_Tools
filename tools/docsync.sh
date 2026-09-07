@@ -34,6 +34,23 @@ assert_grep() {
     fi
 }
 
+# 反向断言: 模式不得出现 (占位符清除/滞后值回刷类治理)
+assert_no_grep() {
+    file="$1"; pat="$2"; desc="$3"
+    if [ ! -f "$file" ]; then
+        echo "FAIL [文件缺失] $desc ($file)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if grep -Eq -- "$pat" "$file"; then
+        echo "FAIL $desc  (文件 $file 不应命中: $pat)"
+        FAIL=$((FAIL + 1))
+    else
+        echo "ok   $desc"
+        PASS=$((PASS + 1))
+    fi
+}
+
 # ---- 版本链一致性 (动态取 et_config 展开值, 不硬编码) ----
 V=$(gcc -E -P -dM et_config.h 2>/dev/null | awk '/define ET_VERSION_MAJOR/{maj=$3}
                                                   /define ET_VERSION_MINOR/{min=$3}
@@ -131,7 +148,19 @@ assert_grep "README.md" "et_selftest"                         "README 特性表:
 assert_grep "docs/API_GUIDE.md" "8.4 et_selftest"             "API_GUIDE: selftest 章节"
 assert_grep "docs/bench.md" "环境注记"                        "bench 文档含环境注记条款"
 assert_grep "docs/bench.md" "v1.7.0"                          "bench 文档含基线版本行"
-assert_grep "CHANGELOG.md" "## .1.7.0."                       "CHANGELOG 最新版本条目与版本链一致"
+# (v1.9 治理) CHANGELOG 版本链动态全覆盖 —— 写死单版本断言曾漏过 v1.8 缺条目
+if [ -n "$V" ]; then
+    MAJ=$(echo "$V" | cut -d. -f1); MIN=$(echo "$V" | cut -d. -f2)
+    ci=0
+    while [ "$ci" -le "$MIN" ]; do
+        if grep -Eq "^## \[$MAJ\.$ci\.0\]" CHANGELOG.md; then
+            echo "ok   CHANGELOG 含 $MAJ.$ci.0 条目"; PASS=$((PASS + 1))
+        else
+            echo "FAIL CHANGELOG 缺 $MAJ.$ci.0 条目(版本链断档)"; FAIL=$((FAIL + 1))
+        fi
+        ci=$((ci + 1))
+    done
+fi
 
 # ---- v1.8 et_map / et_xmodem_tx ----
 assert_grep "core/et_map.h" "ET_MAP_KEY_TOMB"                 "et_map 保留键语义(头文件)"
@@ -144,6 +173,34 @@ assert_grep "README.md" "et_xmodem_tx"                        "README 特性表:
 assert_grep "docs/API_GUIDE.md" "2.5 et_map"                  "API_GUIDE: map 章节"
 assert_grep "docs/API_GUIDE.md" "5.5 et_xmodem_tx"            "API_GUIDE: xmodem_tx 章节"
 assert_grep ".github/workflows/ci.yml" "DET_MODULE_SELFTEST=1" "CI host 构建启用 selftest 复跑"
+
+# ---- v1.9 et_smap / docbuild / 走单收口 ----
+assert_grep "core/et_smap.h"      "ET_SMAP_KEY_MAX"           "et_smap 键长上限(头文件)"
+assert_grep "core/et_smap.h"      "池满"                      "et_smap 池满拒绝语义(头文件)"
+assert_grep "core/et_smap.c"      "2166136261"                "et_smap FNV-1a 实现"
+assert_grep "et_config.h"         "ET_MODULE_SMAP"            "et_config 含 SMAP 开关"
+assert_grep "Makefile"            "core/et_smap.c"            "Makefile 含 et_smap"
+assert_grep "Makefile"            "test/test_smap.c"          "Makefile 含 test_smap"
+assert_grep "test/test_main.c"    "test_smap_cases"           "test_main 注册 smap 套件"
+assert_grep "README.md"           "et_smap"                   "README 特性表: smap"
+assert_grep "docs/API_GUIDE.md"   "2.6 et_smap"               "API_GUIDE: smap 章节"
+assert_grep "docs/API_GUIDE.md"   "11.9 字符串键配置表"        "API_GUIDE: smap 配方(P3-3)"
+assert_grep "docs/API_GUIDE.md"   "key.1 偏移"                "API_GUIDE: et_map 键 0 FAQ(决议)"
+assert_grep "docs/API_GUIDE.md"   "ET_SMAP_KEY_MAX"           "API_GUIDE 配置表: SMAP 键长"
+assert_grep "docs/bench.md"       "smap str get"              "bench 含 smap 查找行(P3-2)"
+assert_grep "protocol/et_crc.c"   "s_crc32_tbl"               "et_crc CRC32 查表路径(P3-1)"
+assert_grep "tools/docbuild.sh"   "docbuild"                  "docbuild 脚本存在(P1-3)"
+assert_grep "port/stm32f103/README.md" "```docbuild"          "f103 README docbuild 定界"
+assert_grep "port/stm32g474/README.md"  "```docbuild"         "g474 README docbuild 定界"
+assert_grep ".github/workflows/ci.yml"  "docbuild"            "CI 含 docbuild job"
+assert_grep "README.md"           "数字回刷纪律"              "README checklist 第 7 条(P1-4)"
+assert_grep "tools/pack_image.py" "ETBI"                      "ETBI 打包工具存在(走单3配套)"
+assert_grep "port/stm32f103/README.md" "v1.9"                 "体积表含 v1.9 行(f103)"
+assert_grep "port/stm32g474/README.md"  "18088"               "体积表 v1.9 行(g474)"
+assert_grep "port/stm32f103/README.md"  "25352"               "体积表 v1.9 行(f103, selftest)"
+assert_grep "移植stm32实机记录.md" "SELFTEST: 17/17"          "实机记录含库化 selftest 板上记录(P0-2)"
+assert_grep "移植stm32实机记录.md" "reset cause: IWDG"        "实机记录含 IWDG 真超时证据(P0-1 走单4)"
+assert_no_grep "移植stm32实机记录.md" "待上板执行"            "实机记录走单占位符已全部回填(P0-1)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"

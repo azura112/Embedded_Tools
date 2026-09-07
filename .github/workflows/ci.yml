@@ -129,6 +129,20 @@ jobs:
   # Renode 仿真常设门 (v1.3): headless 跑 F103 demo, 断言串口关键日志
   # (横幅 / kv stats / UTC 心跳 / boot #1 / 复位后 boot #2) —— 仿真验收
   # 从"本地截图"升级为 CI 门, v1.1 起的仿真挂账就此闭环
+  docbuild:
+    name: docbuild (README 命令可执行化)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Execute port README docbuild blocks verbatim
+        run: |
+          mkdir -p build
+          sh tools/docbuild.sh
+
   renode-smoke:
     name: renode stm32f103 smoke
     runs-on: ubuntu-latest

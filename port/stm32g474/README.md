@@ -51,7 +51,7 @@ demo 占用参数区**扇区 14/15** 作 et_kv 双扇区乒乓、**11/12/13** �
 
 ## 构建（arm-none-eabi-gcc）
 
-```sh
+```docbuild
 arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
   -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32g474 \
   -DPORT_FLASH_SECTOR_SIZE=2048 -DPORT_FLASH_SECTOR_COUNT=16 -DPORT_FLASH_ERASE_MS_MAX=40 \
@@ -72,6 +72,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v1.6 | 15944 | 28 | 596 | +tickless 增量 API（next_due×2，demo 未调用） |
 | v1.7 | 15948 | 28 | 596 | 默认（et_selftest 裁剪）；**全启用 `-DET_MODULE_SELFTEST=1`: text 23868 / bss 2268**（17 套件全量, +7920/+1672）—— DoD 体积增量记录 |
 | v1.8 | 17108 | 28 | 740 | 默认裁剪；+RX 中断/环形缓冲 + tickless + et_map/et_xmodem_tx（selftest 构建增量见 v1.7 行） |
+| v1.9 | 18088 | 28 | 740 | 默认裁剪；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数/跨槽写守卫）+ port wdt 冷启动时序修复 |
 
 ## 烧录与运行
 

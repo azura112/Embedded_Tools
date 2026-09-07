@@ -36,11 +36,11 @@ demo 占用参数区**扇区 14/15**（0x0800F800 起）作 et_kv 双扇区乒�
 
 ## 构建（arm-none-eabi-gcc）
 
-```sh
+```docbuild
 arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
   -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
   -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-  core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/et_kv.c \
+  core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
   port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
   examples/stm32f103_demo.c \
   -o build/stm32f103_demo.elf
@@ -59,7 +59,9 @@ arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bi
 | v1.5 | 15468 | 24 | 596 | +et_xmodem+et_shell；kv/bootctl 8B 槽适配（G474 双字约束）后复测 |
 | v1.6 | 15576 | 24 | 596 | +tickless 增量 API（next_due×2，demo 未调用；-nostartfiles 无 gc-sections 全量入 ELF） |
 | v1.7 | 15580 | 24 | 596 | +et_selftest 组件入库（默认裁剪，demo 未启用，仅版本宏级增量） |
-| v1.8 | 25180 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）+ RX 中断/环形缓冲 + tickless（+et_map/et_xmodem_tx） |
+| v1.8 | 25200 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）+ RX 中断/环形缓冲 + tickless（+et_map/et_xmodem_tx）（v1.8 交付文档误记 25180，v1.9 数字回刷实测） |
+| v1.9 | 16852 | 24 | 740 | 默认裁剪构建（README/`docbuild` 无宏原样可链接——selftest 调用已 `#if` 守卫） |
+| v1.9 | 25352 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数）|
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 

@@ -6,6 +6,48 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-09-08
+
+板上收口与字符串映射（三版板面挂账一次清偿 + et_smap + 文档可执行化）。
+
+### Added
+- **et_smap**（core/，第 27 模块，14 例）：定容字符串键映射 —— FNV-1a 32 位 + 内嵌键存储池拷入语义 + 哈希缓存/键长预比较；探测/墓碑/满表拒绝语义与 et_map 同规则（交叉引用不重复定义）；`ET_MODULE_SMAP`/`ET_SMAP_KEY_MAX` 开关；API_GUIDE 2.6 节 + 11.9 命令路由/配置表配方 + et_map 键 0 保留 FAQ（v1.9 决议：改键域需重设计状态编码，应用侧走 key+1 偏移）。
+- **板上收口全套**（v1.6~v1.8 挂账清偿）：升级链真机走单 1~4（SIMUPGRADE 回滚/confirm / xmodem 真传 STAGED→CONFIRMED / IWDG 真超时复位+复位原因）、库化 selftest 板上记录（17/17 + SELFSTOR 实跑）、tickless+RX 中断唤醒实测 —— 记录回填 `移植stm32实机记录.md` §5；走单 5（LED 极性/按键补录）待用户目视确认。
+- **`tools/pack_image.py`** ETBI 镜像打包（走单 3 配套，头布局注释与 et_bootctl 对齐）。
+- **CI `docbuild` job + `tools/docbuild.sh`**：port README ```docbuild 定界构建块原样执行（含 objcopy），文档命令成为 CI 门；发布 checklist 第 7 条"数字回刷纪律"。
+
+### Changed
+- `ET_CRC_TABLE` 扩展至 **CRC32/IEEE 查表**（1KB 表驻只读段，同 SECTION 机制）：bench crc32 125→500 MB/s；表/位算法随机对拍逐字节一致。
+- F103 demo selftest 调用全部 `#if ET_MODULE_SELFTEST` 守卫 + README 构建命令补 `storage/*.c`（P1-1：文档命令无宏原样可构建，实测 text 16852）；两裸机 demo 命令表计数改 sizeof 自适应。
+- bench 增 map/smap 查找行（2 vs 8 ns/op，负载 0.62 质数 97 槽）。
+
+### Fixed（走单实机暴露，5+3 处）
+- demo 升级链：`verify_image/stage` 误传扇区号（应传槽序号 0/1，三 demo，v1.5 起该路径真机从未通过）；`SIMUPGRADE ver` 数字解析不归零；升级前缺 `abandon()`（状态机"confirm 后 stage 拒绝"规则）；`xm_sink` 无槽容量守卫（跨界写会踩邻接状态扇区）；xmodem 成功判定用 `total`（DONE 时已被 session_reset 清零，恒假）→ 改 DONE 动作，且 DONE 需回收尾 ACK（协议 EOT 二段确认）。
+- port：`port_wdt_enable` 冷启动时序 —— 软件模式下 LSI 仅在 START 后起振，旧实现先等 PVU/RVU 再 START 必然 guard 超时（返回 false 却已写 START，狗按缺省周期跑一周期）→ 改 HAL_IWDG_Init 参考序 START→等同步→喂狗（F103/G474/CubeMX 三处）。
+- 库：`et_selftest` bootctl 套件强制干净起步（init 后 `abandon()`，此前跑于真实升级之后会连锁误报 6 断言）。
+- CubeMX demo：WDTEST 后 IWDG 不可停 → 开机检测 IWDGRSTF 自愈持续喂狗（板不再入复位循环）。
+
+### 治理
+- docsync：CHANGELOG 断言由写死 1.7.0 改为**版本链动态全覆盖**（v1.8 条目缺失即此类漂移实例，本版补齐 1.8.0/1.9.0）；数字回刷 v1.8 三处滞后（25200/17、87 全表）。
+
+### 挂账
+- 走单 5：LED PC0 极性目视 + PD15 短按/长按补录（需上板人现场观察）。
+
+## [1.8.0] — 2026-09-07
+
+定容映射与互传对称化（容器补齐 + MCU 能收能发）。
+
+### Added
+- **et_map**（core/，第 25 模块，13 例）：定容开放寻址哈希表 —— u32 键、线性探测+probe_limit 超限拒绝、墓碑删除复用、foreach 遍历安全；键 0/0xFFFFFFFF 保留。
+- **et_xmodem_tx**（protocol/，第 26 模块，14 例）：XMODEM-CRC 发送器状态机（WAIT_START→DATA→EOT1→EOT2→done），与接收器共享协议常量/`et_xmodem_crc16`（单一事实来源）；tx→rx 内存回环双块型逐字节一致入常规回归。
+- F103/G474 裸机 demo：**RX 中断 + et_ringbuf**（G474 教训闭环）、tickless 主循环（next_due 门控）、F103 `AT+SELFTEST` 接入 + 开机自跑（Renode smoke 断言载体）；smoke 断言扩至 selftest 17/17。
+
+### Changed
+- selftest xmodem 套件升级为 tx→rx 回环；docsync 87 断言（含交付文档覆盖率行循环断言）；双几何 326×2 全绿（1K 变体 327）。
+
+### 挂账
+- 三版板面收口（v1.6 走单 / v1.7 库化 selftest 记录 / v1.8 板面验证）→ tag v1.6/v1.7/v1.8 悬置（本版由 v1.9 P0 清偿）。
+
 ## [1.7.0] — 2026-09-06
 
 板上自测与性能量化(验证金字塔封顶)。
