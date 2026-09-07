@@ -62,6 +62,8 @@ extern "C" {
 #define ET_XM_EOT               0x04u   /* 传输结束    */
 #define ET_XM_ACK_BYTE          0x06u
 #define ET_XM_NAK_BYTE          0x15u
+#define ET_XM_CRC_CH_BYTE       0x43u   /* 'C': CRC 模式启动字符 */
+#define ET_XM_PAD_BYTE          0x1Au   /* 尾块填充 (SUB) */
 #define ET_XM_CAN_BYTE          0x18u
 
 #define ET_XM_BLK128            128u    /* 基本块载荷 */
@@ -115,6 +117,9 @@ et_xm_act_t et_xmodem_rx_tick(et_xmodem_t *x, uint32_t now);
 #ifdef __cplusplus
 }
 #endif
+
+/* XMODEM CRC16 (CCITT poly 0x1021, init 0) —— 收发端共享 (单一事实来源) */
+uint16_t et_xmodem_crc16(const uint8_t *data, uint32_t len);
 
 #endif /* ET_MODULE_XMODEM */
 #endif /* ET_XMODEM_H */

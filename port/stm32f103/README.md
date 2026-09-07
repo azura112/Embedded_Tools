@@ -59,6 +59,7 @@ arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bi
 | v1.5 | 15468 | 24 | 596 | +et_xmodem+et_shell；kv/bootctl 8B 槽适配（G474 双字约束）后复测 |
 | v1.6 | 15576 | 24 | 596 | +tickless 增量 API（next_due×2，demo 未调用；-nostartfiles 无 gc-sections 全量入 ELF） |
 | v1.7 | 15580 | 24 | 596 | +et_selftest 组件入库（默认裁剪，demo 未启用，仅版本宏级增量） |
+| v1.8 | 25180 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）+ RX 中断/环形缓冲 + tickless（+et_map/et_xmodem_tx） |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 

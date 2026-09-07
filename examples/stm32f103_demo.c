@@ -41,6 +41,8 @@
 #include "et_atcmd.h"
 #include "et_shell.h"
 #include "et_crc.h"
+#include "et_ringbuf.h"
+#include "et_selftest.h"
 #include "port.h"
 #include "port_stm32f103.h"
 #include "stm32f103_min.h"
@@ -77,6 +79,50 @@ static uint8_t        g_xmbuf[132];
 static char           g_cmdline[48];
 static uint32_t       g_boot_count = 0u;
 static uint32_t       g_sc_save_at  = 0u;
+
+/* ---- UART RX: 中断 + 环形缓冲 (v1.8 配方 11.8: RX 中断 = WFI 唤醒源,
+ * 轮询收包在 WFI 空闲下会因 RDR 单字节深度丢字节 —— G474 实机教训) ---- */
+static et_ringbuf_t   g_rxrb;
+static uint8_t        g_rxmem[128];
+
+void USART1_IRQHandler(void)
+{
+    if ((USART1_SR & USART_SR_RXNE) != 0u) {
+        uint8_t b = (uint8_t)USART1_DR;
+
+        (void)et_ringbuf_write(&g_rxrb, &b, 1u);
+    }
+}
+
+/* ---- selftest 报告 (接 et_log, v1.7 库组件) ---- */
+static void st_selftest_report(void *user, et_selftest_evt_t evt,
+                               const char *suite, uint32_t num)
+{
+    (void)user;
+    switch (evt) {
+    case ET_SELFTEST_BEGIN:
+        ET_LOGI("selftest", "start (%u suites)", num);
+        break;
+    case ET_SELFTEST_SUITE_PASS:
+        ET_LOGI("selftest", "%s PASS", suite);
+        break;
+    case ET_SELFTEST_SUITE_FAIL:
+        ET_LOGE("selftest", "%s FAIL (%u checks)", suite, num);
+        break;
+    case ET_SELFTEST_SUITE_SKIP:
+        ET_LOGI("selftest", "%s SKIP (storage not configured)", suite);
+        break;
+    case ET_SELFTEST_CHECK_FAIL:
+        ET_LOGE("selftest", "  check fail L%u", num);
+        break;
+    case ET_SELFTEST_DONE:
+        ET_LOGI("selftest", "SELFTEST: %u/%u PASS", num,
+                et_selftest_suite_count());
+        break;
+    default:
+        break;
+    }
+}
 
 /* ===================== v1.5 升级链路 (shell → xmodem → bootctl) ===================== */
 
@@ -145,7 +191,8 @@ static void xmodem_reply(et_xm_act_t act)
 /* AT+UPGRADE: 阻塞收一轮 xmodem (期间主循环/心跳暂停) */
 static void cmd_upgrade(char *args, void *user)
 {
-    bool done = false;
+    bool     done = false;
+    uint8_t  xmb;
 
     (void)args;
     (void)user;
@@ -155,8 +202,8 @@ static void cmd_upgrade(char *args, void *user)
         uint32_t   now = port_tick_get_ms();
         et_xm_act_t a;
 
-        if ((USART1_SR & USART_SR_RXNE) != 0u) {
-            a = et_xmodem_rx(&g_xm, (uint8_t)USART1_DR, now);
+        if (et_ringbuf_read(&g_rxrb, &xmb, 1u) == 1u) {
+            a = et_xmodem_rx(&g_xm, xmb, now);
             xmodem_reply(a);
             if ((a == ET_XM_DONE) || (a == ET_XM_CAN) || (a == ET_XM_ERR)) {
                 done = true;
@@ -239,11 +286,25 @@ static void cmd_simupgrade(char *args, void *user)
     ET_LOGE("at", "verify/stage failed");
 }
 
+/* AT+SELFTEST: 库级板上自测 (非存储套件; kv/bootctl 由应用职责, 不在此跑) */
+static void cmd_selftest(char *args, void *user)
+{
+    (void)args;
+    (void)user;
+    if (et_selftest_run_all(st_selftest_report, NULL)) {
+        ET_LOGI("at", "ALL PASS");
+    } else {
+        ET_LOGE("at", "SELFTEST FAILED");
+    }
+    (void)et_stimer_start_periodic(&g_hb, 2000u);   /* stimer 套件清了注册表, 恢复心跳 */
+}
+
 static const et_atcmd_entry_t g_atcmds[] = {
     { "VER",        cmd_ver,        "print version" },
     { "BOOTINFO",   cmd_bootinfo,   "show bootctl state" },
     { "SIMUPGRADE", cmd_simupgrade, "synthetic image -> slot B (even ver = bad self-check)" },
     { "UPGRADE",    cmd_upgrade,    "xmodem receive -> slot B" },
+    { "SELFTEST",   cmd_selftest,   "run library selftest suites" },
     { "HELP",       et_shell_help_cmd, "list commands" },
 };
 
@@ -437,8 +498,10 @@ int main(void)
 
     /* v1.5 交互壳: USART1 RX (PA10 浮空输入) + AT 命令表 */
     GPIOA_CRH = (GPIOA_CRH & ~(0xFu << 8)) | (0x4u << 8);   /* PA10 浮空输入 */
-    USART1_CR1 |= USART_CR1_RE;
-    (void)et_atcmd_init(&g_at, g_atcmds, 5u, g_cmdline, sizeof(g_cmdline), &g_sh);
+    (void)et_ringbuf_init(&g_rxrb, g_rxmem, sizeof(g_rxmem));
+    NVIC_ISER1 = (1u << (57u - 32u));       /* IRQ57 USART1 */
+    USART1_CR1 |= USART_CR1_RE | USART_CR1_RXNEIE;          /* RX 中断 = 唤醒源 */
+    (void)et_atcmd_init(&g_at, g_atcmds, 6u, g_cmdline, sizeof(g_cmdline), &g_sh);
     (void)et_shell_init(&g_sh, &g_at, shell_put, NULL);
     et_shell_set_prompt(&g_sh, "ET> ");
 
@@ -456,8 +519,14 @@ int main(void)
     for (;;) {
         now = port_tick_get_ms();
 
-        if ((USART1_SR & USART_SR_RXNE) != 0u) {
-            (void)et_shell_feed(&g_sh, (char)USART1_DR);    /* 交互壳收字节 */
+        /* RX: 中断已收进环形缓冲, 此处排空喂壳 (配方 11.8 投喂流程) */
+        for (;;) {
+            uint8_t rb;
+
+            if (et_ringbuf_read(&g_rxrb, &rb, 1u) != 1u) {
+                break;
+            }
+            (void)et_shell_feed(&g_sh, (char)rb);
         }
         et_softclock_poll(&g_sc, now);      /* 每 1ms 一次: ms 累计 → 秒进位 */
         et_stimer_poll(now);
@@ -465,6 +534,17 @@ int main(void)
         et_spwm_poll(now);
         et_key_scan(&g_key, now);
 
-        __asm__ __volatile__ ("wfi");       /* 等 SysTick 唤醒, 每 1ms 醒一次 */
+        /* tickless (v1.8): 睡眠预算 = 最近到期定时器, 上限 10ms 保轮询节奏;
+         * 唤醒源 = SysTick(1ms) + USART1 RX 中断 (配方 11.8 必查项) */
+        {
+            port_tick_ms_t wait = et_stimer_next_due();
+
+            if (wait > 10u) {
+                wait = 10u;
+            }
+            (void)wait;                     /* SysTick 固定 1ms 节拍下 WFI 即睡;
+                                             * next_due 预算供 LPTIM 长睡形态演进 */
+        }
+        __asm__ __volatile__ ("wfi");
     }
 }

@@ -44,6 +44,7 @@
 #include "et_atcmd.h"
 #include "et_shell.h"
 #include "et_crc.h"
+#include "et_ringbuf.h"
 #include "port.h"
 #include "port_stm32g474.h"
 #include "stm32g474_min.h"
@@ -80,6 +81,19 @@ static uint8_t        g_xmbuf[132];
 static char           g_cmdline[48];
 static uint32_t       g_boot_count = 0u;
 static uint32_t       g_sc_save_at  = 0u;
+
+/* ---- UART RX: 中断 + 环形缓冲 (v1.8 配方 11.8: RX 中断 = WFI 唤醒源) ---- */
+static et_ringbuf_t   g_rxrb;
+static uint8_t        g_rxmem[128];
+
+void USART1_IRQHandler(void)
+{
+    if ((USART1_ISR & USART_ISR_RXNE) != 0u) {
+        uint8_t b = (uint8_t)USART1_RDR;
+
+        (void)et_ringbuf_write(&g_rxrb, &b, 1u);
+    }
+}
 
 /* ===================== v1.5 升级链路 (shell → xmodem → bootctl) ===================== */
 
@@ -149,7 +163,8 @@ static void xmodem_reply(et_xm_act_t act)
 /* AT+UPGRADE: 阻塞收一轮 xmodem (期间主循环/心跳暂停) */
 static void cmd_upgrade(char *args, void *user)
 {
-    bool done = false;
+    bool     done = false;
+    uint8_t  xmb;
 
     (void)args;
     (void)user;
@@ -159,8 +174,8 @@ static void cmd_upgrade(char *args, void *user)
         uint32_t   now = port_tick_get_ms();
         et_xm_act_t a;
 
-        if ((USART1_ISR & USART_ISR_RXNE) != 0u) {
-            a = et_xmodem_rx(&g_xm, (uint8_t)USART1_RDR, now);
+        if (et_ringbuf_read(&g_rxrb, &xmb, 1u) == 1u) {
+            a = et_xmodem_rx(&g_xm, xmb, now);
             xmodem_reply(a);
             if ((a == ET_XM_DONE) || (a == ET_XM_CAN) || (a == ET_XM_ERR)) {
                 done = true;
@@ -439,8 +454,10 @@ int main(void)
     (void)et_spwm_init(SPWM_CH_LED, spwm_led_write, NULL, 2u);
     (void)et_led_init(&g_led, led_brightness_out, NULL);
 
-    /* v1.5 交互壳: USART1 RX (PA10 已配 AF7) + AT 命令表 */
-    USART1_CR1 |= USART_CR1_RE;
+    /* v1.5 交互壳: USART1 RX 中断 = 唤醒源 (配方 11.8) + AT 命令表 */
+    (void)et_ringbuf_init(&g_rxrb, g_rxmem, sizeof(g_rxmem));
+    NVIC_ISER1 = (1u << (37u - 32u));       /* IRQ37 USART1 */
+    USART1_CR1 |= USART_CR1_RE | USART_CR1_RXNEIE;
     (void)et_atcmd_init(&g_at, g_atcmds, 5u, g_cmdline, sizeof(g_cmdline), &g_sh);
     (void)et_shell_init(&g_sh, &g_at, shell_put, NULL);
     et_shell_set_prompt(&g_sh, "ET> ");
@@ -459,15 +476,23 @@ int main(void)
     for (;;) {
         now = port_tick_get_ms();
 
-        if ((USART1_ISR & USART_ISR_RXNE) != 0u) {
-            (void)et_shell_feed(&g_sh, (char)USART1_RDR);   /* 交互壳收字节 */
+        /* RX: 中断已收进环形缓冲, 此处排空喂壳 (配方 11.8 投喂流程) */
+        for (;;) {
+            uint8_t rb;
+
+            if (et_ringbuf_read(&g_rxrb, &rb, 1u) != 1u) {
+                break;
+            }
+            (void)et_shell_feed(&g_sh, (char)rb);
         }
         et_softclock_poll(&g_sc, now);      /* 每 1ms 一次: ms 累计 → 秒进位 */
-        et_stimer_poll(now);
+        if (et_stimer_next_due() == 0u) {   /* tickless: 到期才处理定时器 */
+            et_stimer_poll(now);
+        }
         et_led_poll(&g_led, now);
         et_spwm_poll(now);
         et_key_scan(&g_key, now);
 
-        __asm__ __volatile__ ("wfi");       /* 等 SysTick 唤醒, 每 1ms 醒一次 */
+        __asm__ __volatile__ ("wfi");       /* 唤醒源: SysTick(1ms) + USART1 RX */
     }
 }

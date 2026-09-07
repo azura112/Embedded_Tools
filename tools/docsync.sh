@@ -132,7 +132,30 @@ assert_grep "docs/API_GUIDE.md" "8.4 et_selftest"             "API_GUIDE: selfte
 assert_grep "docs/bench.md" "环境注记"                        "bench 文档含环境注记条款"
 assert_grep "docs/bench.md" "v1.7.0"                          "bench 文档含基线版本行"
 assert_grep "CHANGELOG.md" "## .1.7.0."                       "CHANGELOG 最新版本条目与版本链一致"
+
+# ---- v1.8 et_map / et_xmodem_tx ----
+assert_grep "core/et_map.h" "ET_MAP_KEY_TOMB"                 "et_map 保留键语义(头文件)"
+assert_grep "core/et_map.h" "负载因子"                        "et_map 容量指引(头文件)"
+assert_grep "protocol/et_xmodem_tx.h" "et_xmodem_crc16"       "et_xmodem_tx 共享 CRC 助手"
+assert_grep "Makefile" "core/et_map.c"                        "Makefile 含 et_map"
+assert_grep "Makefile" "protocol/et_xmodem_tx.c"              "Makefile 含 et_xmodem_tx"
+assert_grep "README.md" "et_map"                              "README 特性表: map"
+assert_grep "README.md" "et_xmodem_tx"                        "README 特性表: xmodem_tx"
+assert_grep "docs/API_GUIDE.md" "2.5 et_map"                  "API_GUIDE: map 章节"
+assert_grep "docs/API_GUIDE.md" "5.5 et_xmodem_tx"            "API_GUIDE: xmodem_tx 章节"
 assert_grep ".github/workflows/ci.yml" "DET_MODULE_SELFTEST=1" "CI host 构建启用 selftest 复跑"
+
+# ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
+assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
+for f in v1.*开发交付*.md; do
+    if ! grep -q "覆盖率" "$f"; then
+        echo "FAIL 交付复现表缺覆盖率行: $f"
+        FAIL=$((FAIL + 1))
+    else
+        echo "ok   交付文档覆盖率行: $f"
+        PASS=$((PASS + 1))
+    fi
+done
 
 echo "----------------------------------------"
 echo "docsync: pass=$PASS fail=$FAIL"

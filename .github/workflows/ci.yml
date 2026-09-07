@@ -84,7 +84,7 @@ jobs:
       - name: Build stm32f103 demo
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
+          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -Os -g \
             -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
             -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
             core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
@@ -141,7 +141,7 @@ jobs:
       - name: Build stm32f103 demo
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
+          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -Os -g \
             -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
             -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
             core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \

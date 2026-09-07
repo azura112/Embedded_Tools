@@ -68,6 +68,7 @@
 #endif
 #if ET_MODULE_XMODEM
 #include "et_xmodem.h"
+#include "et_xmodem_tx.h"
 #endif
 #if ET_MODULE_ATCMD
 #include "et_atcmd.h"
@@ -693,12 +694,22 @@ static bool st_atcmd_shell(st_ctx_t *ctx)
 }
 #endif /* ATCMD && SHELL */
 
-/* ===================== 15. xmodem 短传输 (RAM 环回) ===================== */
+/* ===================== 15. xmodem 短传输 (tx→rx RAM 回环) =====================
+ * v1.8: 发送侧改用库组件 et_xmodem_tx (替代手写编码器) —— 套件同时覆盖
+ * 收发两侧与组帧一致性 (DoD: 端到端回环用例入套件)。 */
 #if ET_MODULE_XMODEM
-static et_xmodem_t g_xm;
-static uint8_t     g_xm_buf[132];
-static uint8_t     g_xm_img[384];
-static uint32_t    g_xm_len;
+#if ET_XM_1K
+static uint8_t g_xm_buf[132u + 1024u];      /* 1K 使能时缓冲须 ≥1028B */
+#else
+static uint8_t g_xm_buf[132u];
+#endif
+static et_xmodem_t    g_xm;
+static et_xmodem_tx_t g_xmt;
+static uint8_t        g_xm_img[384];
+static uint32_t       g_xm_len;
+static uint32_t       g_xm_reply_n;
+static uint8_t        g_xm_reply[16];
+static bool           g_xm_rx_done;
 
 static bool st_xm_sink(void *user, uint32_t off, const uint8_t *d, uint32_t len)
 {
@@ -711,55 +722,80 @@ static bool st_xm_sink(void *user, uint32_t off, const uint8_t *d, uint32_t len)
     return true;
 }
 
-/* 最小编码器: SOH+块号+~块号+128B+CRC16(高字节在前), 与 et_xmodem 对齐 */
-static void st_xm_put_block(et_xmodem_t *xm, uint8_t blk,
-                            const uint8_t *payload, bool corrupt, uint32_t *now)
+static void st_xm_putc(void *user, uint8_t b)
 {
-    uint8_t  f[133];
-    uint16_t crc = et_crc16_ccitt_update(0x0000u, payload, 128u);
+    et_xm_act_t a;
+
+    (void)user;
+    a = et_xmodem_rx(&g_xm, b, g_xm_len);   /* 线路 → 接收器 */
+    if (a == ET_XM_ACK) {
+        g_xm_reply[g_xm_reply_n++] = ET_XM_ACK_BYTE;
+    } else if (a == ET_XM_NAK) {
+        g_xm_reply[g_xm_reply_n++] = ET_XM_NAK_BYTE;
+    } else if (a == ET_XM_CAN) {
+        g_xm_reply[g_xm_reply_n++] = ET_XM_CAN_BYTE;
+    } else if (a == ET_XM_DONE) {
+        g_xm_rx_done = true;
+        g_xm_reply[g_xm_reply_n++] = ET_XM_ACK_BYTE;
+    }
+}
+
+static uint32_t st_xm_src(void *user, uint32_t off, uint8_t *dst, uint32_t want)
+{
     uint32_t i;
 
-    f[0] = ET_XM_SOH;
-    f[1] = blk;
-    f[2] = (uint8_t)(~(uint8_t)blk);
-    memcpy(&f[3], payload, 128u);
-    if (corrupt) {
-        crc ^= 0x5A5Au;
+    (void)user;
+    for (i = 0u; i < want; i++) {
+        dst[i] = (uint8_t)(0x30u + ((off + i) & 0x3Fu));
     }
-    f[131] = (uint8_t)(crc >> 8);
-    f[132] = (uint8_t)(crc & 0xFFu);
-    for (i = 0u; i < sizeof(f); i++) {
-        (void)et_xmodem_rx(xm, f[i], (*now)++);
-    }
+    return want;
 }
 
 static bool st_xmodem(st_ctx_t *ctx)
 {
-    static uint8_t payload[384];
-    uint32_t       now = 0u;
-    uint32_t       i;
-    et_xm_act_t    act;
+    et_xmodem_tx_cfg_t c;
+    uint32_t           now = 0u;
+    uint32_t           steps = 0u;
+    uint32_t           i;
 
-    g_xm_len = 0u;
     memset(&g_xm, 0, sizeof(g_xm));
-    for (i = 0u; i < sizeof(payload); i++) {
-        payload[i] = (uint8_t)(i * 5u + 1u);
-    }
+    memset(&g_xmt, 0, sizeof(g_xmt));
+    g_xm_len = 0u;
+    g_xm_reply_n = 0u;
+    g_xm_rx_done = false;
     et_xmodem_rx_init(&g_xm, g_xm_buf, sizeof(g_xm_buf), st_xm_sink, NULL);
 
-    st_xm_put_block(&g_xm, 1u, payload, false, &now);
-    st_xm_put_block(&g_xm, 2u, payload + 128u, true, &now);     /* CRC 坏 → NAK */
-    st_xm_put_block(&g_xm, 2u, payload + 128u, false, &now);    /* 重发 → ACK */
-    st_xm_put_block(&g_xm, 3u, payload + 256u, false, &now);
-    ST_CHECK(g_xm.total == 384u);           /* EOT 握手前取值(DONE 会复位会话) */
+    memset(&c, 0, sizeof(c));
+    c.putc = st_xm_putc;
+    c.src = st_xm_src;
+    c.user = NULL;
+    c.total = 384u;                         /* 3 块 128B */
+    c.block_size = 128u;
+    c.retry_max = 10u;
+    c.ack_timeout_ms = 1000u;
+    ST_CHECK(et_xmodem_tx_init(&g_xmt, &c));
+    g_xm_reply[g_xm_reply_n++] = ET_XM_NAK_BYTE;    /* 起步催块 */
 
-    act = et_xmodem_rx(&g_xm, ET_XM_EOT, now++);                /* EOT#1 → NAK */
-    ST_CHECK(act == ET_XM_NAK);
-    act = et_xmodem_rx(&g_xm, ET_XM_EOT, now++);                /* EOT#2 → DONE */
-    ST_CHECK(act == ET_XM_DONE);
+    while (!et_xmodem_tx_done(&g_xmt) && !et_xmodem_tx_aborted(&g_xmt) &&
+           (steps < 100u)) {
+        if (g_xm_reply_n > 0u) {
+            uint8_t b = g_xm_reply[0];
 
+            memmove(g_xm_reply, g_xm_reply + 1u, g_xm_reply_n - 1u);
+            g_xm_reply_n--;
+            (void)et_xmodem_tx_poll(&g_xmt, b, now++);
+        } else {
+            now += 100u;
+            (void)et_xmodem_tx_tick(&g_xmt, now);
+        }
+        steps++;
+    }
+    ST_CHECK(et_xmodem_tx_done(&g_xmt));
+    ST_CHECK(g_xm_rx_done);                 /* 接收侧同时 DONE */
     ST_CHECK(g_xm_len == 384u);
-    ST_CHECK(memcmp(g_xm_img, payload, 384u) == 0);
+    for (i = 0u; i < 384u; i++) {           /* 载荷逐字节一致 (模式回读) */
+        ST_CHECK(g_xm_img[i] == (uint8_t)(0x30u + (i & 0x3Fu)));
+    }
 
     return (ctx->fails == 0);
 }

@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.7.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.7开发计划：板上自测与性能量化.md](v1.7开发计划：板上自测与性能量化.md)**
+> 当前版本：**v1.8.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.8开发计划：定容映射与互传对称化.md](v1.8开发计划：定容映射与互传对称化.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -14,6 +14,7 @@
 |  | `et_queue` | 定长消息队列（同款无锁技巧） |
 |  | `et_mempool` | 固定块内存池，位图管理，STRICT 防重复释放 |
 |  | `et_list` | 侵入式双向链表，O(1) 插删，遍历中自删安全 |
+|  | `et_map` | 定容开放寻址哈希表（v1.8）：u32 键值、线性探测+探测上限、墓碑删除 |
 | algorithm/ | `et_filter` | 定点滤波器组：滑动均值 / Q15 一阶低通 / 斜率限制（纯算法层，禁 port.h） |
 |  | `et_fsm` | 表驱动状态机：const 迁移表可驻 flash，guard 回退链，零分配 |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
@@ -27,6 +28,7 @@
 |  | `et_frame` | 字节流帧解析状态机，协议格式可配置，配套组帧函数 |
 |  | `et_atcmd` | 行式 AT 命令解析器 |
 |  | `et_xmodem` | XMODEM-CRC 接收器：bootloader 拉固件，sink 直连 port_flash_write |
+|  | `et_xmodem_tx` | XMODEM-CRC 发送器（v1.8）：MCU 作发送方，与接收器对称、共享协议常量 |
 | drivers/ | `et_key` | 按键四态 FSM：消抖/短按/长按/连发 |
 |  | `et_led` | LED 模式管理：常亮/闪烁 N 次/呼吸，输出缓存 |
 |  | `et_spwm` | 多通道软件 PWM（1ms 时基相位法，≤500Hz） |
@@ -45,7 +47,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 300 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
+├── test/              # 迷你框架 + 326 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 17）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -147,11 +149,11 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，300 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，326 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（300 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（326 例，另 1K 变体 327 例）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，17 套件一条命令冒烟（host/板上结果可比对）；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；

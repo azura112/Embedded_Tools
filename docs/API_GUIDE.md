@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v1.7.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v1.8.0 ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -248,6 +248,32 @@ et_list_foreach(&list, visit, NULL);
 ## 3. algorithm 纯算法层
 
 信号处理纯算法，**禁止包含 port.h**（与 core 同级纪律），全部定点、零浮点依赖、零动态内存。
+
+### 2.5 et_map 定容映射 (u32 键值, v1.8)
+
+定容开放寻址哈希表：线性探测 + 探测上限、墓碑删除、零动态内存。**键 0 与 0xFFFFFFFF 保留**（空槽/墓碑），用户键域 [1, 0xFFFFFFFE]。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_map_init(m, storage, cap, probe_limit)` | 🏠MAIN | 整表清零；cap/probe_limit ≥ 1 |
+| `bool et_map_put(m, key, val)` | 🏠MAIN | 插入/覆盖；满表或探测超限拒绝 |
+| `bool et_map_get(m, key, &val)` | 🏠MAIN | 命中写 \*val |
+| `bool et_map_del(m, key)` | 🏠MAIN | 置墓碑（探测链保持） |
+| `uint32_t et_map_count(m)` | 读 | 有效键值数 |
+| `void et_map_clear(m)` | 🏠MAIN | 整表恢复空槽 |
+| `bool et_map_foreach(m, fn, user)` | 🏠MAIN | 全量遍历；回调中删除当前槽安全 |
+
+**容量指引**：负载因子 ≤ 0.7；容量取质数；probe_limit = 单次操作探测上限（超限即拒绝，健康负载取 cap 不误伤）。**满表无空槽时即使有墓碑 put 也拒绝**（新键"不存在"无法证明——经典开放寻址语义）。
+
+```c
+static et_map_slot_t slots[53];          /* 质数容量 */
+static et_map_t map;
+
+et_map_init(&map, slots, 53, 53);
+et_map_put(&map, 0x1234, (uint32_t)(uintptr_t)&some_resource);
+uint32_t v;
+if (et_map_get(&map, 0x1234, &v)) { use((void *)(uintptr_t)v); }
+```
 
 ### 3.1 et_filter 定点滤波器组
 
@@ -590,6 +616,21 @@ bootloader 拉取固件镜像的传输协议：接收器为核，逐字节喂入
 | `et_xmodem_rx_init(x, buf, cap, sink, user)` | buf 为单块暂存（≥132，1K 模式 ≥1028）；不满足进入 ERR 终态 |
 | `et_xmodem_rx(x, ch, now)` | 逐字节喂入，返回 ACK/NAK/CAN/IDLE/DONE/ERR 应答动作 |
 | `et_xmodem_rx_tick(x, now)` | 超时驱动：1s 无块催块(NAK)、10s 静默放弃(ERR, 会话自动复位) |
+
+### 5.5 et_xmodem_tx 发送器 (v1.8, MCU 作发送方)
+
+与接收器对称：共享协议常量与 `et_xmodem_crc16`（单一事实来源）。数据经 `src` 回调流式读出，帧经 `putc` 写线路；尾块 0x1A 填充；NAK 重传 ≤ retry_max、应答超时经 tick 驱动、EOT 两段确认。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_xmodem_tx_init(x, cfg)` | 🏠MAIN | cfg = putc/src/user/total/block_size(128; 1K 需 ET_XM_1K)/retry_max/ack_timeout_ms |
+| `et_xm_act_t et_xmodem_tx_poll(x, ch, now)` | 🏠MAIN | 喂对端应答字节：ACK 推进/NAK 重发/CAN 中止 |
+| `et_xm_act_t et_xmodem_tx_tick(x, now)` | 🏠MAIN | 应答超时 → 重发当前块/EOT |
+| `bool et_xmodem_tx_done/aborted(x)` | 读 | 终态查询 |
+
+**端到端回环**：tx(库)→rx(库) 内存环回为常规回归用例（`xmtx.loopback_128`/`loopback_1k`），128B/1K 双块型逐字节一致——防收发两侧协议漂移。host 侧 `tools/xmodem_send.py` 保留作调试便利。
+
+
 | `sink(user, offset, data, len)` | 整块数据出口：写 flash 走 `port_flash_write`，或 RAM；返回 false 立即中止 |
 
 **bootloader 数据通路图**（DoD 附）：
@@ -953,7 +994,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 300 用例 | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 326 用例（1K 变体 327） | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
 | STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 
@@ -975,6 +1016,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `ET_XM_1K` | 0 | et_xmodem 1K 大块(STX)开关，打开后暂存 ≥1028B |
 | `ET_SHELL_HISTORY_N` | 0 | shell 历史条目编译期容量；0=关闭(ESC 字节直透) |
 | `ET_MODULE_SELFTEST` | 0 | 板上自测组件（v1.7）：发布默认裁剪；host 测试/自测固件以 `-D=1` 启用 |
+| `ET_MODULE_MAP` | 1 | 定容映射（v1.8，core） |
 | `ET_SELFTEST_MAX_EXTRA` | 4 | et_selftest 动态注册套件槽位数 |
 | `ET_CRC_TABLE` | 0 | CRC16-CCITT 查表优化(256 项静态表驻只读段)；默认位算法零 RAM |
 | `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |

@@ -76,6 +76,11 @@
 #define USART_CR1_UE            (1u << 0)       /* G4: UE 在 bit0 (F1 在 bit13) */
 #define USART_CR1_RE            (1u << 2)
 #define USART_CR1_TE            (1u << 3)
+#define USART_CR1_RXNEIE        (1u << 3)   /* RXNE 中断使能 (RX 唤醒源) */
+
+/* ===================== NVIC (IRQ 使能: RX 唤醒源) ===================== */
+#define NVIC_ISER0              REG32(0xE000E100u)      /* IRQ 0..31  */
+#define NVIC_ISER1              REG32(0xE000E104u)      /* IRQ 32..63 */
 
 /* ===================== SysTick / SCB ===================== */
 #define SYST_CSR                REG32(0xE000E010u)

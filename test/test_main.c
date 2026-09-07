@@ -5,6 +5,7 @@
 #include "et_test.h"
 
 extern const et_test_case_t *test_ringbuf_cases(size_t *count);
+extern const et_test_case_t *test_map_cases(size_t *count);
 extern const et_test_case_t *test_queue_cases(size_t *count);
 extern const et_test_case_t *test_mempool_cases(size_t *count);
 extern const et_test_case_t *test_list_cases(size_t *count);
@@ -29,6 +30,7 @@ extern const et_test_case_t *test_bootctl_cases(size_t *count);
 extern const et_test_case_t *test_wdt_cases(size_t *count);
 extern const et_test_case_t *test_shell_hist_cases(size_t *count);
 extern const et_test_case_t *test_selftest_cases(size_t *count);
+extern const et_test_case_t *test_xmodem_tx_cases(size_t *count);
 
 typedef const et_test_case_t *(*et_suite_get_fn)(size_t *count);
 
@@ -39,6 +41,7 @@ typedef struct {
 
 static const et_suite_t g_suites[] = {
     { "core/ringbuf", test_ringbuf_cases },
+    { "core/map", test_map_cases },
     { "core/queue",   test_queue_cases   },
     { "core/mempool", test_mempool_cases },
     { "core/list",    test_list_cases    },
@@ -62,6 +65,7 @@ static const et_suite_t g_suites[] = {
     { "storage/bc",   test_bootctl_cases },
     { "sys/wdt",      test_wdt_cases     },
     { "debug/selftest", test_selftest_cases },
+    { "proto/xmodem_tx", test_xmodem_tx_cases },
     { "debug/shhist", test_shell_hist_cases },
 };
 

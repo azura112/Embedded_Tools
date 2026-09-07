@@ -19,6 +19,7 @@ void Reset_Handler(void);
 void Default_Handler(void);
 
 void SysTick_Handler(void);         /* 实现在 port_stm32f103.c */
+void USART1_IRQHandler(void);       /* RX 唤醒源 (demo/应用实现, 弱默认) */
 
 /* 常规异常弱定义, 用户可按需覆盖 */
 void NMI_Handler(void)        __attribute__((weak, alias("Default_Handler")));
@@ -29,6 +30,7 @@ void UsageFault_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void SVC_Handler(void)        __attribute__((weak, alias("Default_Handler")));
 void DebugMon_Handler(void)   __attribute__((weak, alias("Default_Handler")));
 void PendSV_Handler(void)     __attribute__((weak, alias("Default_Handler")));
+void USART1_IRQHandler(void)  __attribute__((weak, alias("Default_Handler")));
 
 typedef void (*isr_fn_t)(void);
 
@@ -48,7 +50,7 @@ const isr_fn_t g_vector_table[] = {
     0,                              /* 13: 保留             */
     PendSV_Handler,                 /* 14                   */
     SysTick_Handler,                /* 15: 1ms 时基         */
-    [16 + 57] = Default_Handler,    /* 73: USART1_IRQHandler(轮询收发, 未用) */
+    [16 + 57] = USART1_IRQHandler,  /* 73: USART1 (RX 唤醒源, 弱默认) */
 };
 
 void Reset_Handler(void)

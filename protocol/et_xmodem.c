@@ -188,4 +188,9 @@ et_xm_act_t et_xmodem_rx_tick(et_xmodem_t *x, uint32_t now)
     return ET_XM_IDLE;
 }
 
+uint16_t et_xmodem_crc16(const uint8_t *data, uint32_t len)
+{
+    return et_crc16_ccitt_update(0x0000u, data, len);
+}
+
 #endif /* ET_MODULE_XMODEM */

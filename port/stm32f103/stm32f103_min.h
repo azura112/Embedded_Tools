@@ -38,6 +38,7 @@
 #define USART_CR1_UE            (1u << 13)
 #define USART_CR1_TE            (1u << 3)
 #define USART_CR1_RE            (1u << 2)
+#define USART_CR1_RXNEIE        (1u << 3)   /* RXNE 中断使能 (RX 唤醒源) */
 
 /* ===================== SysTick ===================== */
 #define SYST_CSR                REG32(0xE000E010u)
@@ -47,6 +48,10 @@
 #define SYST_CSR_TICKINT        (1u << 1)
 #define SYST_CSR_CLKSOURCE      (1u << 2)   /* 1=HCLK, 0=HCLK/8 */
 #define SYST_CSR_COUNTFLAG      (1u << 16)
+
+/* ===================== NVIC (IRQ 使能: RX 唤醒源) ===================== */
+#define NVIC_ISER0              REG32(0xE000E100u)      /* IRQ 0..31  */
+#define NVIC_ISER1              REG32(0xE000E104u)      /* IRQ 32..63 */
 
 /* ===================== SCB ===================== */
 #define SCB_SCR                 REG32(0xE000ED10u)

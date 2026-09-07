@@ -71,6 +71,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v1.5 | 15836 | 28 | 596 | 与 F103 demo 同全栈（含 8B 槽适配后的 kv/bootctl） |
 | v1.6 | 15944 | 28 | 596 | +tickless 增量 API（next_due×2，demo 未调用） |
 | v1.7 | 15948 | 28 | 596 | 默认（et_selftest 裁剪）；**全启用 `-DET_MODULE_SELFTEST=1`: text 23868 / bss 2268**（17 套件全量, +7920/+1672）—— DoD 体积增量记录 |
+| v1.8 | 17108 | 28 | 740 | 默认裁剪；+RX 中断/环形缓冲 + tickless + et_map/et_xmodem_tx（selftest 构建增量见 v1.7 行） |
 
 ## 烧录与运行
 

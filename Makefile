@@ -27,10 +27,10 @@ CC      := gcc
 CFLAGS  := -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host
 OBJDIR  := build
 
-CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c
+CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c core/et_map.c
 ALGO_SRC    := algorithm/et_filter.c algorithm/et_fsm.c
 SYS_SRC     := sys/et_stimer.c sys/et_sched.c sys/et_event.c sys/et_softclock.c sys/et_wdt.c
-PROTO_SRC   := protocol/et_crc.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c
+PROTO_SRC   := protocol/et_crc.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c protocol/et_xmodem_tx.c
 DRIVERS_SRC := drivers/et_key.c drivers/et_led.c drivers/et_spwm.c
 DEBUG_SRC   := debug/et_log.c debug/et_assert.c debug/et_shell.c debug/et_selftest.c
 STORAGE_SRC := storage/et_kv.c storage/et_bootctl.c
