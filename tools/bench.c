@@ -26,6 +26,8 @@
 #include "et_crc.h"
 #include "et_filter.h"
 #include "et_fsm.h"
+#include "et_map.h"
+#include "et_smap.h"
 #include "et_xmodem.h"
 #include "et_kv.h"
 
@@ -270,6 +272,69 @@ static double bench_fsm(void)
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
 }
 
+/* ===================== map / smap (v1.8/v1.9 容器查找) ===================== */
+
+#define B_MAP_CAP   97u                     /* 质数容量 */
+#define B_MAP_N     60u                     /* 负载 ~0.62 (<0.7 指引) */
+
+static et_map_t       b_map;
+static et_map_slot_t  b_map_mem[B_MAP_CAP];
+static et_smap_t      b_smap;
+static et_smap_slot_t b_sm_mem[B_MAP_CAP];
+static uint8_t        b_sm_pool[2048];
+static char           b_sm_keys[B_MAP_N][8];
+
+static void b_map_setup(void)
+{
+    uint32_t i;
+    uint32_t v;
+
+    (void)et_map_init(&b_map, b_map_mem, B_MAP_CAP, B_MAP_CAP);
+    (void)et_smap_init(&b_smap, b_sm_mem, B_MAP_CAP, b_sm_pool,
+                       sizeof(b_sm_pool), B_MAP_CAP);
+    for (i = 0u; i < B_MAP_N; i++) {
+        (void)et_map_put(&b_map, i + 1u, i);
+        b_sm_keys[i][0] = 'c'; b_sm_keys[i][1] = 'f';
+        b_sm_keys[i][2] = (char)('0' + (i / 10u));
+        b_sm_keys[i][3] = (char)('0' + (i % 10u));
+        b_sm_keys[i][4] = '\0';
+        (void)et_smap_put(&b_smap, b_sm_keys[i], i);
+    }
+    (void)v;
+}
+
+static double bench_map_get(void)
+{
+    uint32_t n = 1000000u;
+    uint32_t i;
+    uint32_t v = 0u;
+    clock_t  t0;
+
+    b_map_setup();
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        (void)et_map_get(&b_map, (i % B_MAP_N) + 1u, &v);
+    }
+    g_sink = v;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+static double bench_smap_get(void)
+{
+    uint32_t n = 1000000u;
+    uint32_t i;
+    uint32_t v = 0u;
+    clock_t  t0;
+
+    b_map_setup();
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        (void)et_smap_get(&b_smap, b_sm_keys[i % B_MAP_N], &v);
+    }
+    g_sink = v;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
 /* ===================== 报告 ===================== */
 
 static void report_mb(const char *name, double (*fn)(void),
@@ -317,11 +382,13 @@ int main(void)
               5000.0 * 256.0);
     report_mb("crc16-ccitt (4KB x512; table iff ET_CRC_TABLE=1)",
               bench_crc16, 512.0 * 4096.0);
-    report_mb("crc32 bitwise (4KB x512)", bench_crc32, 512.0 * 4096.0);
+    report_mb("crc32 (4KB x512; table iff ET_CRC_TABLE=1)", bench_crc32, 512.0 * 4096.0);
     report_mb("xmodem eff. payload 128B blocks", bench_xmodem, 20000.0 * 128.0);
     report_ops("kv set+get (32B val, host flash)", bench_kv, 2000.0);
     report_ns("filter movavg update", bench_filter, 1000000.0);
     report_ns("fsm dispatch (guard)", bench_fsm, 1000000.0);
+    report_ns("map u32 get (97 slots, load 0.62)", bench_map_get, 1000000.0);
+    report_ns("smap str get (97 slots, load 0.62)", bench_smap_get, 1000000.0);
 
     printf("------------------------------------------------------------\n");
     printf("note: numbers are for same-machine version regression only,\n");

@@ -6,6 +6,7 @@
 
 extern const et_test_case_t *test_ringbuf_cases(size_t *count);
 extern const et_test_case_t *test_map_cases(size_t *count);
+extern const et_test_case_t *test_smap_cases(size_t *count);
 extern const et_test_case_t *test_queue_cases(size_t *count);
 extern const et_test_case_t *test_mempool_cases(size_t *count);
 extern const et_test_case_t *test_list_cases(size_t *count);
@@ -42,6 +43,7 @@ typedef struct {
 static const et_suite_t g_suites[] = {
     { "core/ringbuf", test_ringbuf_cases },
     { "core/map", test_map_cases },
+    { "core/smap", test_smap_cases },
     { "core/queue",   test_queue_cases   },
     { "core/mempool", test_mempool_cases },
     { "core/list",    test_list_cases    },

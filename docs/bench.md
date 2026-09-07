@@ -12,7 +12,7 @@
 | 编译器 | MinGW-w64 gcc **16.1.0**(x86_64-win32-seh) |
 | flags | `-O2 -std=c99 -Wall -Wextra` |
 | 系统 | Windows 11 / Git Bash;`clock()` 为进程 CPU 时间,粒度 ~1ms |
-| 查表变体 | 追加 `-DET_CRC_TABLE=1` 单独构建(仅 CRC16-CCITT 受益) |
+| 查表变体 | 追加 `-DET_CRC_TABLE=1` 单独构建(CRC16-CCITT 与 CRC32 v1.9 起同受益) |
 
 ## 结果(v1.7.0 基线)
 
@@ -22,17 +22,19 @@
 | ringbuf 块 256B(cap 4096 POW2) | 1220.7 MB/s | — |
 | ringbuf 块 256B(cap 4000 非 POW2) | 1220.7 MB/s | — |
 | crc16-ccitt(4KB×512,链式) | 500.0 MB/s | 500.0 MB/s |
-| crc32 位算法(4KB×512,链式) | 125.0 MB/s | —(无表路径) |
+| crc32(4KB×512,链式; v1.9 前恒位算法) | 125.0 MB/s(位) | 500.0 MB/s(表) |
 | xmodem 有效载荷吞吐(128B 块,含协议开销) | 271.3 MB/s | — |
 | kv set+get 交替(32B 值,host 虚拟 flash) | 90909 ops/s | — |
 | filter movavg 单次更新 | 2.0 ns/op | — |
 | fsm dispatch(含 guard 回调) | 4.0 ns/op | — |
+| map u32 get(97 槽,负载 0.62;v1.9) | 2.0 ns/op | — |
+| smap str get(97 槽,负载 0.62;v1.9) | 8.0 ns/op | — |
 
 ## 观察与备注
 
 - ringbuf POW2 与非 POW2 块吞吐无差异:该访问模式下内部操作相同(无取模,自动递增索引);
 - crc16-ccitt 位算法与查表在本模式(4KB 驻 L1 缓冲)下同达吞吐上限,查表的价值预期在缓存敏感/更大缓冲场景;
-- crc32 无查表路径,恒位算法(125 MB/s ≈ ccitt 的 1/4,反射+32 位宽所致);
+- crc32 位算法 125 MB/s(≈ ccitt 位算法的 1/4,反射+32 位宽所致);v1.9 补表路径后 500 MB/s,与 ccitt 表同档;
 - xmodem 有效吞吐含帧头/补码/CRC 计算(133B 线路字节承载 128B 载荷,协议开销 3.9%);
 - kv 速率受 host 虚拟 flash(memcpy 模拟)影响,**不代表真实 flash 时序**(真实页擦 ms 级);
 - 复现:`make bench`(或 Makefile 注释中的 gcc 命令),查表变体 `make bench-table`。
@@ -41,5 +43,6 @@
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| v1.9.0 | 2026-09-08 | 复测无回归; 新增 map/smap 查找行(2/8 ns/op, 字符串键哈希+memcmp 开销 ~4x); crc32 表路径 125→500 MB/s |
 | v1.8.0 | 2026-09-06 | 复测: 各项在噪声范围内(±5%), 无回归; map/xmodem_tx 未入基准(下版按需) |
 | v1.7.0 | 2026-09-06 | 首版基线(本表全部数字) |

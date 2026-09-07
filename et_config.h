@@ -17,9 +17,9 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        1
-#define ET_VERSION_MINOR        8
+#define ET_VERSION_MINOR        9
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x010800 = 1.8.0, 便于条件编译比较: #if ET_VERSION >= 0x010800 */
+/* 整数编码 0x010900 = 1.9.0, 便于条件编译比较: #if ET_VERSION >= 0x010900 */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
@@ -47,6 +47,9 @@ extern "C" {
 
 #ifndef ET_MODULE_MAP
 #define ET_MODULE_MAP           1   /* core: 定容开放寻址哈希表(v1.8)   */
+#endif
+#ifndef ET_MODULE_SMAP
+#define ET_MODULE_SMAP          1   /* core: 定容字符串键映射(v1.9)     */
 #endif
 #ifndef ET_MODULE_FILTER
 #define ET_MODULE_FILTER        1   /* algorithm: 定点数字滤波器组      */
