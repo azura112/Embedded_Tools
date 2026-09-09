@@ -1,0 +1,39 @@
+name: 移植求助 (New port help)
+description: 新平台移植 port.h 契约时的问题与经验反馈
+labels: ["port", "question"]
+body:
+  - type: markdown
+    attributes:
+      value: 先读 port/_template/README.md 清单与 docs/API_STABILITY.md 冻结契约。
+  - type: input
+    id: chip
+    attributes:
+      label: 目标芯片/SDK
+      placeholder: 例: STM32G071 / GD32F303 / ESP32-C3(SDK 版本)
+    validations:
+      required: true
+  - type: input
+    id: geometry
+    attributes:
+      label: flash 页大小/参数区规划 (PORT_FLASH_* 三宏取值)
+      placeholder: 例: 页 2048B, 参数区 16 页, 擦除上限 40ms
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: 卡点描述(报错/双几何回归输出/寄存器现场)
+      placeholder: 贴 make test(几何宏) 输出与最小复现
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 已自查项
+      options:
+        - label: 几何三宏已 -D 且 port #error 守卫通过
+          required: true
+        - label: 双几何回归(make test 两套几何)已跑并贴结果
+          required: true
+        - label: 已读 port.h 契约与 _template checklist
+          required: true

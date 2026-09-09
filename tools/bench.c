@@ -299,6 +299,7 @@ static void b_map_setup(void)
         b_sm_keys[i][3] = (char)('0' + (i % 10u));
         b_sm_keys[i][4] = '\0';
         (void)et_smap_put(&b_smap, b_sm_keys[i], i);
+        (void)et_smap_put_ci(&b_smap, b_sm_keys[i], 1000u + i);   /* v2.0 ci 面 */
     }
     (void)v;
 }
@@ -330,6 +331,29 @@ static double bench_smap_get(void)
     t0 = clock();
     for (i = 0u; i < n; i++) {
         (void)et_smap_get(&b_smap, b_sm_keys[i % B_MAP_N], &v);
+    }
+    g_sink = v;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+static double bench_smap_ci_get(void)
+{
+    uint32_t n = 1000000u;
+    uint32_t i;
+    uint32_t v = 0u;
+    clock_t  t0;
+
+    b_map_setup();
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        char   k[8];
+        uint32_t idx = i % B_MAP_N;
+
+        k[0] = 'c'; k[1] = 'F';                       /* 大小写混合: ci 路径 */
+        k[2] = (char)('A' + (idx / 10u));
+        k[3] = (char)('a' + (idx % 10u));
+        k[4] = '\0';
+        (void)et_smap_get_ci(&b_smap, k, &v);
     }
     g_sink = v;
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
@@ -389,6 +413,7 @@ int main(void)
     report_ns("fsm dispatch (guard)", bench_fsm, 1000000.0);
     report_ns("map u32 get (97 slots, load 0.62)", bench_map_get, 1000000.0);
     report_ns("smap str get (97 slots, load 0.62)", bench_smap_get, 1000000.0);
+    report_ns("smap ci get (v2.0 case-fold)", bench_smap_ci_get, 1000000.0);
 
     printf("------------------------------------------------------------\n");
     printf("note: numbers are for same-machine version regression only,\n");

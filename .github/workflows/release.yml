@@ -68,10 +68,27 @@ jobs:
           cd build
           sha256sum stm32f103_demo.elf stm32f103_demo.bin demo.exe > SHA256SUMS
 
+      - name: Build release body from CHANGELOG section (v2.0 P3-1 双源漂移终结)
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            index($0, "## [" ver "]") == 1 { keep = 1; next }
+            keep && /^## \[/              { keep = 0 }
+            keep { print }
+          ' CHANGELOG.md > release_body.md
+          if [ ! -s release_body.md ]; then
+            echo "ERROR: CHANGELOG.md 无版本 $VER 对应节 (发布前须先随交付更新)"; exit 1
+          fi
+          printf '
+---
+发布验证: CI verify 门(全量单测 + Renode smoke + docbuild)已过; 工件与构建环境见交付文档复现表。
+' >> release_body.md
+          head -8 release_body.md
+
       - name: Draft GitHub Release with artifacts
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release_body.md
           files: |
             build/stm32f103_demo.elf
             build/stm32f103_demo.bin

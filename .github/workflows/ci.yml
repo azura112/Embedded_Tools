@@ -28,6 +28,13 @@ jobs:
         if: runner.os == 'Linux'
         run: sh tools/apidump.sh --check
 
+      - name: Upload API inventory artifact (v2.0 P4)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-inventory
+          path: docs/API_INVENTORY.md
+
       - name: Doc-sync assertions (tools/docsync.sh)
         if: runner.os == 'Linux'
         run: sh tools/docsync.sh

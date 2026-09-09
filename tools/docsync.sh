@@ -216,6 +216,13 @@ assert_grep "port/stm32f103/README.md"        "17712"               "体积表 v
 assert_grep "port/stm32f103/README.md"        "26180"               "体积表 v2.0 selftest 行"
 assert_grep "port/stm32g474/README.md"        "18084"               "体积表 v2.0 行(g474)"
 assert_grep "README.md"                       "sizecheck"           "checklist/README 引用 sizecheck 门"
+assert_grep "port/_template/port_template.c" "port_flash_erase_sector"  "移植模板含 flash 契约(四件套)"
+assert_grep "port/_template/port_template.c" "port_wdt_enable"          "移植模板含 wdt 三件套"
+assert_grep "port/_template/port_template.c" "port_critical_enter"      "移植模板含临界区"
+assert_grep "port/_template/port_template.c" "port_tick_get_ms"         "移植模板含时基"
+assert_grep "port/_template/port_template.c" "#error"                   "移植模板含几何守卫"
+assert_grep "port/_template/README.md"       "双几何回归硬性项"         "移植 checklist 含双几何"
+assert_grep ".github/workflows/release.yml"  "body_path: release_body.md" "Release 正文注入 CHANGELOG 节(P3-1)"
 
 # ---- v2.0 P1 冻结契约三件套 + 清单一致性机制 ----
 if sh tools/apidump.sh --check >/tmp/docsync_apidump.log 2>&1; then

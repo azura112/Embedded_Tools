@@ -1,0 +1,26 @@
+name: Bug 复现 (Bug report)
+description: 库行为与文档/API 清单不符
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本 (ET_VERSION_STRING / git tag)
+      placeholder: 例: v2.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 最小复现(单测形式优先, host 构建即可复现的请附代码)
+      placeholder: |
+        gcc -std=c99 -I. -Icore ... test.c && ./a.out
+        期望: ... 实际: ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为与依据(引用头文件注/API_GUIDE/API_INVENTORY 条目)
+    validations:
+      required: true
