@@ -96,7 +96,7 @@ jobs:
           mkdir -p build
           sh tools/docbuild.sh
 
-      - name: Size readings to summary + artifact (v2.0 P0-3, 不等值断言: 表行=本机环境)
+      - name: Size readings to summary and artifact (v2.0 P0-3, 表行为本机环境读数)
         run: |
           arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf | tee build/sizes-f103.txt
           cat build/sizes-f103.txt >> "$GITHUB_STEP_SUMMARY"

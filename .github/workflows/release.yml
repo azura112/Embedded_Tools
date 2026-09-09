@@ -79,10 +79,7 @@ jobs:
           if [ ! -s release_body.md ]; then
             echo "ERROR: CHANGELOG.md 无版本 $VER 对应节 (发布前须先随交付更新)"; exit 1
           fi
-          printf '
----
-发布验证: CI verify 门(全量单测 + Renode smoke + docbuild)已过; 工件与构建环境见交付文档复现表。
-' >> release_body.md
+          printf '\n---\n发布验证: CI verify 门(全量单测 + Renode smoke + docbuild)已过; 工件与构建环境见交付文档复现表。\n' >> release_body.md
           head -8 release_body.md
 
       - name: Draft GitHub Release with artifacts
