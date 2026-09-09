@@ -6,7 +6,7 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
-## [2.0.0] — 开发中（发布时定稿）· **v2.0 — API freeze**
+## [2.0.0] — 2026-09-09 · **v2.0 — API freeze（契约冻结与工程单一来源）**
 
 契约冻结与工程单一来源（里程碑版：API 冻结声明 + 构建单一来源 + size 门）。
 

@@ -71,9 +71,14 @@ jobs:
       - name: Build release body from CHANGELOG section (v2.0 P3-1 双源漂移终结)
         run: |
           VER="${GITHUB_REF_NAME#v}"
+          # 容忍简 tag(v2.0)与全 tag(v2.0.0): 节标题 ## [ver] 或 ## [ver.x...]
           awk -v ver="$VER" '
-            index($0, "## [" ver "]") == 1 { keep = 1; next }
-            keep && /^## \[/              { keep = 0 }
+            BEGIN { needle = "## [" ver; nlen = length(needle) }
+            substr($0, 1, nlen) == needle {
+              rest = substr($0, nlen + 1)
+              if (rest ~ /^[].]/) { keep = 1; next }
+            }
+            keep && /^## \[/ { keep = 0 }
             keep { print }
           ' CHANGELOG.md > release_body.md
           if [ ! -s release_body.md ]; then
