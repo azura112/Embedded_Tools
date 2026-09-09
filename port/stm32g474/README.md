@@ -64,6 +64,8 @@ arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -
 arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bin
 ```
 
+> **单一来源纪律（v2.0 P0-2）**：CI 与 Release 的 G474 交叉构建转调 `sh tools/docbuild.sh`；`sizecheck.sh` 本地发布前比对下表当前版本行。
+
 实测：**`-Wall -Wextra -pedantic` 零警告**。体积测量环境：GNU Tools for STM32 **13.3.rel1**（STM32CubeCLT 1.18.0），Git Bash 下 `-Os -g` 构建，`arm-none-eabi-size build/stm32g474_demo.elf` 读数（跨编译器版本存在布局级 ±16B 差异，以本环境复现为准）：
 
 | 版本 | text | data | bss | 备注 |
@@ -73,6 +75,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v1.7 | 15948 | 28 | 596 | 默认（et_selftest 裁剪）；**全启用 `-DET_MODULE_SELFTEST=1`: text 23868 / bss 2268**（17 套件全量, +7920/+1672）—— DoD 体积增量记录 |
 | v1.8 | 17108 | 28 | 740 | 默认裁剪；+RX 中断/环形缓冲 + tickless + et_map/et_xmodem_tx（selftest 构建增量见 v1.7 行） |
 | v1.9 | 18088 | 28 | 740 | 默认裁剪；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数/跨槽写守卫）+ port wdt 冷启动时序修复 |
+| v2.0 | 18084 | 28 | 740 | 默认裁剪；API 冻结版本，较 v1.9 终值 -4B 为版本串编码差（`sizecheck.sh` 门；CI 转调 `tools/docbuild.sh` 单一来源） |
 
 ## 烧录与运行
 

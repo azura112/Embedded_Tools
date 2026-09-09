@@ -43,6 +43,18 @@ for f in $PORTS; do
         echo "FAIL: $f 构建命令执行失败"
         FAIL=1
     fi
+
+    # 产物存在性核验 (v2.0 P0-2 单一来源: CI/Release/sizecheck 全部消费这些名字)
+    case "$f" in
+    *stm32f103*)
+        for a in build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf                  build/stm32f103_demo.bin build/stm32f103_demo_selftest.bin; do
+            [ -f "$a" ] || { echo "FAIL: $f 产物缺失 $a"; FAIL=1; }
+        done ;;
+    *stm32g474*)
+        for a in build/stm32g474_demo.elf build/stm32g474_demo.bin; do
+            [ -f "$a" ] || { echo "FAIL: $f 产物缺失 $a"; FAIL=1; }
+        done ;;
+    esac
 done
 
 if [ "$FAIL" -ne 0 ]; then

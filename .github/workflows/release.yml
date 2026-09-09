@@ -23,17 +23,10 @@ jobs:
       - name: Run full unit tests
         run: make test
 
-      - name: Build stm32f103 demo
+      - name: Build via docbuild (README 单一来源, v2.0 P0-2; smoke 消费 _selftest elf)
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g -DET_MODULE_SELFTEST=1 \
-            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
-            -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
-            port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
-            examples/stm32f103_demo.c \
-            -o build/stm32f103_demo.elf
-          arm-none-eabi-size build/stm32f103_demo.elf
+          sh tools/docbuild.sh
 
       - name: Install Renode (pinned 1.16.1)
         run: |
@@ -64,18 +57,11 @@ jobs:
       - name: Build host demo
         run: make demo
 
-      - name: Build stm32f103 demo (ELF + BIN)
+      - name: Build via docbuild (README 单一来源, v2.0 P0-2; 产物=默认无宏构建)
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
-            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
-            -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
-            port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
-            examples/stm32f103_demo.c \
-            -o build/stm32f103_demo.elf
-          arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bin
-          arm-none-eabi-size build/stm32f103_demo.elf
+          sh tools/docbuild.sh
+          arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 
       - name: Generate SHA256SUMS
         run: |

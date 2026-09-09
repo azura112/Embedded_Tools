@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v1.9.0**（`ET_VERSION_STRING`）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.9开发交付：板上收口与字符串映射.md](v1.9开发交付：板上收口与字符串映射.md)**
+> 当前版本：**v2.0.0**（`ET_VERSION_STRING`，**API 冻结版本**，契约见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.9开发交付：板上收口与字符串映射.md](v1.9开发交付：板上收口与字符串映射.md)**
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
@@ -178,7 +178,7 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 
 1. **文档同步逐文件核对（v1.5 起脚本化）**：运行 `sh tools/docsync.sh` 必须全绿——任何"文档已同步"声明必须对应脚本内断言，无断言的声明视为未同步（根治 v1.2/v1.4 两次"声称未做"复发）；
 2. **版本钉三方一致**：`et_config.h` 的 `ET_VERSION_STRING` = git tag = 交付文档版本行（`gcc -E -dM et_config.h | grep ET_VERSION_STRING` 复现）；
-3. **量化声明附复现命令**：用例数（`make test` 输出 RESULT 行）、覆盖率（`gcovr --print-summary`）、ARM 体积（`arm-none-eabi-size`）、零警告（`-Wall -Wextra -pedantic` 下无输出）；
+3. **量化声明附复现命令**：用例数（`make test` 输出 RESULT 行）、覆盖率（CI `make coverage-build` + `gcovr --print-summary`）、ARM 体积（`arm-none-eabi-size`，发布前 `sh tools/sizecheck.sh` 与体积表当前版本行逐值比对）、零警告（`-Wall -Wextra -pedantic` 下无输出）；
 4. **主机回归全绿**：`make test` 本地跑一遍后再打 tag，不以"CI 会跑"替代本地验证；
 5. **交付文档命名**：`v<版本号>开发交付：<重点概况>.md`（全角冒号），里程碑对照提交哈希逐条可回溯；
 6. **量化声明附复现命令 + 环境注记**（v1.3 验收教训）：任何体积/覆盖率/用例数声明必须注明测量工具链精确版本与 shell，并给出可复现命令（例：`arm-none-eabi-size` + GNU Tools for STM32 13.3.rel1；`gcovr --print-summary` 于 MinGW gcc 16.1）——无环境注记的裸数字视为无效。

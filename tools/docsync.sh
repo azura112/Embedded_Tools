@@ -202,9 +202,24 @@ assert_grep "移植stm32实机记录.md" "SELFTEST: 17/17"          "实机记�
 assert_grep "移植stm32实机记录.md" "reset cause: IWDG"        "实机记录含 IWDG 真超时证据(P0-1 走单4)"
 assert_no_grep "移植stm32实机记录.md" "待上板执行"            "实机记录走单占位符已全部回填(P0-1)"
 
+# ---- v2.0 P0 单一来源 / sizecheck / 数字回刷 ----
+assert_grep "tools/sizecheck.sh"  "arm-none-eabi-size"         "sizecheck 门存在(P0-3)"
+assert_grep "tools/sizecheck.sh"  "docbuild"                   "sizecheck 走 docbuild 单一来源"
+assert_no_grep ".github/workflows/ci.yml"     "-o build/stm32f103_demo.elf"  "CI 无内联 F103 构建清单(P0-2 单一来源)"
+assert_no_grep ".github/workflows/release.yml" "-o build/stm32f103_demo.elf" "Release 无内联构建清单(P0-2)"
+assert_grep ".github/workflows/ci.yml"        "tools/docbuild.sh"   "CI 转调 docbuild(交叉/仿真)"
+assert_grep ".github/workflows/release.yml"   "tools/docbuild.sh"   "Release 转调 docbuild"
+assert_grep "Makefile"                        "coverage-build"      "Makefile coverage 单源目标(P0-2)"
+assert_grep ".github/workflows/ci.yml"        "make coverage-build" "CI coverage 转调 Makefile"
+assert_grep "port/stm32f103/renode/smoke.sh"  "_selftest.elf"       "smoke 消费 selftest 变体产物"
+assert_grep "port/stm32f103/README.md"        "17712"               "体积表 v2.0 默认行(实测回刷)"
+assert_grep "port/stm32f103/README.md"        "26180"               "体积表 v2.0 selftest 行"
+assert_grep "port/stm32g474/README.md"        "18084"               "体积表 v2.0 行(g474)"
+assert_grep "README.md"                       "sizecheck"           "checklist/README 引用 sizecheck 门"
+
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
-for f in v1.*开发交付*.md; do
+for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 v1.* 会静默漏掉 v2 交付文档)
     if ! grep -q "覆盖率" "$f"; then
         echo "FAIL 交付复现表缺覆盖率行: $f"
         FAIL=$((FAIL + 1))

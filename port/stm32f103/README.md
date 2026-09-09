@@ -37,6 +37,7 @@ demo 占用参数区**扇区 14/15**（0x0800F800 起）作 et_kv 双扇区乒�
 ## 构建（arm-none-eabi-gcc）
 
 ```docbuild
+# 命令 1: 用户入口默认构建(无宏, selftest 经 #if 守卫可链接)
 arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
   -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
   -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
@@ -45,8 +46,23 @@ arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -
   examples/stm32f103_demo.c \
   -o build/stm32f103_demo.elf
 
+# 命令 2: CI/仿真常态构建(selftest 启用, Renode smoke 消费 _selftest 产物)
+arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -Os -g \
+  -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
+  -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
+  core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
+  port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
+  examples/stm32f103_demo.c \
+  -o build/stm32f103_demo_selftest.elf
+
 arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bin
+arm-none-eabi-objcopy -O binary build/stm32f103_demo_selftest.elf build/stm32f103_demo_selftest.bin
+arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 ```
+
+> **单一来源纪律（v2.0 P0-2）**：CI 与 Release 的 F103 交叉构建一律转调
+> `sh tools/docbuild.sh`（即原样执行上方代码块）；`tools/sizecheck.sh` 在本地发布前
+> 把 `arm-none-eabi-size` 读数与下表**当前版本行**逐值比对。
 
 实测：**`-Wall -Wextra -pedantic` 零警告**。体积测量环境：GNU Tools for STM32 **13.3.rel1**（STM32CubeCLT 1.18.0），Git Bash 下 `-Os -g` 构建，`arm-none-eabi-size build/stm32f103_demo.elf` 读数（跨编译器版本存在布局级 ±16B 差异，以本环境复现为准）：
 
@@ -60,15 +76,17 @@ arm-none-eabi-objcopy -O binary build/stm32f103_demo.elf build/stm32f103_demo.bi
 | v1.6 | 15576 | 24 | 596 | +tickless 增量 API（next_due×2，demo 未调用；-nostartfiles 无 gc-sections 全量入 ELF） |
 | v1.7 | 15580 | 24 | 596 | +et_selftest 组件入库（默认裁剪，demo 未启用，仅版本宏级增量） |
 | v1.8 | 25200 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）+ RX 中断/环形缓冲 + tickless（+et_map/et_xmodem_tx）（v1.8 交付文档误记 25180，v1.9 数字回刷实测） |
-| v1.9 | 16852 | 24 | 740 | 默认裁剪构建（README/`docbuild` 无宏原样可链接——selftest 调用已 `#if` 守卫） |
-| v1.9 | 25352 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数）|
+| v1.9 | 17716 | 24 | 740 | 默认裁剪构建（README/`docbuild` 无宏原样可链接——selftest 调用已 `#if` 守卫）；16852 为 M1 时点值,et_smap/crc32 入 glob 后终值 17716,v2.0 回刷 |
+| v1.9 | 26180 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数）；25352 为 M1 时点值,v2.0 回刷 |
+| v2.0 | 17712 | 24 | 740 | 默认裁剪构建（`sizecheck.sh` 门首版数值；较 v1.9 终值 -4B 为版本串 2.0.0 编码差,M5 按终树复核） |
+| v2.0 | 26180 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；同上 |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 
 `renode/smoke.sh` 在 headless Renode 中跑通 demo 并断言串口关键日志（横幅 / `kv: seq=…` / UTC 心跳 / `boot #1` / **复位后 `boot #2`** —— 后者即 kv 掉电持久化的功能证据）：
 
 ```sh
-arm-none-eabi-gcc ...(同上, 产出 build/stm32f103_demo.elf)
+sh tools/docbuild.sh   # v2.0 起单一来源(产出 _selftest elf 供 smoke)
 sh port/stm32f103/renode/smoke.sh <renode可执行> <renode安装根> <仓库根> <输出目录>
 ```
 

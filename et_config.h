@@ -16,10 +16,11 @@ extern "C" {
 
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
-#define ET_VERSION_MAJOR        1
-#define ET_VERSION_MINOR        9
+#define ET_VERSION_MAJOR        2
+#define ET_VERSION_MINOR        0
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x010900 = 1.9.0, 便于条件编译比较: #if ET_VERSION >= 0x010900 */
+/* 整数编码 0x020000 = 2.0.0, 便于条件编译比较: #if ET_VERSION >= 0x020000
+ * v2.0 = 契约稳定里程碑(API 冻结声明生效, 见 docs/API_STABILITY.md) */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))

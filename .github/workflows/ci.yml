@@ -49,14 +49,10 @@ jobs:
       - name: Install gcovr
         run: pip install gcovr
 
-      - name: Build & run tests with coverage
+      - name: Build & run tests with coverage (Makefile 单一来源, v2.0 P0-2)
         run: |
           mkdir -p build
-          gcc -std=c99 -Wall -Wextra -pedantic --coverage -DET_MODULE_SELFTEST=1 \
-              -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
-              -o build/et_tests_cov.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
-              port/host/port_host.c test/*.c
-          ./build/et_tests_cov.exe
+          make coverage-build
 
       - name: Generate coverage report (gate ≥85% lines)
         run: |
@@ -81,17 +77,20 @@ jobs:
       - name: Install ARM toolchain
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
 
-      - name: Build stm32f103 demo
+      - name: Build via docbuild (README 单一来源, v2.0 P0-2)
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -Os -g \
-            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
-            -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
-            port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
-            examples/stm32f103_demo.c \
-            -o build/stm32f103_demo.elf
-          arm-none-eabi-size build/stm32f103_demo.elf
+          sh tools/docbuild.sh
+
+      - name: Size readings to summary + artifact (v2.0 P0-3, 不等值断言: 表行=本机环境)
+        run: |
+          arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf | tee build/sizes-f103.txt
+          cat build/sizes-f103.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload size readings
+        uses: actions/upload-artifact@v4
+        with:
+          name: sizes-stm32f103
+          path: build/sizes-f103.txt
 
   # STM32G474 移植编译验证 (v1.6 双平台回归, Cortex-M4, 零警告门槛):
   # -D 三宏 = G4 flash 几何(2KB 页), port 层 #error 守卫验证漏配即编译失败
@@ -104,18 +103,20 @@ jobs:
       - name: Install ARM toolchain
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
 
-      - name: Build stm32g474 demo
+      - name: Build via docbuild (README 单一来源, v2.0 P0-2)
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -std=c99 -Wall -Wextra -pedantic -Os -g \
-            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32g474 \
-            -DPORT_FLASH_SECTOR_SIZE=2048 -DPORT_FLASH_SECTOR_COUNT=16 -DPORT_FLASH_ERASE_MS_MAX=40 \
-            -T port/stm32g474/stm32g474vet6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
-            port/stm32g474/port_stm32g474.c port/stm32g474/startup_stm32g474.c \
-            examples/stm32g474_demo.c \
-            -o build/stm32g474_demo.elf
-          arm-none-eabi-size build/stm32g474_demo.elf
+          sh tools/docbuild.sh
+
+      - name: Size readings to summary + artifact (v2.0 P0-3)
+        run: |
+          arm-none-eabi-size build/stm32g474_demo.elf | tee build/sizes-g474.txt
+          cat build/sizes-g474.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload size readings
+        uses: actions/upload-artifact@v4
+        with:
+          name: sizes-stm32g474
+          path: build/sizes-g474.txt
 
       - name: Verify geometry #error guard (build without -D must fail)
         run: |
@@ -152,17 +153,10 @@ jobs:
       - name: Install ARM toolchain
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
 
-      - name: Build stm32f103 demo
+      - name: Build via docbuild (README 单一来源; smoke 消费 _selftest elf)
         run: |
           mkdir -p build
-          arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -Os -g \
-            -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/stm32f103 \
-            -T port/stm32f103/stm32f103c8t6.ld -nostartfiles \
-            core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
-            port/stm32f103/port_stm32f103.c port/stm32f103/startup_stm32f103.c \
-            examples/stm32f103_demo.c \
-            -o build/stm32f103_demo.elf
-          arm-none-eabi-size build/stm32f103_demo.elf
+          sh tools/docbuild.sh
 
       - name: Install Renode (pinned 1.16.1)
         run: |

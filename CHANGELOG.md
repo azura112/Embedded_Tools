@@ -6,6 +6,17 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.0.0] — 开发中（发布时定稿）
+
+契约冻结与工程单一来源（里程碑版：API 冻结声明 + 构建单一来源 + size 门）。
+
+### Added
+- 构建/发布单一来源（P0-2）：CI/Release 的 ARM 交叉构建与 coverage 全部转调 `tools/docbuild.sh`/Makefile；`tools/sizecheck.sh` 体积表逐值门（P0-3）。
+- （M2/M3 进行中：API_STABILITY 冻结契约三件套 / et_smap 大小写折叠 / shell Tab 补全——细节随交付定稿。）
+
+### Fixed / Changed / 挂账
+- v1.9 三处滞后数字回刷（17716/26180→v2.0 实测 17712/26180/18084；docsync 121→122）。
+
 ## [1.9.0] — 2026-09-08
 
 板上收口与字符串映射（三版板面挂账一次清偿 + et_smap + 文档可执行化）。
