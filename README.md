@@ -48,7 +48,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 340 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 31 + map 13 + smap 14）
+├── test/              # 迷你框架 + 345 个单元用例（bootctl 掉电矩阵 24 + kv 28 + xmodem 31 + map 13 + smap 18 + shell_tab 8）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -150,11 +150,11 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) { export_to_host(k, len); }
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，340 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，345 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（340 例，另 1K 变体 341 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（345 例，另 1K 变体 346 例、shell Tab 开启形态同套件数）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，17 套件一条命令冒烟（host/板上结果可比对）；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；

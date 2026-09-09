@@ -75,7 +75,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v1.7 | 15948 | 28 | 596 | 默认（et_selftest 裁剪）；**全启用 `-DET_MODULE_SELFTEST=1`: text 23868 / bss 2268**（17 套件全量, +7920/+1672）—— DoD 体积增量记录 |
 | v1.8 | 17108 | 28 | 740 | 默认裁剪；+RX 中断/环形缓冲 + tickless + et_map/et_xmodem_tx（selftest 构建增量见 v1.7 行） |
 | v1.9 | 18088 | 28 | 740 | 默认裁剪；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数/跨槽写守卫）+ port wdt 冷启动时序修复 |
-| v2.0 | 18084 | 28 | 740 | 默认裁剪；API 冻结版本，较 v1.9 终值 -4B 为版本串编码差（`sizecheck.sh` 门；CI 转调 `tools/docbuild.sh` 单一来源） |
+| v2.0 | 18208 | 28 | 740 | 默认裁剪（终值 [数字回刷]）；API 冻结版本；+et_smap_ci 入 core glob；CI 转调 `tools/docbuild.sh` 单一来源 |
 
 ## 烧录与运行
 

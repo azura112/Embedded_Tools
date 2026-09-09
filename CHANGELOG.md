@@ -18,6 +18,12 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ### Changed
 - f103 port README 构建块升级为双构建 docbuild 单一来源（默认 + _selftest；Renode smoke 改消费 `_selftest.elf`）。
+- 用例矩阵终值：345 例 × 双几何 + 1K 变体 346 + `make test-tab`(开启形态 8 例)；f103 体积终值 17836/26304、g474 18208 [数字回刷]。
+
+### Added（P3/P4）
+- Release 正文自动生成：release.yml 注入 CHANGELOG 对应版本节（无节即红，v1.7 遗留双源终结）。
+- `port/_template/` 新平台移植脚手架：契约四件套骨架 + 几何宏清单 + `#error` 守卫样例 + 8 步接入 checklist（G474/F103 教训浓缩；模板编译/漏 -D 即败双验证）。
+- bench `smap ci get` 行（11.0 ns/op，折叠 +3ns）；CI 上传 API 清单 artifact；GitHub Issue 模板（移植求助/Bug 复现）。
 
 ### Fixed / Changed / 挂账
 - v1.9 三处滞后数字回刷（17716/26180→v2.0 实测 17712/26180/18084；docsync 121→122）。

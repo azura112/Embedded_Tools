@@ -78,8 +78,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v1.8 | 25200 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）+ RX 中断/环形缓冲 + tickless（+et_map/et_xmodem_tx）（v1.8 交付文档误记 25180，v1.9 数字回刷实测） |
 | v1.9 | 17716 | 24 | 740 | 默认裁剪构建（README/`docbuild` 无宏原样可链接——selftest 调用已 `#if` 守卫）；16852 为 M1 时点值,et_smap/crc32 入 glob 后终值 17716,v2.0 回刷 |
 | v1.9 | 26180 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；+et_smap 入 core glob + 升级链修复（DONE 收尾 ACK/ok 判定/abandon 前置/槽序号参数）；25352 为 M1 时点值,v2.0 回刷 |
-| v2.0 | 17712 | 24 | 740 | 默认裁剪构建（`sizecheck.sh` 门首版数值；较 v1.9 终值 -4B 为版本串 2.0.0 编码差,M5 按终树复核） |
-| v2.0 | 26180 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；同上 |
+| v2.0 | 17836 | 24 | 740 | 默认裁剪构建（终值, `sizecheck.sh` 门 [数字回刷]；较 v1.9 +120B = et_smap_ci + port wdt 时序注释无关码外增量） |
+| v2.0 | 26304 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值 [数字回刷]） |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 
