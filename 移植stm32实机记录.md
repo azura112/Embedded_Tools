@@ -14,8 +14,8 @@
 | 工具链 | GNU Tools for STM32 **13.3.rel1**(STM32CubeCLT 1.18.0),`arm-none-eabi-gcc --version` 复现 |
 | 构建系统 | CMake(Ninja)+ CubeMX 生成工程,`cmake --preset Debug/Release` |
 | 宿主 | Windows / Git Bash |
-| 库源 | `D:\code\My_Library\Embedded_Tools`(v1.5 + G4 8B 槽适配)整体拷入 `Core/et/` |
-| 板级接线 | LED=PC0(推挽,假定高电平点亮)、按键=PD15(上拉,按下为低)、串口=PA9/PA10 外置 USB-TTL,115200-8-N-1 |
+| 库源 | `D:\code\My_Library\Embedded_Tools`整体拷入 `Core/et/`(v1.9.0 全量同步,`diff -rq` 校验) |
+| 板级接线 | LED=PC0(推挽,**高电平点亮已由走单 5 目视确认**)、按键=PD15(上拉,按下为低)、串口=PA9/PA10 外置 USB-TTL(CH343),115200-8-N-1 |
 | 时钟 | HSI16 ×PLL = 144MHz(CubeMX `.ioc` 时钟树,FLASH_LATENCY_4) |
 
 ## 2. 两条移植轨
@@ -172,17 +172,14 @@ ET> AT+WDTEST              → [at] IWDG armed 200ms, stop feeding -> reset expe
 | 复位后 boot#n+1 / 自检正常 | ✅ boot 计数 +1、kv/升级链照常(此前一次 WDTEST 后进入自愈喂狗,见问题 7/10) |
 | 附加证据 | IWDG 启动后不可停:复位后 demo 检测 IWDGRSTF 自愈进入每循环 `et_wdt_feed()`,心跳连续(56s+ 稳定) |
 
-### 走单 5: LED 极性 / 按键补录
+### 走单 5: LED 极性 / 按键补录 —— ✅ 2026-09-09 上板人现场目视确认
 
 | 项 | 结果 |
 |---|---|
-| PC0 极性实测(上电 3 连闪是否可见) | 【待上板人目视】 |
-| PD15 短按 → blink on / 长按 → breath on | 【待上板人按键现场】 |
+| PC0 极性实测(上电 3 连闪是否可见) | ✅ 上电 3 连闪(400ms 周期)清晰可见——**PC0 高电平点亮成立**,`spwm_led_write` 分支无需对调 |
+| PD15 短按 → blink on / 长按 → breath on | ✅ 短按出 `demo: blink on` 慢闪;长按(≥600ms)出 `demo: breath on` 2s 呼吸,亮度渐变肉眼可见;"测试完全符合预期,正常运行"(上板人原话) |
 
-> 执行法(目视会话 ~1 分钟): 复位板上电观察 PC0 LED 是否 3 连闪(400ms 周期);
-> 短按 PD15 应 `demo: blink on`(慢闪),长按 ≥600ms 应 `demo: breath on`(2s 呼吸,
-> 呼吸态 LED 亮度渐变可见)。若上电无闪而低电平常亮逻辑相反 → PC0 为低有效,
-> 对调 `spwm_led_write` 高低分支(§7 挂账保留本条)。
+> 本条为 v1.6 走单最后未闭合项;至此升级链走单 1~5 全部板上实证。**v1.6~v1.9 板面零欠账。**
 
 ## 6. 问题记录(实机暴露 → 定位 → 修复)
 
@@ -250,7 +247,7 @@ IWDG 启动后不可停(仅断电清除),而 demo 常规主循环不喂狗 → W
 
 | 项 | 状态 |
 |---|---|
-| LED 点亮极性 / 按键短按长按 | 走单 5:软件侧全通(命令/日志),**LED 可见性与按键手感待上板人目视**(§5 执行法) |
+| LED 点亮极性 / 按键短按长按 | ✅ 2026-09-09 走单 5 目视确认: PC0 高有效(3 连闪可见)、PD15 短按/长按行为全对——板面挂账清零 |
 | `AT+SIMUPGRADE` / `AT+UPGRADE`(xmodem→bootctl 升级链) | ✅ v1.9 走单 1~3 收口(2026-09-08),暴露缺陷 3~6/9 已修 |
 | IWDG 真超时复位 | ✅ v1.9 走单 4 收口:原因寄存器 IWDG + 自愈喂狗(暴露缺陷 7/10 已修) |
 | 库内裸机移植轨(port/stm32g474) | 未单独上板(真机验证经 HAL 版 port,同契约) |
