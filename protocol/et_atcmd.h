@@ -8,7 +8,8 @@
  *     可用 et_atcmd_next_arg() 按空白切分;
  *   - 空行忽略; 支持 0x08/0x7F 退格(控制台友好);
  *   - 行超长时丢弃整行并返回错误。
- */
+ *
+ * 并发策略: 全部 API 仅限 🏠MAIN (行缓冲/解析态无锁; ISR 不得调用)。 */
 #ifndef ET_ATCMD_H
 #define ET_ATCMD_H
 

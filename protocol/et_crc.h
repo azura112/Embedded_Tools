@@ -18,7 +18,8 @@
  * 说明: 位算法对典型 MCU 帧(几十~几百字节)性能足够; 若需更高吞吐,
  *       -DET_CRC_TABLE=1 切换 CRC16-CCITT 与 CRC32/IEEE 查表实现
  *       (API 与结果完全一致; CRC32 表 1KB 驻只读段, v1.9 扩展)。
- */
+ *
+ * 并发策略: 纯函数无内部状态——任意上下文(含 ISR)可调用, 可重入。 */
 #ifndef ET_CRC_H
 #define ET_CRC_H
 

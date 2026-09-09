@@ -217,6 +217,22 @@ assert_grep "port/stm32f103/README.md"        "26180"               "体积表 v
 assert_grep "port/stm32g474/README.md"        "18084"               "体积表 v2.0 行(g474)"
 assert_grep "README.md"                       "sizecheck"           "checklist/README 引用 sizecheck 门"
 
+# ---- v2.0 P1 冻结契约三件套 + 清单一致性机制 ----
+if sh tools/apidump.sh --check >/tmp/docsync_apidump.log 2>&1; then
+    echo "ok   API 清单与头文件一致 (apidump --check)"; PASS=$((PASS + 1))
+else
+    echo "FAIL API 清单漂移: 公开面变更未重新生成 docs/API_INVENTORY.md"; sed 's/^/     /' /tmp/docsync_apidump.log | head -8
+    FAIL=$((FAIL + 1))
+fi
+assert_grep "docs/API_STABILITY.md"  "冻结声明"                  "冻结声明存在(P1-2)"
+assert_grep "docs/API_STABILITY.md"  "v3-candidates"             "审计处置含 v3 候选去向(P1-3)"
+assert_grep "docs/API_STABILITY.md"  "一致性审计"                "审计表在案(P1-3)"
+assert_grep "docs/v3-candidates.md"  "v2.0 决议"                 "候选关闭决议落档(P2 零堆积)"
+assert_grep "et_config.h"            "ET_DEPRECATED"             "ET_DEPRECATED 宏存在(P1-2)"
+assert_grep "README.md"              "API_STABILITY"             "README 链接冻结声明(P1-4)"
+assert_grep "docs/API_GUIDE.md"      "API_STABILITY"             "API_GUIDE 链接冻结声明(P1-4)"
+assert_grep "CHANGELOG.md"           "API freeze"                "CHANGELOG 标注 v2.0 API freeze(P1-4)"
+
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
 for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 v1.* 会静默漏掉 v2 交付文档)

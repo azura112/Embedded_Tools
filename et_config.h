@@ -153,6 +153,18 @@ extern "C" {
 #define PORT_FLASH_ERASE_MS_MAX 20u      /* F103 1KB 页擦典型 ~20ms */
 #endif
 
+/* ===================== API 演进 (v2.0 P1-2, 冻结契约) ===================== */
+/* 公开 API 自 v2.0 冻结(docs/API_STABILITY.md)。破坏性变更唯一入口 = 弃用流程:
+ * 给在位符号挂 ET_DEPRECATED(签名不变)→ 保留 ≥2 个 MINOR → 仅在 MAJOR 移除。
+ * 用法: 在声明前写 ET_DEPRECATED(可附着于函数/typedef)。 */
+#ifndef ET_DEPRECATED
+#if defined(__GNUC__)
+#define ET_DEPRECATED           __attribute__((deprecated))
+#else
+#define ET_DEPRECATED           /* 非 GCC: 空展开(位置无害) */
+#endif
+#endif
+
 /* ===================== 调试断言 ===================== */
 /* 默认空实现; 平台可映射到自身断言/复位钩子, 例如:
  *   #define ET_ASSERT(cond)  do{ if(!(cond)) et_fault_halt(__FILE__, __LINE__); }while(0) */

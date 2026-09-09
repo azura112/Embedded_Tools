@@ -12,7 +12,8 @@
  *   2. 主循环/软定时器中周期调用 et_led_poll(l, now):
  *      - BLINK 类模式低频轮询即可(如每 tick);
  *      - BREATH 建议以 period/64 以上的频率轮询保证平滑。
- */
+ *
+ * 并发策略: 全部 API 仅限 🏠MAIN (状态机无锁; write 回调在 poll 调用方上下文执行)。 */
 #ifndef ET_LED_H
 #define ET_LED_H
 
