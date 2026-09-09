@@ -96,6 +96,17 @@ bool et_smap_get(const et_smap_t *m, const char *key, uint32_t *val);
 /* 删除: 命中置墓碑返回 true (池空间不回收, clear 才回收) */
 bool et_smap_del(et_smap_t *m, const char *key);
 
+/* ---- 大小写不敏感变体 (v2.0 P2 决议: 做折叠, 不做通配) ----
+ * 语义: 键经 ASCII 折叠('A'-'Z'→'a'-'z')后走常规路径——**折叠形式存入
+ * 共用表/池**(故 ci 键的入表键面恒为小写)。与大小写敏感条目**共表共存**:
+ *  et_smap_put("LED") 与 et_smap_put_ci("led") 是两个条目(键面不同);
+ *  et_smap_get_ci("LED") 只命中折叠面(即 put_ci 或本就小写的 put);
+ *  del 按各自键面删除, 互不越界。
+ * 折叠仅 ASCII, 非 ASCII 字节原样(嵌入式配置表/命令名场景足够)。🏠MAIN */
+bool et_smap_put_ci(et_smap_t *m, const char *key, uint32_t val);
+bool et_smap_get_ci(const et_smap_t *m, const char *key, uint32_t *val);
+bool et_smap_del_ci(et_smap_t *m, const char *key);
+
 uint32_t et_smap_count(const et_smap_t *m);
 uint32_t et_smap_pool_free(const et_smap_t *m);
 

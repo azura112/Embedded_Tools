@@ -211,6 +211,55 @@ bool et_smap_del(et_smap_t *m, const char *key)
     return false;
 }
 
+/* ASCII 折叠进栈上缓冲(≤KEY_MAX+1): 非法键(空/超长/NULL)返回 false,
+ * 折叠后委托常规路径 —— 入表键面即折叠形式(共表共存语义见头注) */
+static uint32_t smap_fold_key(const char *key, char *out)
+{
+    uint32_t len = smap_key_len_ok(key);
+    uint32_t i;
+
+    if (len == 0u) {
+        return 0u;
+    }
+    for (i = 0u; i < len; i++) {
+        char c = key[i];
+
+        out[i] = ((c >= 'A') && (c <= 'Z')) ? (char)(c + 32) : c;
+    }
+    out[len] = '\0';
+    return len;
+}
+
+bool et_smap_put_ci(et_smap_t *m, const char *key, uint32_t val)
+{
+    char fold[ET_SMAP_KEY_MAX + 1u];
+
+    if (smap_fold_key(key, fold) == 0u) {
+        return false;
+    }
+    return et_smap_put(m, fold, val);
+}
+
+bool et_smap_get_ci(const et_smap_t *m, const char *key, uint32_t *val)
+{
+    char fold[ET_SMAP_KEY_MAX + 1u];
+
+    if (smap_fold_key(key, fold) == 0u) {
+        return false;
+    }
+    return et_smap_get(m, fold, val);
+}
+
+bool et_smap_del_ci(et_smap_t *m, const char *key)
+{
+    char fold[ET_SMAP_KEY_MAX + 1u];
+
+    if (smap_fold_key(key, fold) == 0u) {
+        return false;
+    }
+    return et_smap_del(m, fold);
+}
+
 uint32_t et_smap_count(const et_smap_t *m)
 {
     return (m != NULL) ? m->count : 0u;

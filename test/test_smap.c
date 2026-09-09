@@ -293,6 +293,60 @@ static void smap_long_key_boundary(void)
     ET_CHECK_U32_EQ(POOL_SZ - 4u - 20u, et_smap_pool_free(&g_m));
 }
 
+static void smap_ci_basic(void)
+{
+    uint32_t v = 0u;
+
+    setup(LIMIT, POOL_SZ);
+    ET_CHECK(et_smap_put_ci(&g_m, "LED", 7u));          /* 折叠入表面 */
+    ET_CHECK(et_smap_get_ci(&g_m, "lEd", &v));
+    ET_CHECK_U32_EQ(7u, v);
+    ET_CHECK(!et_smap_get(&g_m, "LED", &v));            /* 敏感面看不见 */
+    ET_CHECK(et_smap_get(&g_m, "led", &v));             /* 折叠形式可见 */
+    ET_CHECK_U32_EQ(7u, v);
+    ET_CHECK_U32_EQ(1u, et_smap_count(&g_m));
+}
+
+static void smap_ci_cs_coexist(void)
+{
+    uint32_t v = 0u;
+
+    setup(LIMIT, POOL_SZ);
+    ET_CHECK(et_smap_put(&g_m, "LED", 1u));             /* 敏感条目 */
+    ET_CHECK(et_smap_put_ci(&g_m, "LED", 2u));          /* 折叠成 "led": 新条目 */
+    ET_CHECK_U32_EQ(2u, et_smap_count(&g_m));
+    ET_CHECK(et_smap_get(&g_m, "LED", &v));
+    ET_CHECK_U32_EQ(1u, v);
+    ET_CHECK(et_smap_get_ci(&g_m, "LED", &v));
+    ET_CHECK_U32_EQ(2u, v);
+    ET_CHECK(et_smap_get(&g_m, "led", &v));             /* 敏感面查折叠键 */
+    ET_CHECK_U32_EQ(2u, v);
+}
+
+static void smap_ci_boundary_and_bad(void)
+{
+    uint32_t v = 0u;
+
+    setup(LIMIT, POOL_SZ);
+    ET_CHECK(!et_smap_put_ci(&g_m, "", 1u));            /* 空键 */
+    ET_CHECK(!et_smap_put_ci(&g_m, NULL, 1u));
+    ET_CHECK(!et_smap_put_ci(&g_m, "abcdefghijklmnopq", 1u)); /* 17 超界 */
+    ET_CHECK(et_smap_put_ci(&g_m, "AbCdEfGhIjKlMnOp", 9u));   /* 恰 16 混合大小写 */
+    ET_CHECK(et_smap_get_ci(&g_m, "aBcDeFgHiJkLmNoP", &v));
+    ET_CHECK_U32_EQ(9u, v);
+    ET_CHECK_U32_EQ(POOL_SZ - 4u - 20u, et_smap_pool_free(&g_m)); /* 占 20B 对齐 */
+}
+
+static void smap_ci_delete_path(void)
+{
+    setup(LIMIT, POOL_SZ);
+    ET_CHECK(et_smap_put_ci(&g_m, "Fan", 1u));
+    ET_CHECK(et_smap_del_ci(&g_m, "FAN"));              /* 折叠面命中 */
+    ET_CHECK(!et_smap_get_ci(&g_m, "fan", NULL));
+    ET_CHECK(!et_smap_del_ci(&g_m, "fan"));             /* 二次删: 未命中 */
+    ET_CHECK(!et_smap_get(&g_m, "Fan", NULL));         /* 敏感面本就无此键 */
+}
+
 const et_test_case_t *test_smap_cases(size_t *count)
 {
     static const et_test_case_t tbl[] = {
@@ -310,6 +364,10 @@ const et_test_case_t *test_smap_cases(size_t *count)
         {"smap.foreach_del_safe",       smap_foreach_del_safe},
         {"smap.multi_instance",         smap_multi_instance},
         {"smap.long_key_boundary",      smap_long_key_boundary},
+        {"smap.ci_basic",               smap_ci_basic},
+        {"smap.ci_cs_coexist",          smap_ci_cs_coexist},
+        {"smap.ci_boundary_and_bad",    smap_ci_boundary_and_bad},
+        {"smap.ci_delete_path",         smap_ci_delete_path},
     };
     *count = sizeof(tbl) / sizeof(tbl[0]);
     return tbl;

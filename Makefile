@@ -43,14 +43,14 @@ TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempo
             test/test_crc.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_shell.c test/test_shell_hist.c \
             test/test_key.c test/test_led.c test/test_spwm.c \
             test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c \
-            test/test_selftest.c test/test_map.c test/test_smap.c test/test_xmodem_tx.c test/test_main.c
+            test/test_selftest.c test/test_map.c test/test_smap.c test/test_shell_tab.c test/test_xmodem_tx.c test/test_main.c
 
 DEMO_SRC := examples/posix_demo.c
 
 # G4 flash 几何变体 (v1.6 双几何回归): storage 布局类改动必须 F1/G4 双几何全绿
 G4FLAGS := -DPORT_FLASH_SECTOR_SIZE=2048 -DPORT_FLASH_SECTOR_COUNT=16 -DPORT_FLASH_ERASE_MS_MAX=40
 
-.PHONY: all test demo test-g4 coverage-build bench bench-table clean
+.PHONY: all test demo test-g4 test-tab coverage-build bench bench-table clean
 
 all: test
 
@@ -78,6 +78,14 @@ coverage-build: $(OBJDIR)/et_tests_cov.exe
 $(OBJDIR)/et_tests_cov.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 	-mkdir $(OBJDIR)
 	$(CC) $(COV_CFLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+
+# v2.0 P2: shell Tab 补全形态 (ET_SHELL_TAB=1) 独立矩阵, CI 常设
+test-tab: $(OBJDIR)/et_tests_tab.exe
+	./$(OBJDIR)/et_tests_tab.exe
+
+$(OBJDIR)/et_tests_tab.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(CFLAGS) -DET_SHELL_TAB=1 -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 
 # host 基准 (v1.7): 数字入 docs/bench.md 须附环境注记; 查表变体单独构建
 bench: $(OBJDIR)/bench.exe

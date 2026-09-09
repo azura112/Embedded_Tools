@@ -20,6 +20,13 @@ jobs:
       - name: Run unit tests (make)
         if: runner.os == 'Linux'
         run: make test
+      - name: Run unit tests (shell Tab variant, v2.0)
+        if: runner.os == 'Linux'
+        run: make test-tab
+
+      - name: API inventory consistency (tools/apidump.sh --check, v2.0)
+        if: runner.os == 'Linux'
+        run: sh tools/apidump.sh --check
 
       - name: Doc-sync assertions (tools/docsync.sh)
         if: runner.os == 'Linux'

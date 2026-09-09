@@ -11,8 +11,13 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 契约冻结与工程单一来源（里程碑版：API 冻结声明 + 构建单一来源 + size 门）。
 
 ### Added
-- 构建/发布单一来源（P0-2）：CI/Release 的 ARM 交叉构建与 coverage 全部转调 `tools/docbuild.sh`/Makefile；`tools/sizecheck.sh` 体积表逐值门（P0-3）。
-- （M2/M3 进行中：API_STABILITY 冻结契约三件套 / et_smap 大小写折叠 / shell Tab 补全——细节随交付定稿。）
+- 构建/发布单一来源（P0-2）：CI/Release 的 ARM 交叉构建与 coverage 全部转调 `tools/docbuild.sh`/Makefile（过渡期新旧产物 sha256 一致）；`tools/sizecheck.sh` 体积表逐值门（P0-3，首跑即抓版本宏 -4B 漂移自证有效）。
+- **API 冻结契约三件套（P1）**：`tools/apidump.sh` 公开面清单（175 函数/66 类型/96 宏，漂移即红——首跑抓到 ET_DEPRECATED 未登记，机制自证）+ `docs/API_STABILITY.md`（v2.0 起冻结、MINOR 只增、弃用流程）+ `ET_DEPRECATED` 宏（GCC attribute/非 GCC 空展开）；一致性审计 7 项，触碰签名者入 `docs/v3-candidates.md`（本版零破坏）。
+- **`et_smap` 大小写折叠变体（P2 决议）**：`et_smap_put_ci/get_ci/del_ci`（ASCII 折叠入共用表/池，与敏感条目共表共存），4 例；通配终局关闭。
+- **shell Tab 命令名补全（P2 决议）**：`ET_SHELL_TAB`（默认 0=行为零变化），大小写敏感前缀匹配、唯一补全/多候选列表/无匹配响铃，双形态矩阵 8 例（`make test-tab`，CI 常设）。
+
+### Changed
+- f103 port README 构建块升级为双构建 docbuild 单一来源（默认 + _selftest；Renode smoke 改消费 `_selftest.elf`）。
 
 ### Fixed / Changed / 挂账
 - v1.9 三处滞后数字回刷（17716/26180→v2.0 实测 17712/26180/18084；docsync 121→122）。

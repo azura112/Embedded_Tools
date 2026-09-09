@@ -7,6 +7,7 @@
 extern const et_test_case_t *test_ringbuf_cases(size_t *count);
 extern const et_test_case_t *test_map_cases(size_t *count);
 extern const et_test_case_t *test_smap_cases(size_t *count);
+extern const et_test_case_t *test_shell_tab_cases(size_t *count);
 extern const et_test_case_t *test_queue_cases(size_t *count);
 extern const et_test_case_t *test_mempool_cases(size_t *count);
 extern const et_test_case_t *test_list_cases(size_t *count);
@@ -69,6 +70,7 @@ static const et_suite_t g_suites[] = {
     { "debug/selftest", test_selftest_cases },
     { "proto/xmodem_tx", test_xmodem_tx_cases },
     { "debug/shhist", test_shell_hist_cases },
+    { "debug/shell_tab", test_shell_tab_cases },
 };
 
 int main(void)

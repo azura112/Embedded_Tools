@@ -217,12 +217,15 @@
 
 ## core/et_smap.h
 
-### 函数声明 (7)
+### 函数声明 (10)
 
 - `bool et_smap_del(et_smap_t *m, const char *key)`
+- `bool et_smap_del_ci(et_smap_t *m, const char *key)`
 - `bool et_smap_get(const et_smap_t *m, const char *key, uint32_t *val)`
+- `bool et_smap_get_ci(const et_smap_t *m, const char *key, uint32_t *val)`
 - `bool et_smap_init(et_smap_t *m, et_smap_slot_t *storage, uint32_t cap, uint8_t *keybuf, uint32_t keybuf_size, uint32_t probe_limit)`
 - `bool et_smap_put(et_smap_t *m, const char *key, uint32_t val)`
+- `bool et_smap_put_ci(et_smap_t *m, const char *key, uint32_t val)`
 - `uint32_t et_smap_count(const et_smap_t *m)`
 - `uint32_t et_smap_pool_free(const et_smap_t *m)`
 - `void et_smap_clear(et_smap_t *m)`
@@ -326,9 +329,10 @@
 - `et_shell_putc_fn()`
 - `et_shell_t`
 
-### 宏 (1)
+### 宏 (2)
 
 - `ET_SHELL_HISTORY_N 0`
+- `ET_SHELL_TAB 0`
 
 ## drivers/et_key.h
 

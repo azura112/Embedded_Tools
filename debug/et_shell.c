@@ -78,6 +78,93 @@ static void shell_out(et_shell_t *sh, const char *s)
     }
 }
 
+#if ET_SHELL_TAB
+/* ---- v2.0 Tab 命令名补全: 与 atcmd 同规则(大小写敏感), 只补命令段 ---- */
+static uint16_t shell_str_len(const char *t)
+{
+    uint16_t n = 0u;
+
+    while (t[n] != 0) {
+        n++;
+    }
+    return n;
+}
+
+static bool shell_tab_match(const et_shell_t *sh, const et_atcmd_entry_t *e)
+{
+    uint16_t pos = sh->at->pos;
+    uint16_t nl  = shell_str_len(e->name);
+    uint16_t j;
+
+    if (pos > (uint16_t)(nl + 3u)) {
+        return false;                   /* 已超出"AT+"+name 全长 */
+    }
+    for (j = 0u; j < pos; j++) {
+        char want = (j < 3u) ? "AT+"[j] : e->name[j - 3u];
+
+        if (sh->at->linebuf[j] != want) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void shell_tab(et_shell_t *sh)
+{
+    uint16_t pos  = sh->at->pos;
+    uint16_t i;
+    uint16_t n    = 0u;
+    uint16_t cand = 0u;
+    uint16_t full;
+    char     ch;
+
+    if (sh->at->discarding) {
+        return;                         /* 超长丢弃行: 静默 */
+    }
+    for (i = 0u; i < pos; i++) {
+        if (sh->at->linebuf[i] == (char)0x20) {
+            return;                     /* 命令段外(已带参数): 不处理 */
+        }
+    }
+    for (i = 0u; i < sh->at->cmd_count; i++) {
+        if (shell_tab_match(sh, &sh->at->cmds[i])) {
+            n++;
+            cand = i;
+        }
+    }
+    if (n == 1u) {
+        const et_atcmd_entry_t *e = &sh->at->cmds[cand];
+
+        full = (uint16_t)(3u + shell_str_len(e->name));
+        for (i = pos; i < full; i++) {
+            ch = (i < 3u) ? "AT+"[i] : e->name[i - 3u];
+            if (sh->echo) {
+                sh->putc(sh->user, ch);
+            }
+            (void)et_atcmd_feed(sh->at, ch);  /* 与历史回放同法: 经底层入行 */
+        }
+        return;
+    }
+    if (n == 0u) {
+        sh->putc(sh->user, (char)0x07); /* 无匹配/空行: 响铃 */
+        return;
+    }
+    /* 多候选: 换行列出全部匹配命令名, 重绘提示符与当前命令段 */
+    shell_out(sh, SHELL_CRLF);
+    for (i = 0u; i < sh->at->cmd_count; i++) {
+        if (shell_tab_match(sh, &sh->at->cmds[i])) {
+            shell_out(sh, "AT+");
+            shell_out(sh, sh->at->cmds[i].name);
+            shell_out(sh, SHELL_CRLF);
+        }
+    }
+    et_shell_prompt(sh);
+    for (i = 0u; i < sh->at->pos; i++) {
+        sh->putc(sh->user, sh->at->linebuf[i]);
+    }
+}
+#endif /* ET_SHELL_TAB */
+
 bool et_shell_feed(et_shell_t *sh, char ch)
 {
     bool done;
@@ -85,6 +172,13 @@ bool et_shell_feed(et_shell_t *sh, char ch)
     if ((sh == NULL) || (sh->at == NULL)) {
         return false;
     }
+
+#if ET_SHELL_TAB
+    if (ch == (char)0x09) {               /* Tab: 补全, 不入 atcmd/不回显 */
+        shell_tab(sh);
+        return false;
+    }
+#endif
 
 #if ET_SHELL_HISTORY_N > 0
     /* ---- 历史转义序列拦截 (ESC [ A/B) ---- */

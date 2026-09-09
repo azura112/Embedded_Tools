@@ -8,7 +8,8 @@
  *    语义(退格删字/超长丢弃)全部由底层 atcmd 决定, shell 只负责"回显
  *    什么";
  *  - v1.5: 可选命令历史 (ET_SHELL_HISTORY_N + 静态环形缓冲, 上/下键回放);
- *  - 不做: Tab 补全 / 多行编辑 / 模糊历史匹配 (Non-goals 维持)。
+ *  - v2.0: 可选 Tab 命令名补全 (ET_SHELL_TAB, 默认关闭, 见下); 仍不做
+ *    多行编辑/路径补全/模糊历史匹配 (边界见 docs/v3-candidates.md)。
  *
  * 回显规则:
  *  - 可见字符(0x20~0x7E)原样回显;
@@ -40,6 +41,15 @@
  * 置 N>0 后可用 et_shell_set_history 挂接静态环形历史缓冲 */
 #ifndef ET_SHELL_HISTORY_N
 #define ET_SHELL_HISTORY_N      0
+#endif
+
+/* Tab 命令名补全编译开关 (v2.0 P2 决议: 只补命令名, 无路径/历史模糊匹配;
+ * 默认 0 = 关闭, TAB(0x09) 直透 atcmd 行为零变化)。开启后 TAB 在行首命令段
+ * (无空格, "AT+" 前缀)上做**大小写敏感**前缀匹配(与 atcmd 名称匹配规则
+ * 一致): 唯一 → 补全并回显; 多候选 → CRLF 列出名称后重绘; 无/非法 → 响铃。
+ * 与历史共用同一 feed 状态机(各自独立控制字节, 互不吞噬)。 */
+#ifndef ET_SHELL_TAB
+#define ET_SHELL_TAB            0
 #endif
 
 #ifdef __cplusplus
