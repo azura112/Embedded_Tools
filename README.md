@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.0.0**（`ET_VERSION_STRING`，**API 冻结版本**，契约见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v1.9开发交付：板上收口与字符串映射.md](v1.9开发交付：板上收口与字符串映射.md)**
+> 当前版本：**v2.0.0**（`ET_VERSION_STRING`，**API 冻结版本**，契约见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.0开发交付__契约冻结与工程单一来源.md](v2.0开发交付__契约冻结与工程单一来源.md)**（API 冻结里程碑）
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**（每个 API 的签名、并发约束与示例）
 
