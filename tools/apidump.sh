@@ -14,6 +14,10 @@
 # 类型 + 公开宏; 行首声明识别 + 块注释状态机, 不做预处理器级全展开。
 # =====================================================================
 set -u
+# 字节模式固定: gawk 在 UTF-8 locale 下对含非 ASCII(如 🏠)注释行的
+# C 注释正则行为漂移(v2.0 CI 首红定位), C locale 字节级匹配跨环境一致
+LC_ALL=C
+export LC_ALL
 cd "$(dirname "$0")/.."
 
 HDRS="et_config.h port/port.h $(ls core/*.h algorithm/*.h sys/*.h protocol/*.h drivers/*.h debug/*.h storage/*.h 2>/dev/null)"

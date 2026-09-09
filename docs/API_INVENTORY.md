@@ -217,10 +217,11 @@
 
 ## core/et_smap.h
 
-### 函数声明 (10)
+### 函数声明 (11)
 
 - `bool et_smap_del(et_smap_t *m, const char *key)`
 - `bool et_smap_del_ci(et_smap_t *m, const char *key)`
+- `bool et_smap_foreach(const et_smap_t *m, et_smap_visit_fn fn, void *user)`
 - `bool et_smap_get(const et_smap_t *m, const char *key, uint32_t *val)`
 - `bool et_smap_get_ci(const et_smap_t *m, const char *key, uint32_t *val)`
 - `bool et_smap_init(et_smap_t *m, et_smap_slot_t *storage, uint32_t cap, uint8_t *keybuf, uint32_t keybuf_size, uint32_t probe_limit)`
@@ -295,10 +296,11 @@
 
 ## debug/et_selftest.h
 
-### 函数声明 (6)
+### 函数声明 (7)
 
 - `bool et_selftest_register(const char *name, et_selftest_suite_fn fn)`
 - `bool et_selftest_run_all(et_selftest_report_fn report, void *user)`
+- `bool et_selftest_run_suite(const char *name, et_selftest_report_fn report, void *user)`
 - `uint16_t et_selftest_suite_count(void)`
 - `void et_selftest_note_fail(et_selftest_report_fn report, void *user, const char *suite, uint32_t line)`
 - `void et_selftest_set_bootctl_cfg(const et_bootctl_cfg_t *cfg)`
@@ -312,9 +314,10 @@
 
 ## debug/et_shell.h
 
-### 函数声明 (9)
+### 函数声明 (10)
 
 - `bool et_shell_feed(et_shell_t *sh, char ch)`
+- `bool et_shell_init(et_shell_t *sh, et_atcmd_proc_t *at, et_shell_putc_fn putc, void *user)`
 - `bool et_shell_set_history(et_shell_t *sh, char *storage, uint16_t entries, uint16_t entry_cap)`
 - `void et_shell_help_cmd(char *args, void *user)`
 - `void et_shell_print_help(et_shell_t *sh)`
@@ -436,8 +439,9 @@
 
 ## protocol/et_xmodem.h
 
-### 函数声明 (3)
+### 函数声明 (4)
 
+- `et_xm_act_t et_xmodem_rx(et_xmodem_t *x, uint8_t ch, uint32_t now)`
 - `et_xm_act_t et_xmodem_rx_tick(et_xmodem_t *x, uint32_t now)`
 - `uint16_t et_xmodem_crc16(const uint8_t *data, uint32_t len)`
 - `void et_xmodem_rx_init(et_xmodem_t *x, uint8_t *buf, uint32_t cap, et_xm_sink_fn sink, void *user)`
@@ -466,10 +470,11 @@
 
 ## protocol/et_xmodem_tx.h
 
-### 函数声明 (4)
+### 函数声明 (5)
 
 - `bool et_xmodem_tx_aborted(const et_xmodem_tx_t *x)`
 - `bool et_xmodem_tx_done(const et_xmodem_tx_t *x)`
+- `bool et_xmodem_tx_init(et_xmodem_tx_t *x, const et_xmodem_tx_cfg_t *cfg)`
 - `et_xm_act_t et_xmodem_tx_poll(et_xmodem_tx_t *x, uint8_t ch, uint32_t now)`
 - `et_xm_act_t et_xmodem_tx_tick(et_xmodem_tx_t *x, uint32_t now)`
 
@@ -482,12 +487,14 @@
 
 ## storage/et_bootctl.h
 
-### 函数声明 (6)
+### 函数声明 (8)
 
 - `bool et_bootctl_abandon(et_bootctl_t *bc)`
+- `bool et_bootctl_confirm(et_bootctl_t *bc, uint32_t slot)`
 - `bool et_bootctl_init(et_bootctl_t *bc, const et_bootctl_cfg_t *cfg)`
 - `bool et_bootctl_should_rollback(const et_bootctl_t *bc, uint32_t slot)`
 - `bool et_bootctl_stage(et_bootctl_t *bc, uint32_t slot)`
+- `bool et_bootctl_verify_image(et_bootctl_t *bc, uint32_t slot)`
 - `uint32_t et_bootctl_boot_attempt(et_bootctl_t *bc, uint32_t slot)`
 - `void et_bootctl_state(const et_bootctl_t *bc, et_bootctl_state_t *st)`
 
@@ -507,13 +514,18 @@
 
 ## storage/et_kv.h
 
-### 函数声明 (5)
+### 函数声明 (10)
 
+- `bool et_kv_commit(et_kv_t *kv)`
+- `bool et_kv_del(et_kv_t *kv, uint16_t key)`
+- `bool et_kv_format(et_kv_t *kv, const et_kv_layout_t *layout)`
 - `bool et_kv_get(et_kv_t *kv, uint16_t key, void *buf, uint16_t cap, uint16_t *out_len)`
 - `bool et_kv_init(et_kv_t *kv, const et_kv_layout_t *layout)`
+- `bool et_kv_iter_init(const et_kv_t *kv, et_kv_iter_t *it)`
 - `bool et_kv_iter_next(const et_kv_t *kv, et_kv_iter_t *it, uint16_t *key, uint16_t *len)`
 - `bool et_kv_set(et_kv_t *kv, uint16_t key, const void *val, uint16_t len)`
 - `uint16_t et_kv_size(et_kv_t *kv, uint16_t key)`
+- `void et_kv_stats(et_kv_t *kv, et_kv_stats_t *st)`
 
 ### 类型 (4)
 
@@ -591,11 +603,12 @@
 
 ## sys/et_wdt.h
 
-### 函数声明 (3)
+### 函数声明 (4)
 
 - `bool et_wdt_disable(void)`
 - `bool et_wdt_enable(uint32_t timeout_ms)`
 - `bool et_wdt_guard(et_wdt_job_fn fn, void *user)`
+- `void et_wdt_feed(void)`
 
 ### 类型 (1)
 

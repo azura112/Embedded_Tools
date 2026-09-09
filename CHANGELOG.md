@@ -19,6 +19,7 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 ### Changed
 - f103 port README 构建块升级为双构建 docbuild 单一来源（默认 + _selftest；Renode smoke 改消费 `_selftest.elf`）。
 - 用例矩阵终值：345 例 × 双几何 + 1K 变体 346 + `make test-tab`(开启形态 8 例)；f103 体积终值 17836/26304、g474 18208 [数字回刷]。
+- 单一来源纪律外溢两例(本版内发现并修)：CI YAML 步骤名裸冒号/块标量内顶格多行 printf(解析红)；apidump 在 UTF-8 locale 的 gawk 下对含 emoji 注释行正则漂移(吞声明)→ 脚本内锁 `LC_ALL=C` 字节模式跨环境一致。
 
 ### Added（P3/P4）
 - Release 正文自动生成：release.yml 注入 CHANGELOG 对应版本节（无节即红，v1.7 遗留双源终结）。
