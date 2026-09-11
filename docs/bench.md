@@ -30,6 +30,8 @@
 | map u32 get(97 槽,负载 0.62;v1.9) | 2.0 ns/op | — |
 | smap str get(97 槽,负载 0.62;v1.9) | 8.0 ns/op | — |
 | smap ci get(大小写折叠查,v2.0) | 11.0 ns/op | — |
+| pid step(P+I+D, d-on-measure;v2.1) | 15.0 ns/op | — |
+| stats push(Welford 整数;v2.1) | 6.0 ns/op | — |
 
 ## 观察与备注
 
@@ -38,12 +40,15 @@
 - crc32 位算法 125 MB/s(≈ ccitt 位算法的 1/4,反射+32 位宽所致);v1.9 补表路径后 500 MB/s,与 ccitt 表同档;
 - xmodem 有效吞吐含帧头/补码/CRC 计算(133B 线路字节承载 128B 载荷,协议开销 3.9%);
 - kv 速率受 host 虚拟 flash(memcpy 模拟)影响,**不代表真实 flash 时序**(真实页擦 ms 级);
+- `pid step` 含 P/I/D 三项 + 饱和 int64 乘除, 15 ns/op 量级(定点闭环 10kHz 采样下 < 0.02% CPU);
+- `stats push` Welford 单样本更新 6 ns/op, 与 filter movavg(2 ns/op)同档, 适合在线长期统计;
 - 复现:`make bench`(或 Makefile 注释中的 gcc 命令),查表变体 `make bench-table`。
 
 ## 版本记录
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| v2.1.0 | 2026-09-11 | 复测: 既有行在 `clock()` 1ms 粒度抖动内(如 crc16 400/500、smap 8/11 为 tick 级波动, 非回归); 新增 pid step 15.0 ns/op、stats push 6.0 ns/op |
 | v2.0.0 | 2026-09-09 | 复测无回归; 新增 smap_ci 折叠查找行 11.0 ns/op(折叠循环 +3ns, 查表/命令路由可忽略) |
 | v1.9.0 | 2026-09-08 | 复测无回归; 新增 map/smap 查找行(2/8 ns/op, 字符串键哈希+memcmp 开销 ~4x); crc32 表路径 125→500 MB/s |
 | v1.8.0 | 2026-09-06 | 复测: 各项在噪声范围内(±5%), 无回归; map/xmodem_tx 未入基准(下版按需) |

@@ -12,10 +12,13 @@ extern const et_test_case_t *test_queue_cases(size_t *count);
 extern const et_test_case_t *test_mempool_cases(size_t *count);
 extern const et_test_case_t *test_list_cases(size_t *count);
 extern const et_test_case_t *test_filter_cases(size_t *count);
+extern const et_test_case_t *test_pid_cases(size_t *count);
+extern const et_test_case_t *test_stats_cases(size_t *count);
 extern const et_test_case_t *test_stimer_cases(size_t *count);
 extern const et_test_case_t *test_sched_cases(size_t *count);
 extern const et_test_case_t *test_event_cases(size_t *count);
 extern const et_test_case_t *test_crc_cases(size_t *count);
+extern const et_test_case_t *test_bytes_cases(size_t *count);
 extern const et_test_case_t *test_frame_cases(size_t *count);
 extern const et_test_case_t *test_atcmd_cases(size_t *count);
 extern const et_test_case_t *test_key_cases(size_t *count);
@@ -49,10 +52,13 @@ static const et_suite_t g_suites[] = {
     { "core/mempool", test_mempool_cases },
     { "core/list",    test_list_cases    },
     { "algo/filter",  test_filter_cases  },
+    { "algo/pid",     test_pid_cases     },
+    { "algo/stats",   test_stats_cases   },
     { "sys/stimer",   test_stimer_cases  },
     { "sys/sched",    test_sched_cases   },
     { "sys/event",    test_event_cases   },
     { "proto/crc",    test_crc_cases     },
+    { "proto/bytes",  test_bytes_cases   },
     { "proto/frame",  test_frame_cases   },
     { "proto/atcmd",  test_atcmd_cases   },
     { "driver/key",   test_key_cases     },

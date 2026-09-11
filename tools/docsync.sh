@@ -240,6 +240,50 @@ assert_grep "README.md"              "API_STABILITY"             "README 链接�
 assert_grep "docs/API_GUIDE.md"      "API_STABILITY"             "API_GUIDE 链接冻结声明(P1-4)"
 assert_grep "CHANGELOG.md"           "API freeze"                "CHANGELOG 标注 v2.0 API freeze(P1-4)"
 
+# ---- v2.1 P0-1 冻结基线 + apidump --diff 机检 ----
+assert_grep "tools/apidump.sh"           "\\-\\-snapshot"            "apidump 基线归档入口(P0-1)"
+assert_grep "tools/apidump.sh"           "\\-\\-diff"                "apidump 纯增比对入口(P0-1)"
+assert_grep "tools/apidump.sh"           "ET_VERSION"                "apidump --diff 版本宏忽略规则(P0-1)"
+assert_grep "docs/API_INVENTORY_v2.0.md" "自动生成"                  "v2.0 冻结基线已归档(P0-1)"
+assert_grep "docs/API_STABILITY.md"      "apidump --diff"            "API_STABILITY 记录 --diff 规则(附则)"
+assert_grep "docs/API_STABILITY.md"      "字段追加"                  "API_STABILITY 结构体字段登记规则"
+assert_grep "README.md"                  "apidump"                   "README 引用 apidump 冻结机检"
+
+# ---- v2.1 P1/P2/P3 新模块 (et_pid / et_stats / et_bytes) ----
+assert_grep "et_config.h"         "ET_MODULE_PID"       "et_config 含 PID 开关"
+assert_grep "et_config.h"         "ET_MODULE_STATS"     "et_config 含 STATS 开关"
+assert_grep "et_config.h"         "ET_MODULE_BYTES"     "et_config 含 BYTES 开关"
+assert_grep "Makefile"            "algorithm/et_pid.c"  "Makefile 含 et_pid 源"
+assert_grep "Makefile"            "algorithm/et_stats.c" "Makefile 含 et_stats 源"
+assert_grep "Makefile"            "protocol/et_bytes.c" "Makefile 含 et_bytes 源"
+assert_grep "Makefile"            "test/test_pid.c"     "Makefile 含 test_pid"
+assert_grep "Makefile"            "test/test_stats.c"   "Makefile 含 test_stats"
+assert_grep "Makefile"            "test/test_bytes.c"   "Makefile 含 test_bytes"
+assert_grep "test/test_main.c"    "test_pid_cases"      "test_main 注册 pid 套件"
+assert_grep "test/test_main.c"    "test_stats_cases"    "test_main 注册 stats 套件"
+assert_grep "test/test_main.c"    "test_bytes_cases"    "test_main 注册 bytes 套件"
+assert_grep "algorithm/et_pid.h"  "溢出语义"            "et_pid 溢出语义头注(P1)"
+assert_grep "algorithm/et_pid.h"  "积分限幅"            "et_pid 抗饱和决议头注(P1)"
+assert_grep "algorithm/et_pid.h"  "d_on_measure"        "et_pid 微分对象可选(P1)"
+assert_grep "algorithm/et_stats.h" "Welford"            "et_stats Welford 算法声明(P2)"
+assert_grep "algorithm/et_stats.h" "var_q10"            "et_stats Q10 方差标度声明(P2)"
+assert_grep "protocol/et_bytes.h" "边界检查"            "et_bytes 边界检查语义(P3)"
+assert_grep "README.md"           "et_pid"              "README 特性表: pid"
+assert_grep "README.md"           "et_stats"            "README 特性表: stats"
+assert_grep "README.md"           "et_bytes"            "README 特性表: bytes"
+assert_grep "docs/API_GUIDE.md"   "3.3 et_pid"          "API_GUIDE: pid 章节"
+assert_grep "docs/API_GUIDE.md"   "3.4 et_stats"        "API_GUIDE: stats 章节"
+assert_grep "docs/API_GUIDE.md"   "5.6 et_bytes"        "API_GUIDE: bytes 章节"
+assert_grep "docs/API_GUIDE.md"   "11.10 定点闭环整定配方" "API_GUIDE: 整定配方(P1)"
+assert_grep "docs/bench.md"       "pid step"            "bench 含 pid 行(P3-3)"
+assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-3)"
+assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
+assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
+assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
+assert_grep "docs/getting-started.md" "382"             "getting-started 用例数与实测一致"
+assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
+assert_grep "README.md"           "382"                 "README 用例数终值回刷(v2.1)"
+
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
 for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 v1.* 会静默漏掉 v2 交付文档)
@@ -251,6 +295,42 @@ for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 
         PASS=$((PASS + 1))
     fi
 done
+
+# ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
+# 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格
+#   前缀 > 或 |)以 "本版 docsync" 开头, 形如 "> 本版 docsync：**186/186**";
+#   只校验该行(历史引用如 "v2.0 docsync 142" 不在范围, 计划 §7 风险对策)。
+if [ -n "$V" ]; then
+    VMM=$(echo "$V" | cut -d. -f1,2)          # 交付文档名按 主.次 (如 v2.1开发交付__...)
+    doc=$(ls v${VMM}开发交付*.md 2>/dev/null | head -1)
+    expect=$((PASS + 1))            # 本断言本身计入总数 → 文档声明值须等于 expect
+    if [ -z "$doc" ]; then
+        echo "FAIL [自指] 缺当前版本交付文档 v${VMM}开发交付*.md"
+        FAIL=$((FAIL + 1))
+    else
+        line=$(grep -E '^[[:space:]]*[>|]?[[:space:]]*本版 docsync' "$doc" 2>/dev/null | head -1)
+        # 只认声明本身的 "docsync<分隔>N/N" 形态: 分隔符限定为空格/冒号/星号,
+        # 避免把同一行里的 "docsync.sh ... §7" 之类文字误当计数(自证时抓到)
+        claims=$(printf '%s' "$line" \
+                 | grep -oE 'docsync[[:space:]:：*]*[0-9]+/[0-9]+' | grep -oE '[0-9]+' | sort -u)
+        if [ -z "$claims" ]; then
+            echo "FAIL [自指] $doc 未声明行首 '本版 docsync：N/N' (自指断言无法校验)"
+            FAIL=$((FAIL + 1))
+        else
+            bad=0
+            for c in $claims; do
+                [ "$c" = "$expect" ] || bad=1
+            done
+            if [ "$bad" -eq 0 ]; then
+                echo "ok   自指断言: 交付文档 docsync 计数 = 实测 $expect"
+                PASS=$((PASS + 1))
+            else
+                echo "FAIL [自指] $doc 声明 docsync [$(echo $claims | tr '\n' ' ')] ≠ 实测 $expect"
+                FAIL=$((FAIL + 1))
+            fi
+        fi
+    fi
+fi
 
 echo "----------------------------------------"
 echo "docsync: pass=$PASS fail=$FAIL"

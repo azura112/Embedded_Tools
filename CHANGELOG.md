@@ -6,6 +6,27 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-09-11 · **v2.1 — 定点控制与治理收口**
+
+冻结后首个 MINOR（**API freeze 机检: 新增 27 项 / 修改删除 0 项**,纯追加实证）。
+
+### Added
+- **et_pid**（algorithm/，第 28 模块，18 例）：位置式定点 PID —— Q15 增益（kp 无量纲 / ki 1/s / kd s）、int64 饱和中间量（无有符号溢出 UB）、积分限幅抗饱和（钳位法，不做反算回灌）、`d_on_measure` 微分作用于测量值（推荐默认开，免除设定值跳变冲击）、`dt_ms` 由调用方给（不内部取时基）；非 ISR-safe 单上下文标注。整定配方入 API_GUIDE 11.10（`et_lpf1 → et_pid → et_spwm` 三段式链路 + Ziegler-Nichols 定性 + 常见坑）。
+- **et_stats**（algorithm/，第 29 模块，11 例）：Welford 整数增量流式统计（min/max/均值/方差 Q10），不累加 Σx²（避免大数相减失真与溢出）；与 et_pid 联动判稳/记录超调；INT32_MIN/MAX 输入饱和不 UB。
+- **et_bytes**（protocol/，第 30 模块，8 例）：BE/LE u16/u32 打包解包；边界检查即唯一面（越界/回绕拒绝且不读不写）。
+- **apidump `--snapshot`/`--diff` 冻结基线机检（P0-1）**：`docs/API_INVENTORY_v2.0.md` 归档 v2.0 基线；`--diff` 纯新增=绿、签名删改/宏值变更=红、`ET_VERSION*` 元数据宏忽略；规则入 API_STABILITY 附则（结构体字段追加 apidump 不可见，须人工登记）。
+- **docsync 自指断言（P0-2）**：当前版本交付文档须声明"本版 docsync N/N"，脚本与实测断言数对账，写错即红——关闭 v2.0 验收发现的自指盲区（同族第三例终局）。
+- **`docs/getting-started.md` 端到端教程（P3-2）**：裁剪 → host 单测 → `port/_template` 移植 → 串口 shell → selftest → 闭环示例 → 提交自查，一步一命令。
+- bench v2.1 行：`pid step` 15.0 ns/op、`stats push` 6.0 ns/op（同机中位数，环境注记同 v1.7）。
+
+### Changed
+- 版本 2.0.0 → **2.1.0**（`ET_VERSION = 0x020100`）；用例 345 → **382**（× 双几何；1K 变体 383、shell Tab 形态同套件数）。
+- **CubeMX 板侧同步 v2.1（跨 v1.9→v2.1 两版）**：`Core/et/` 全量重拷 + `diff -rq` 校验；零警告构建；新模块未被 demo 调用 → 链接器丢弃 59 个 section，FLASH **32100 B 与 v1.9 逐字节等值**（板端零变化）。板上复验：横幅 v2.1.0（0x20100）/ `AT+SELFTEST` **17/17** / `AT+SELFSTOR` kv+bootctl PASS / 升级链 `SIMUPGRADE 3` confirm + `SIMUPGRADE 4` self-check FAILED→ROLLBACK 双路径（记录入 `移植stm32实机记录.md` §9）。
+- API_GUIDE 增 3.3/3.4/5.6 章节与 11.10 整定配方、配置表补三模块开关；README 特性表/用例数/checklist 第 8 条（冻结机检 + 自指断言）。
+
+### Fixed
+- `et_bytes.h` 补 `<stddef.h>`：板侧零警告构建暴露头文件不自足（host 侧因间接包含而未显形）——v2.1 板侧同步机制的价值实例。
+
 ## [2.0.0] — 2026-09-09 · **v2.0 — API freeze（契约冻结与工程单一来源）**
 
 契约冻结与工程单一来源（里程碑版：API 冻结声明 + 构建单一来源 + size 门）。

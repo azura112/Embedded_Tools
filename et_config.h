@@ -17,10 +17,10 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        2
-#define ET_VERSION_MINOR        0
+#define ET_VERSION_MINOR        1
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x020000 = 2.0.0, 便于条件编译比较: #if ET_VERSION >= 0x020000
- * v2.0 = 契约稳定里程碑(API 冻结声明生效, 见 docs/API_STABILITY.md) */
+/* 整数编码 0x020100 = 2.1.0, 便于条件编译比较: #if ET_VERSION >= 0x020100
+ * v2.0 = API 冻结里程碑; v2.1 = 冻结后首个 MINOR(纯追加, 见 docs/API_STABILITY.md) */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
@@ -55,6 +55,12 @@ extern "C" {
 #ifndef ET_MODULE_FILTER
 #define ET_MODULE_FILTER        1   /* algorithm: 定点数字滤波器组      */
 #endif
+#ifndef ET_MODULE_PID
+#define ET_MODULE_PID           1   /* algorithm: 定点 PID 控制器(v2.1) */
+#endif
+#ifndef ET_MODULE_STATS
+#define ET_MODULE_STATS         1   /* algorithm: 流式运行统计(v2.1)    */
+#endif
 #ifndef ET_MODULE_FSM
 #define ET_MODULE_FSM           1   /* algorithm: 表驱动状态机          */
 #endif
@@ -72,6 +78,9 @@ extern "C" {
 #endif
 #ifndef ET_MODULE_CRC
 #define ET_MODULE_CRC           1   /* proto: CRC8/CRC16/CRC32 校验     */
+#endif
+#ifndef ET_MODULE_BYTES
+#define ET_MODULE_BYTES         1   /* proto: BE/LE u16/u32 打包解包(v2.1) */
 #endif
 #ifndef ET_MODULE_FRAME
 #define ET_MODULE_FRAME         1   /* proto: 字节流帧解析器            */

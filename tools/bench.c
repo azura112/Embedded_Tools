@@ -25,6 +25,8 @@
 #include "et_ringbuf.h"
 #include "et_crc.h"
 #include "et_filter.h"
+#include "et_pid.h"
+#include "et_stats.h"
 #include "et_fsm.h"
 #include "et_map.h"
 #include "et_smap.h"
@@ -272,6 +274,47 @@ static double bench_fsm(void)
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
 }
 
+/* ===================== pid / stats (v2.1 定点控制与统计) ===================== */
+
+static et_pid_t   b_pid;
+static et_stats_t b_stats;
+
+static double bench_pid(void)
+{
+    et_pid_cfg_t c;
+    uint32_t n = 1000000u;
+    uint32_t i;
+    int32_t  out = 0;
+    clock_t  t0;
+
+    c.kp = 32768; c.ki = 16384; c.kd = 8192;
+    c.out_min = -1000000; c.out_max = 1000000;
+    c.i_min = -1000000; c.i_max = 1000000;
+    c.d_on_measure = 1u;
+    (void)et_pid_init(&b_pid, &c);
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        out = et_pid_step(&b_pid, 1000, (int32_t)(i % 2000u), 10u);
+    }
+    g_sink = (uint32_t)out;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+static double bench_stats(void)
+{
+    uint32_t n = 1000000u;
+    uint32_t i;
+    clock_t  t0;
+
+    (void)et_stats_init(&b_stats);
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        et_stats_push(&b_stats, (int32_t)(i % 4096u));
+    }
+    g_sink = (uint32_t)et_stats_var_q10(&b_stats);
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
 /* ===================== map / smap (v1.8/v1.9 容器查找) ===================== */
 
 #define B_MAP_CAP   97u                     /* 质数容量 */
@@ -410,6 +453,8 @@ int main(void)
     report_mb("xmodem eff. payload 128B blocks", bench_xmodem, 20000.0 * 128.0);
     report_ops("kv set+get (32B val, host flash)", bench_kv, 2000.0);
     report_ns("filter movavg update", bench_filter, 1000000.0);
+    report_ns("pid step (P+I+D, d-on-measure)", bench_pid, 1000000.0);
+    report_ns("stats push (Welford integer)", bench_stats, 1000000.0);
     report_ns("fsm dispatch (guard)", bench_fsm, 1000000.0);
     report_ns("map u32 get (97 slots, load 0.62)", bench_map_get, 1000000.0);
     report_ns("smap str get (97 slots, load 0.62)", bench_smap_get, 1000000.0);

@@ -14,7 +14,7 @@
 | 工具链 | GNU Tools for STM32 **13.3.rel1**(STM32CubeCLT 1.18.0),`arm-none-eabi-gcc --version` 复现 |
 | 构建系统 | CMake(Ninja)+ CubeMX 生成工程,`cmake --preset Debug/Release` |
 | 宿主 | Windows / Git Bash |
-| 库源 | `D:\code\My_Library\Embedded_Tools`整体拷入 `Core/et/`(v1.9.0 全量同步,`diff -rq` 校验) |
+| 库源 | `D:\code\My_Library\Embedded_Tools`整体拷入 `Core/et/`(v1.9.0 全量同步;v2.1.0 二次同步与复验见 §9,`diff -rq` 校验) |
 | 板级接线 | LED=PC0(推挽,**高电平点亮已由走单 5 目视确认**)、按键=PD15(上拉,按下为低)、串口=PA9/PA10 外置 USB-TTL(CH343),115200-8-N-1 |
 | 时钟 | HSI16 ×PLL = 144MHz(CubeMX `.ioc` 时钟树,FLASH_LATENCY_4) |
 
@@ -271,4 +271,34 @@ arm-none-eabi-objcopy -O binary build/Release/G474VET6_ET_TEST.elf build/Release
 # 走单3 传输:                          (板上)AT+UPGRADE → (主机)python tools/xmodem_send.py #                                        --port COM12 --file image.bin --timeout 60 --verbose
 # 走单1/2/4 + SELFTEST/SELFSTOR:       pyserial 控制台逐命令采集(见 board_final.log 样式)
 # 期望: SELFTEST 17/17 PASS (59ms); SELFSTOR kv+bootctl PASS; WDTEST 后 reset cause: IWDG + 自愈
+```
+
+## 9. v2.1.0 板侧同步与复验 (2026-09-11)
+
+**同步**:`Core/et/` 全量重拷 `core/algorithm/sys/protocol/drivers/debug/storage` + `et_config.h` + `port/port.h`(`et_port/`、`et_demo.c` 工程私有不动);`diff -rq` 七目录 + 三文件全 OK(v1.9 → v2.1 跨两版)。
+**构建**:`cmake --preset Release && cmake --build --preset Release` → **0 warning**;`arm-none-eabi-size` = text **32032** / data **68** / bss **4560**,FLASH 占用 **32100 B**。
+**零足迹事实(板侧零回归的直接证据)**:新增 `et_pid/et_stats/et_bytes` 未被 demo 调用,链接器把三者共 **59 个 section 全部丢弃**(map "Discarded input sections");FLASH 32100 B 与 v1.9 记录**逐字节等值** —— 同步不改变板端行为,仅版本串不同。
+
+**板上复验**(烧录 `build/Release/G474VET6_ET_TEST.elf` + COM12 115200-8-N-1 采集):
+
+```
+[0][I][demo] Embedded_Tools v2.1.0 (0x20100)          # 版本宏板面自证
+[57][I][demo] kv: seq=32 free=464 rec=98 key=2        # v1.9 起持久化数据完好
+AT+VER        -> ver=2.1.0 boot=14
+AT+SELFTEST   -> 17 suites 全 PASS, "SELFTEST: 17/17 PASS" (59ms)
+AT+SELFSTOR   -> kv PASS + bootctl PASS -> "STORAGE SELFTEST PASS"
+AT+SIMUPGRADE 3 (奇=自检过) -> STAGED slot B -> 复位 -> "slot 1 CONFIRMED (self-check ok)"
+AT+SIMUPGRADE 4 (偶=自检败) -> STAGED slot B -> 复位 -> "self-check FAILED (even ver), not confirmed"
+                               -> 再复位 -> "boot slot 1 attempt 2" + "ROLLBACK: attempts exhausted"
+                               -> BOOTINFO: staged=-1 confirmed=-1 attempts=0 (回干净态)
+```
+
+结论:**板侧回最新验证态** —— selftest 17/17、存储套件、升级链 confirm/rollback 双路径均在 v2.1.0 固件上再次实证,与 v1.9 收口记录一致。
+
+```sh
+# ==== v2.1.0 板侧同步复验会话 (2026-09-11) ====
+cd D:\code\STM32CubeMX\G474VET6_ET_TEST
+cmake --preset Release && cmake --build --preset Release          # 0 warning
+STM32_Programmer_CLI -c port=SWD -w build/Release/G474VET6_ET_TEST.elf -rst
+# COM12 115200 采集: AT+VER / AT+SELFTEST / AT+SELFSTOR / AT+SIMUPGRADE 3|4 / AT+BOOTINFO
 ```

@@ -6,7 +6,7 @@
 
 ## et_config.h
 
-### 宏 (46)
+### 宏 (43)
 
 - `ET_ASSERT(cond) ((void)0)`
 - `ET_CRC_TABLE 0`
@@ -16,7 +16,6 @@
 - `ET_MEMPOOL_STRICT 1`
 - `ET_MODULE_ATCMD 1`
 - `ET_MODULE_BOOTCTL 1`
-- `ET_MODULE_BYTES 1`
 - `ET_MODULE_CRC 1`
 - `ET_MODULE_EVENT 1`
 - `ET_MODULE_FILTER 1`
@@ -29,7 +28,6 @@
 - `ET_MODULE_LOG 1`
 - `ET_MODULE_MAP 1`
 - `ET_MODULE_MEMPOOL 1`
-- `ET_MODULE_PID 1`
 - `ET_MODULE_QUEUE 1`
 - `ET_MODULE_RINGBUF 1`
 - `ET_MODULE_SCHED 1`
@@ -38,7 +36,6 @@
 - `ET_MODULE_SMAP 1`
 - `ET_MODULE_SOFTCLOCK 1`
 - `ET_MODULE_SPWM 1`
-- `ET_MODULE_STATS 1`
 - `ET_MODULE_STIMER 1`
 - `ET_MODULE_WDT 1`
 - `ET_MODULE_XMODEM 1`
@@ -46,7 +43,7 @@
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
-- `ET_VERSION_MINOR 1`
+- `ET_VERSION_MINOR 0`
 - `ET_VERSION_PATCH 0`
 - `ET_VERSION_STR(x) ET_VERSION_STR_(x)`
 - `ET_VERSION_STRING ET_VERSION_STR(ET_VERSION_MAJOR) "." ET_VERSION_STR(ET_VERSION_MINOR) "." ET_VERSION_STR(ET_VERSION_PATCH)`
@@ -115,38 +112,6 @@
 - `et_fsm_state_t`
 - `et_fsm_t`
 - `et_fsm_trans_t`
-
-## algorithm/et_pid.h
-
-### 函数声明 (5)
-
-- `bool et_pid_init(et_pid_t *p, const et_pid_cfg_t *cfg)`
-- `int32_t et_pid_output(const et_pid_t *p)`
-- `int32_t et_pid_step(et_pid_t *p, int32_t sp, int32_t pv, uint32_t dt_ms)`
-- `void et_pid_reset(et_pid_t *p)`
-- `void et_pid_set_gains(et_pid_t *p, int32_t kp, int32_t ki, int32_t kd)`
-
-### 类型 (2)
-
-- `et_pid_cfg_t`
-- `et_pid_t`
-
-## algorithm/et_stats.h
-
-### 函数声明 (8)
-
-- `bool et_stats_init(et_stats_t *s)`
-- `int32_t et_stats_max(const et_stats_t *s)`
-- `int32_t et_stats_mean(const et_stats_t *s)`
-- `int32_t et_stats_min(const et_stats_t *s)`
-- `int32_t et_stats_var_q10(const et_stats_t *s)`
-- `uint32_t et_stats_count(const et_stats_t *s)`
-- `void et_stats_push(et_stats_t *s, int32_t v)`
-- `void et_stats_reset(et_stats_t *s)`
-
-### 类型 (1)
-
-- `et_stats_t`
 
 ## core/et_list.h
 
@@ -434,19 +399,6 @@
 - `et_atcmd_fn()`
 - `et_atcmd_proc_t`
 - `et_atcmd_unknown_fn()`
-
-## protocol/et_bytes.h
-
-### 函数声明 (8)
-
-- `bool et_bytes_be16_get(const uint8_t *buf, uint32_t len, uint32_t off, uint16_t *out)`
-- `bool et_bytes_be16_put(uint8_t *buf, uint32_t len, uint32_t off, uint16_t val)`
-- `bool et_bytes_be32_get(const uint8_t *buf, uint32_t len, uint32_t off, uint32_t *out)`
-- `bool et_bytes_be32_put(uint8_t *buf, uint32_t len, uint32_t off, uint32_t val)`
-- `bool et_bytes_le16_get(const uint8_t *buf, uint32_t len, uint32_t off, uint16_t *out)`
-- `bool et_bytes_le16_put(uint8_t *buf, uint32_t len, uint32_t off, uint16_t val)`
-- `bool et_bytes_le32_get(const uint8_t *buf, uint32_t len, uint32_t off, uint32_t *out)`
-- `bool et_bytes_le32_put(uint8_t *buf, uint32_t len, uint32_t off, uint32_t val)`
 
 ## protocol/et_crc.h
 

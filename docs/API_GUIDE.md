@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.0.0（**API 冻结版本**——公开面自本版起冻结，演进规则见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.1.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -17,6 +17,8 @@
 - [3. algorithm 纯算法层](#3-algorithm-纯算法层)
   - [3.1 et_filter 定点滤波器组](#31-et_filter-定点滤波器组)
   - [3.2 et_fsm 表驱动状态机](#32-et_fsm-表驱动状态机)
+  - [3.3 et_pid 定点 PID 控制器](#33-et_pid-定点-pid-控制器-v21)
+  - [3.4 et_stats 流式运行统计](#34-et_stats-流式运行统计-v21)
 - [4. sys 系统服务层](#4-sys-系统服务层)
   - [4.1 et_stimer 软件定时器](#41-et_stimer-软件定时器)
   - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
@@ -29,6 +31,7 @@
   - [5.3 et_atcmd 命令解析器](#53-et_atcmd-命令解析器)
   - [5.4 et_xmodem XMODEM-CRC 接收器](#54-et_xmodem-xmodem-crc-接收器)
   - [5.5 et_xmodem_tx 发送器](#55-et_xmodem_tx-发送器-v18-mcu-作发送方)
+  - [5.6 et_bytes 字节序打包解包](#56-et_bytes-字节序打包解包-v21)
 - [6. storage 存储层](#6-storage-存储层)
   - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
   - [6.2 et_bootctl 安全升级控制](#62-et_bootctl-安全升级控制)
@@ -47,6 +50,7 @@
   - [11.7 看门狗与 flash 擦除组合](#117-看门狗与-flash-擦除组合et_wdt--port_flash)
   - [11.8 tickless 休眠](#118-tickless-休眠next_due--wfiv16)
   - [11.9 字符串键配置表与命令路由](#119-字符串键配置表与命令路由et_smap--et_shellv19)
+  - [11.10 定点闭环整定配方](#1110-定点闭环整定配方et_lpf1--et_pid--et_spwm--et_statsv21)
 
 ---
 
@@ -392,6 +396,84 @@ et_fsm_state(&led_fsm);                          /* ST_ON */
 
 单测 15 例（首匹配/guard 回退链/自迁移/未知事件/guard 全拒/重复 init 防护/单条目边界/user 透传/const 表驻留等，`test/test_fsm.c`）。
 
+### 3.3 et_pid 定点 PID 控制器 (v2.1)
+
+位置式定点 PID：**Q15 增益 + int64 饱和中间量**，补齐"测量 → 滤波 → 控制 → 输出"闭环的控制环节（滤波器见 3.1，执行输出见 7.3）。纯算法层，`dt_ms` 由调用方给（复用 4.1/4.2 时基或固定采样周期），库内不取时基。
+
+**标度约定（Q15，32768 = 1.0）**
+
+| 量 | 标度/单位 | 说明 |
+|---|---|---|
+| `kp` | 无量纲 Q15 | `P = kp·e`；1.0 即 1:1 |
+| `ki` | 1/s Q15 | `I = ki·∫e dt`（积分累加 int64，见下） |
+| `kd` | s Q15 | 变化率按"每秒"标定 |
+| `sp/pv`、`out_*`、`i_*` | 同标度 | 通常 = 被控量标度（ADC 码值/已归一化 Q15 值） |
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_pid_init(p, cfg)` | 🏠MAIN | cfg 非法（NULL / out_min>out_max / i_min>i_max）返回 false 且不改现场 |
+| `void et_pid_set_gains(p, kp, ki, kd)` | 🏠MAIN | 运行中改增益；**不清**积分/微分历史（要清零用 reset） |
+| `void et_pid_reset(p)` | 🏠MAIN | 清积分/微分历史、输出归零；下步 D=0 重建基准 |
+| `int32_t et_pid_step(p, sp, pv, dt_ms)` | 🏠MAIN | 单步，返回钳位后输出 |
+| `int32_t et_pid_output(p)` | 读 | 上次输出 |
+
+**评审决议（计划 §3 P1，均已文档化）**：位置式；积分/微分 int64 饱和中间量；抗饱和 = **积分限幅（钳位法）**，不做反算回灌（`i_min/i_max` = 积分项最大权限，输出标度）；微分作用对象可选，**推荐 `d_on_measure=1`（默认开）**免除设定值跳变冲击；`dt_ms==0` 视为无效采样（不改状态、返回上次输出）；**非 ISR-safe**（含 int64 乘除，🏠MAIN 单上下文，与 et_mempool 同级标注）。任意 int32 输入 + 任意 `dt_ms` 下输出恒被 `out_min/out_max` 钳定，无有符号溢出 UB。
+
+```c
+#include "et_pid.h"
+
+static et_pid_t pid;
+static et_pid_cfg_t cfg = {
+    .kp = 32768, .ki = 16384, .kd = 8192,   /* 1.0 / 0.5 / 0.25 */
+    .out_min = 0, .out_max = 1000,          /* 被控量标度(如 PWM 千分比) */
+    .i_min = -500, .i_max = 500,            /* 积分权限, 抗饱和 */
+    .d_on_measure = 1,
+};
+
+et_pid_init(&pid, &cfg);
+
+/* 固定 10ms 采样任务内: */
+int32_t pv = adc_read_pv();                       /* 被控量 */
+int32_t out = et_pid_step(&pid, 500, pv, 10u);    /* sp=500 */
+pwm_set(out);
+```
+
+整定与链路见 [11.10](#1110-定点闭环整定配方et_lpf1--et_pid--et_spwm--et_statsv21)；单测 18 例（阶跃数值/积分钳位/输出钳位/d-on-measure 对照/dt 语义/reset/多实例/饱和边界，`test/test_pid.c`）。
+
+### 3.4 et_stats 流式运行统计 (v2.1)
+
+定长无关、零分配的在线统计：`min/max/均值/方差`。**Welford 整数增量**（不累加 Σx²，避免大数相减失真与 Σx² 溢出），均值内部 Q10，方差以 **Q10 定点**输出。与 et_pid 联动可做判稳/超调记录（见 11.10）。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_stats_init(s)` / `void et_stats_reset(s)` | 🏠MAIN | 清零；空集各项报 0 |
+| `void et_stats_push(s, v)` | 🏠MAIN | 流式喂入，O(1)；count 饱和于 UINT32_MAX 后忽略 |
+| `uint32_t et_stats_count(s)` | 读 | 样本数 |
+| `int32_t et_stats_min/max(s)` | 读 | 极值（空集 0） |
+| `int32_t et_stats_mean(s)` | 读 | 均值（Q10 内部精度，四舍五入到整数） |
+| `int32_t et_stats_var_q10(s)` | 读 | **总体方差 × 1024**（除以 n，与 double 参照同口径）；饱和到 INT32_MAX |
+
+**标度与量程**：`var_q10 / 1024 = σ²`（如 `var_q10 = 25600` → σ² = 25 → σ = 5）；int32 的 Q10 只能表达 σ ≲ 1448 的分布，超出输出饱和 `INT32_MAX`（确定性，非回绕）。INT32_MIN/MAX 输入不产生溢出 UB（中间量饱和）。
+
+```c
+#include "et_stats.h"
+
+static et_stats_t st;
+
+et_stats_init(&st);
+for (;;) {                                   /* 采集被控量 */
+    et_stats_push(&st, adc_read_pv());
+    if (et_stats_count(&st) >= 100u) {
+        if (et_stats_var_q10(&st) < 1024) {  /* 方差 < 1: 判稳 */
+            record_overshoot(et_stats_max(&st) - sp);
+        }
+        et_stats_reset(&st);
+    }
+}
+```
+
+单测 11 例（双精度对拍/顺序无关/恒定输入/负值/极值饱和/多实例，`test/test_stats.c`）。
+
 ---
 
 ## 4. sys 系统服务层
@@ -701,6 +783,35 @@ while (1) {
     }
 }
 ```
+
+### 5.6 et_bytes 字节序打包解包 (v2.1)
+
+帧载荷/存储值/传输字段的字节序读写小件（v2.1 P3 决议：`et_frame_pack` 只管自身协议字段，通用载荷拼装此前无对应工具）。纯函数、零状态、零依赖。
+
+**安全面即唯一面**：get/put 均带 `(buf, len, off)` **边界检查**，无未检查变体——越界（NULL / len 不足 / off 回绕）返回 false 且**不读不写**目标。
+
+| 函数 | 说明 |
+|---|---|
+| `bool et_bytes_be16_get/le16_get(buf, len, off, &out)` | 大端/小端读 u16；成功写 `*out` |
+| `bool et_bytes_be32_get/le32_get(buf, len, off, &out)` | 大端/小端读 u32 |
+| `bool et_bytes_be16_put/le16_put(buf, len, off, val)` | 大端/小端写 u16 |
+| `bool et_bytes_be32_put/le32_put(buf, len, off, val)` | 大端/小端写 u32 |
+
+```c
+#include "et_bytes.h"
+
+uint8_t frame[8];
+uint32_t seq = 0x01020304u;
+et_bytes_be32_put(frame, sizeof(frame), 0u, seq);   /* 网络序 */
+uint16_t crc16 = 0xBEEFu;
+et_bytes_le16_put(frame, sizeof(frame), 4u, crc16); /* 小端 */
+
+uint32_t got;
+if (et_bytes_be32_get(frame, sizeof(frame), 0u, &got)) { use(got); }
+if (!et_bytes_be32_get(frame, sizeof(frame), 6u, &got)) { /* 越界: 拒绝且不写 got */ }
+```
+
+单测 8 例（字节序向量/往返/读写边界/off 回绕/失败无副作用/偏移混排，`test/test_bytes.c`）。
 
 ---
 
@@ -1045,7 +1156,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / PID / STATS / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
 | `ET_MEMPOOL_STRICT` | 1 | free 时校验指针归属/重复释放 |
@@ -1063,7 +1174,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |
 | `PORT_FLASH_SECTOR_COUNT` | 16 | 参数区扇区数（et_kv 用其中两扇区） |
 | `PORT_FLASH_ERASE_MS_MAX` | 20 | 单扇区擦除耗时上限（ms，喂狗参考） |
-| `ET_VERSION_STRING / ET_VERSION` | "1.5.0" / 0x010500 | 版本标识，发布时须与 git tag 一致 |
+| `ET_VERSION_STRING / ET_VERSION` | "2.1.0" / 0x020100 | 版本标识，发布时须与 git tag 一致 |
 | `ET_ASSERT(cond)` | 空实现 | 库内断言映射，可指向自身故障钩子 |
 | `ET_LOG_MAX_LEVEL` | 0 (TRACE) | 日志编译期裁剪线（数值=最详细级别） |
 | `ET_LOG_LINE_MAX` 等 | 见 et_log.h | 日志行为细节 |
@@ -1290,3 +1401,62 @@ void app_init(void)
 AT 命令用法（`AT+PIN? PC13`）：`et_atcmd_next_arg()` 取名字参数 → `pin_lookup()` → 命中输出值。
 **池预算**：每条键占 `(len+1)` 上取 4B 对齐；最坏键长 = `ET_SMAP_KEY_MAX`；池满 put 拒绝且无副作用（先定位后分配）。
 **注意**：smap 与 atcmd 的定长命令表是两个模型——命令表 <32 条用 et_atcmd 顺序匹配即可（本配方演示的是数据侧查表）；命令表上百条再考虑 smap 化路由（v2.0 候选，无需求不动 shell 层）。
+
+### 11.10 定点闭环整定配方（et_lpf1 → et_pid → et_spwm × et_stats，v2.1）
+
+**链路**：`传感器采样 → et_lpf1(去噪) → et_pid(控制) → et_spwm(执行) → 被控对象 → 回到采样`，`et_stats` 旁路采集被控量用于判稳与超调记录。三段均定点、零浮点、零动态内存。
+
+```
+ pv_raw ──> et_lpf1_update ──> pv ──┬──> et_pid_step(sp, pv, dt) ──> out ──> et_spwm_set(ch, out)
+                                    │                                              │
+                                    └──> et_stats_push(pv)   <── 被控对象 <─────────┘
+```
+
+**标准做法（三段式）**：
+1. **滤波在前**：微分项会放大噪声，`pv` 先进 `et_lpf1`（`k_q15` 越大越平滑、滞后越大）；PWM 类负载可再串 `et_slew` 限斜率；
+2. **时基固定**：`dt_ms` 取固定采样周期（`et_sched` 任务周期或 stimer），**不要传实际抖动间隔**——积分/微分按给定 `dt` 线性标定；等长 `dt` 下相同增益结果可复现；
+3. **先 P 后 I 再 D**：`ki=kd=0` 加 `kp` 到出现小幅等幅振荡（临界增益 `Ku`、周期 `Tu`），再按 Ziegler-Nichols 定性比例收敛：`kp≈0.6·Ku`、`ki≈1.2·Ku/Tu`、`kd≈0.075·Ku·Tu`（Q15 换算：`增益×32768`）；本库只给配方与定性方法，**不做自动整定**（Non-goals）；
+4. **抗饱和**：`i_min/i_max` 设为"执行器满量程附近"的积分权限，避免输出饱和期间积分继续堆积（钳位法，无回灌）；
+5. **判稳**：`et_stats_var_q10(pv) < 阈值` 判稳；`max - sp` 记超调；稳定后 `et_pid_reset` 便于换工况重测。
+
+```c
+#include "et_filter.h"
+#include "et_pid.h"
+#include "et_spwm.h"
+#include "et_stats.h"
+
+static et_lpf1_t  lpf;
+static et_pid_t   pid;
+static et_stats_t st;
+
+void ctrl_init(void)
+{
+    et_pid_cfg_t cfg = {
+        .kp = 19660, .ki = 4915, .kd = 1640,     /* 0.6/0.15/0.05 (Q15) */
+        .out_min = 0, .out_max = 1000,           /* PWM 千分比 */
+        .i_min = -300, .i_max = 300,
+        .d_on_measure = 1,                       /* 免除设定值冲击 */
+    };
+    et_lpf1_init(&lpf, 8192u);                   /* k≈0.25 去噪 */
+    et_pid_init(&pid, &cfg);
+    et_stats_init(&st);
+    et_spwm_set(0u, 0u);
+}
+
+/* 固定周期任务(如 et_sched 每 10ms): */
+void ctrl_task(void)
+{
+    int32_t pv = et_lpf1_update(&lpf, adc_read_pv());
+    int32_t out = et_pid_step(&pid, 500, pv, 10u);
+
+    et_spwm_set(0u, (uint32_t)out);
+    et_stats_push(&st, pv);
+
+    if ((et_stats_count(&st) >= 200u) && (et_stats_var_q10(&st) < 1024)) {
+        tune_report(et_stats_mean(&st), et_stats_max(&st) - 500);   /* 判稳 + 超调 */
+        et_stats_reset(&st);
+    }
+}
+```
+
+**常见坑**：① 微分噪声大 → 检查 `pv` 是否已滤波、`d_on_measure` 是否为 1；② 积分饱和不回来 → 检查 `i_min/i_max` 是否给得过宽、输出限幅是否与执行器一致；③ 增益单位混乱 → 记住 `ki` 是 1/s、`kd` 是 s，`dt_ms` 必须是 ms；④ 定点死区 → 误差极小时 P 项可能因 Q15 取整为 0，长稳态精度靠 I 项（`ki` 不宜为 0）。
