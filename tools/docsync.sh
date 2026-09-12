@@ -198,7 +198,7 @@ assert_grep "tools/pack_image.py" "ETBI"                      "ETBI 打包工具
 assert_grep "port/stm32f103/README.md" "v1.9"                 "体积表含 v1.9 行(f103)"
 assert_grep "port/stm32g474/README.md"  "18088"               "体积表 v1.9 行(g474)"
 assert_grep "port/stm32f103/README.md"  "25352"               "体积表 v1.9 行(f103, selftest)"
-assert_grep "移植stm32实机记录.md" "SELFTEST: 17/17"          "实机记录含库化 selftest 板上记录(P0-2)"
+assert_grep "移植stm32实机记录.md" "SELFTEST: 20/20"          "实机记录含 v2.2 selftest 20 套件板上记录(P1)"
 assert_grep "移植stm32实机记录.md" "reset cause: IWDG"        "实机记录含 IWDG 真超时证据(P0-1 走单4)"
 assert_no_grep "移植stm32实机记录.md" "待上板执行"            "实机记录走单占位符已全部回填(P0-1)"
 
@@ -280,9 +280,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "382"             "getting-started 用例数与实测一致"
+assert_grep "docs/getting-started.md" "398"             "getting-started 用例数与实测一致(v2.2 回刷)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "382"                 "README 用例数终值回刷(v2.1)"
+assert_grep "README.md"           "398"                 "README 用例数终值回刷(v2.2)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
@@ -295,6 +295,30 @@ for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 
         PASS=$((PASS + 1))
     fi
 done
+
+# ---- v2.2 P0 基线滚动 + P1 selftest 20 套件 + P3 medfilt + P4 sched stats ----
+assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.1.md"     "apidump 默认基线滚动至 v2.1(P0-1)"
+assert_grep "docs/API_INVENTORY_v2.1.md" "自动生成"                  "v2.1 冻结基线已归档(P0-1 滚动)"
+assert_grep "docs/API_STABILITY.md"      "字段追加登记区"             "API_STABILITY 结构体字段登记区(P4 附则实战)"
+assert_grep "et_config.h"         "ET_MODULE_MEDFILT"   "et_config 含 MEDFILT 开关(P3)"
+assert_grep "et_config.h"         "ET_MEDFILT_WIN_MAX"  "et_config 含 medfilt 窗上限(P3)"
+assert_grep "Makefile"            "algorithm/et_medfilt.c" "Makefile 含 et_medfilt 源(P3)"
+assert_grep "Makefile"            "test/test_medfilt.c" "Makefile 含 test_medfilt(P3)"
+assert_grep "test/test_main.c"    "test_medfilt_cases"  "test_main 注册 medfilt 套件(P3)"
+assert_grep "README.md"           "et_medfilt"          "README 特性表: medfilt(P3)"
+assert_grep "docs/API_GUIDE.md"   "3.5 et_medfilt"      "API_GUIDE: medfilt 章节(P3)"
+assert_grep "docs/API_GUIDE.md"   "ET_MEDFILT_WIN_MAX"  "API_GUIDE 配置表: medfilt 窗上限(P3)"
+assert_grep "algorithm/et_medfilt.h" "奇数"             "et_medfilt 奇数窗决议(头注,P3)"
+assert_grep "sys/et_sched.h"      "et_sched_task_stats" "et_sched 任务耗时统计 API(P4)"
+assert_grep "test/test_sched.c"   "sc_stats_measures_duration" "sched 耗时计量用例(P4)"
+assert_grep "debug/et_selftest.c" "st_pid"              "selftest 含 pid 套件(P1)"
+assert_grep "debug/et_selftest.c" "st_stats"            "selftest 含 stats 套件(P1)"
+assert_grep "debug/et_selftest.c" "st_bytes"            "selftest 含 bytes 套件(P1)"
+assert_grep "port/stm32f103/renode/smoke.sh" "SELFTEST: 20/20" "smoke 断言同步 20 套件(P1)"
+assert_grep "protocol/et_crc.c"   "s_modbus_tbl"        "CRC16-MODBUS 查表路径(P5-3)"
+assert_grep "docs/bench.md"       "medfilt push"        "bench 含 medfilt 行(P5-2)"
+assert_grep "docs/bench.md"       "v2.2.0"              "bench 文档含 v2.2 版本行"
+assert_grep "docs/API_GUIDE.md"   "11.11 kv"            "API_GUIDE: kv 备份恢复配方(P5-1)"
 
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格

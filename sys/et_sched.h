@@ -39,6 +39,9 @@ typedef struct et_task {
     uint32_t        period_ms;      /* 调度周期           */
     uint32_t        last_run;       /* 上次运行时刻       */
     bool            in_list;        /* 是否已注册         */
+    /* ---- v2.2 追加字段(API_STABILITY §5 附则人工登记 #1, 破坏半径见登记区) ---- */
+    uint32_t        last_ms;        /* 上次执行耗时 ms, 勿动              */
+    uint32_t        max_ms;         /* 历史最长执行耗时 ms, 勿动          */
 } et_task_t;
 
 /* 注册任务: 尾插保持 FIFO 公平性; period_ms >= 1 */
@@ -61,6 +64,17 @@ port_tick_ms_t et_sched_next_due(void);
 
 /* 复位: 注销全部任务(热复位场景/测试隔离用) */
 void et_sched_reset(void);
+
+/* ---- v2.2 任务耗时统计(诊断抖动/超时任务的第一手数据) ----
+ * 计量口径: poll_once 在每次任务执行前后各取一次毫秒时基, 差值即本次耗时;
+ * 分辨率 = 时基粒度(1ms), 快于 1ms 的任务报 0 —— 只反映"毫秒级可观测"的
+ * 耗时, 不做高精度剖析(与本模块不引入新时基依赖的定位一致)。 */
+/* 只读查询: last_ms = 上次执行耗时, max_ms = 注册以来最长; 未跑过/未注册
+ * 任务两者均 0; 任一输出指针可为 NULL(不取该项)。 */
+void et_sched_task_stats(const et_task_t *t, uint32_t *last_ms, uint32_t *max_ms);
+
+/* 清零指定任务的耗时统计(max 一并清零; 不影响调度状态) */
+void et_sched_task_stats_reset(et_task_t *t);
 
 #ifdef __cplusplus
 }

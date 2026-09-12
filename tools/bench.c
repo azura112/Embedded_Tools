@@ -25,13 +25,16 @@
 #include "et_ringbuf.h"
 #include "et_crc.h"
 #include "et_filter.h"
+#include "et_medfilt.h"
 #include "et_pid.h"
 #include "et_stats.h"
 #include "et_fsm.h"
 #include "et_map.h"
 #include "et_smap.h"
+#include "et_sched.h"
 #include "et_xmodem.h"
 #include "et_kv.h"
+#include "port_host.h"      /* 虚拟时钟推进(sched 基准用) */
 
 #define ROUNDS      5u      /* 轮数, 取中位数 */
 
@@ -149,6 +152,22 @@ static double bench_crc32(void)
     t0 = clock();
     for (i = 0u; i < iters; i++) {
         crc = et_crc32_update(crc, b_crc_buf, sizeof(b_crc_buf));
+    }
+    g_sink = crc;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+/* crc16-modbus (v2.2 P5-3: 查表路径与位算法对比) */
+static double bench_crc16_modbus(void)
+{
+    uint32_t iters = 512u;
+    uint32_t i;
+    uint16_t crc = ET_CRC16_MODBUS_INIT;
+    clock_t  t0;
+
+    t0 = clock();
+    for (i = 0u; i < iters; i++) {
+        crc = et_crc16_modbus_update(crc, b_crc_buf, sizeof(b_crc_buf));
     }
     g_sink = crc;
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
@@ -315,6 +334,53 @@ static double bench_stats(void)
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
 }
 
+/* ===================== medfilt / sched (v2.2) ===================== */
+
+static et_medfilt_t b_mf;
+static int32_t      b_mf_mem[5];
+static et_task_t    b_task;
+
+static void bench_task_tick(void *arg)          /* 任务体内推进虚拟时钟 1ms */
+{
+    (void)arg;
+    port_host_tick_advance(1u);
+}
+
+static double bench_medfilt(void)
+{
+    uint32_t n = 1000000u;
+    uint32_t i;
+    int32_t  acc = 0;
+    clock_t  t0;
+
+    memset(&b_mf, 0, sizeof(b_mf));
+    (void)et_medfilt_init(&b_mf, b_mf_mem, 5u);
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        acc += et_medfilt_push(&b_mf, (int32_t)(i % 1024u) - 512);
+    }
+    g_sink = (uint32_t)acc;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+static double bench_sched_poll(void)
+{
+    uint32_t n = 200000u;
+    uint32_t i;
+    clock_t  t0;
+
+    et_sched_reset();
+    (void)et_sched_register(&b_task, bench_task_tick, NULL, 1u);
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        port_host_tick_advance(1u);
+        et_sched_poll_once();                   /* 每轮 1 任务到期(含耗时计量) */
+    }
+    g_sink = b_task.max_ms;
+    et_sched_reset();
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
 /* ===================== map / smap (v1.8/v1.9 容器查找) ===================== */
 
 #define B_MAP_CAP   97u                     /* 质数容量 */
@@ -449,12 +515,17 @@ int main(void)
               5000.0 * 256.0);
     report_mb("crc16-ccitt (4KB x512; table iff ET_CRC_TABLE=1)",
               bench_crc16, 512.0 * 4096.0);
+    report_mb("crc16-modbus (4KB x512; table iff ET_CRC_TABLE=1)",
+              bench_crc16_modbus, 512.0 * 4096.0);
     report_mb("crc32 (4KB x512; table iff ET_CRC_TABLE=1)", bench_crc32, 512.0 * 4096.0);
     report_mb("xmodem eff. payload 128B blocks", bench_xmodem, 20000.0 * 128.0);
     report_ops("kv set+get (32B val, host flash)", bench_kv, 2000.0);
     report_ns("filter movavg update", bench_filter, 1000000.0);
+    report_ns("medfilt push (win 5, v2.2)", bench_medfilt, 1000000.0);
     report_ns("pid step (P+I+D, d-on-measure)", bench_pid, 1000000.0);
     report_ns("stats push (Welford integer)", bench_stats, 1000000.0);
+    report_ns("sched poll_once (1 task due + stats, v2.2)", bench_sched_poll,
+              200000.0);
     report_ns("fsm dispatch (guard)", bench_fsm, 1000000.0);
     report_ns("map u32 get (97 slots, load 0.62)", bench_map_get, 1000000.0);
     report_ns("smap str get (97 slots, load 0.62)", bench_smap_get, 1000000.0);

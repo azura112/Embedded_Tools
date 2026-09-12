@@ -302,3 +302,46 @@ cmake --preset Release && cmake --build --preset Release          # 0 warning
 STM32_Programmer_CLI -c port=SWD -w build/Release/G474VET6_ET_TEST.elf -rst
 # COM12 115200 采集: AT+VER / AT+SELFTEST / AT+SELFSTOR / AT+SIMUPGRADE 3|4 / AT+BOOTINFO
 ```
+
+
+## 10. v2.2.0 板侧同步与 PID 闭环走单 (2026-09-12)
+
+**同步**:`Core/et/` 全量重拷(七目录 + `et_config.h` + `port/port.h`),`diff -rq` 校验全 OK;本次起 `et_demo.c` 新增 PID 闭环命令组(工程私有,见下)。
+**构建**:0 warning;FLASH **36088 B**(v2.1 为 32100)——增量来自 ① pid/stats/bytes 被 demo 真实调用(链入) ② selftest 17→20 套件 ③ PID 命令组,属**预期激活**(v2.1 的"零足迹"在 v2.2 解除)。
+**板上自测**:`AT+SELFTEST` → **20/20 PASS**(pid/stats/bytes 三套件首次上板);`AT+SELFSTOR` → kv PASS + bootctl PASS。
+```
+[8340][I][selftest] SELFTEST: 20/20 PASS        # pid/stats/bytes 三套件首次上板即 PASS
+```
+
+**PID 闭环走单(P2,模拟被控对象 y += k(u-y),10ms 节拍;期望值 = host 同款定点公式仿真预计算)**:
+
+```
+命令组: AT+PIDSET <sp> <kp> <ki> <kd> [k] [imax] / AT+PIDRUN <ms> / AT+PIDOUT
+        (增益与对象增益均为 Q15, 32768=1.0; imax=积分权限, 缺省 500)
+
+组 A 保守: PIDSET 500 32768 131072 0 13107        (kp=1.0 ki=4.0 kd=0 k=0.4)
+  仿真预期 peak=496 ov=0% settle=1110ms
+  板上实测 PIDRUN 2000 -> "peak=496 ov=0% settle=1110ms"   —— 与仿真逐值一致
+  PIDOUT: n=200 mean=441 min=207 max=496 var_q10=4047553
+
+组 B 激进: PIDSET 500 131072 262144 0 13107 1000  (kp=4.0 ki=8.0, imax=1000)
+  仿真预期 peak=610 ov=22% settle=2000ms
+  板上实测 -> "peak=610 ov=22% settle=2000ms"              —— 与仿真逐值一致
+  PIDOUT: n=200 mean=473 min=384 max=610 var_q10=2944087
+
+组 C 积分钳位对照: 同 B 增益, imax=50(积分权限钳死)
+  仿真预期: 积分被钳在 ±50 -> 输出上限 ~410 -> 稳态误差 ~18%(钳位法语义实证)
+  板上实测 -> "peak=420 ov=0% settle=2000ms"
+  PIDOUT: n=200 mean=410 min=399 max=420 var_q10=4565     —— 稳态钳在 410, 全程未进 ±5% 带
+```
+
+**升级链回归**:`AT+SIMUPGRADE 3`(奇)→ CONFIRMED;`AT+SIMUPGRADE 4`(偶)→ self-check FAILED;复位 → attempt 2 → `ROLLBACK: attempts exhausted` → 回干净态——confirm/rollback 双路径与 v2.1 §9 一致。
+**开机横幅**:`Embedded_Tools v2.2.0 (0x20200)`;kv/bootctl 持久化在固件替换后保持(boot #8→#9 递增)。
+
+```sh
+# ==== v2.2.0 板侧会话 (2026-09-12) ====
+cd D:\code\STM32CubeMX\G474VET6_ET_TEST
+cmake --preset Release && cmake --build --preset Release          # 0 warning
+STM32_Programmer_CLI -c port=SWD -w build/Release/G474VET6_ET_TEST.elf -rst
+# COM12 115200: AT+SELFTEST(20/20) / AT+PIDSET+PIDRUN+PIDOUT(三组) / AT+SELFSTOR / AT+SIMUPGRADE 3|4
+```

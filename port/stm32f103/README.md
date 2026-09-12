@@ -82,6 +82,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.0 | 26304 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值 [数字回刷]） |
 | v2.1 | 19636 | 24 | 740 | 默认裁剪构建（终值；+1800B = et_pid/et_stats/et_bytes 入 glob 全量入 ELF，demo 未调用） |
 | v2.1 | 28100 | 24 | 2096 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值） |
+| v2.2 | 19892 | 24 | 740 | 默认裁剪构建（终值）；+et_medfilt +et_sched 耗时统计字段（demo 未调用） |
+| v2.2 | 29500 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+pid/stats/bytes 三套件入 selftest（bss +136 = 套件静态数据） |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
 

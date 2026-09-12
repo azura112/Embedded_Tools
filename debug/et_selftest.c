@@ -2,10 +2,11 @@
  * @file    et_selftest.c
  * @brief   板上自测组件实现 (v1.7)
  *
- * 套件来源: G474 工程 AT+SELFTEST 已验证实现移植(13) + v1.4~v1.6 新模块补齐(4):
+ * 套件来源: G474 工程 AT+SELFTEST 已验证实现移植(13) + v1.4~v1.6 新模块补齐(4)
+ *   + v2.1 pid/stats/bytes 纯逻辑冒烟(3, v2.2 P1 合入):
  *   ringbuf/queue/mempool/list/filter/fsm/sched/event/stimer/crc/frame/softclock/wdt
  *   + atcmd+shell 行解析 / xmodem 短传输(RAM 环回) / kv 冒烟(存储门控) /
- *   bootctl 状态机(存储门控)。
+ *   bootctl 状态机(存储门控) / pid 阶跃+钳位 / stats 对拍 / bytes 往返+越界。
  *
  * 与 G474 工程私有版差异:
  *   - 输出经结构化事件回调(不在组件内格式化), 接 et_log 或 shell 由应用决定;
@@ -41,6 +42,15 @@
 #endif
 #if ET_MODULE_FILTER
 #include "et_filter.h"
+#endif
+#if ET_MODULE_PID
+#include "et_pid.h"
+#endif
+#if ET_MODULE_STATS
+#include "et_stats.h"
+#endif
+#if ET_MODULE_BYTES
+#include "et_bytes.h"
 #endif
 #if ET_MODULE_FSM
 #include "et_fsm.h"
@@ -365,6 +375,97 @@ static bool st_filter(st_ctx_t *ctx)
     return (ctx->fails == 0);
 }
 #endif /* ET_MODULE_FILTER */
+
+/* ===================== 5b. pid (v2.2 纯逻辑冒烟) ===================== */
+#if ET_MODULE_PID
+static bool st_pid(st_ctx_t *ctx)
+{
+    static et_pid_t     pid;
+    static et_pid_cfg_t cfg;
+    uint32_t            i;
+
+    /* kp=1.0, ki=0.5, dt=10ms, sp=1000 恒持: 手算 P=1000, I=5/步 -> 1005..1025 */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.kp    = 32768;
+    cfg.ki    = 16384;
+    cfg.kd    = 0;
+    cfg.out_min = -100000;
+    cfg.out_max = 100000;
+    cfg.i_min   = -100000;
+    cfg.i_max   = 100000;
+    cfg.d_on_measure = 1u;
+    ST_CHECK(et_pid_init(&pid, &cfg));
+    for (i = 0u; i < 5u; i++) {
+        ST_CHECK(et_pid_step(&pid, 1000, 0, 10u) == (int32_t)(1005 + 5 * (int32_t)i));
+    }
+
+    /* 输出钳位: 满增益大误差 -> out_max (抗饱和限幅在位) */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.kp = 32768; cfg.ki = 0; cfg.kd = 0;
+    cfg.out_min = -50; cfg.out_max = 50;
+    cfg.i_min = -1000; cfg.i_max = 1000;
+    cfg.d_on_measure = 1u;
+    ST_CHECK(et_pid_init(&pid, &cfg));
+    ST_CHECK(et_pid_step(&pid, 1000, 0, 10u) == 50);
+    ST_CHECK(et_pid_step(&pid, -1000, 0, 10u) == -50);
+    ST_CHECK(et_pid_output(&pid) == -50);
+
+    return (ctx->fails == 0);
+}
+#endif /* ET_MODULE_PID */
+
+/* ===================== 5c. stats (v2.2 纯逻辑冒烟) ===================== */
+#if ET_MODULE_STATS
+static bool st_stats(st_ctx_t *ctx)
+{
+    static et_stats_t st;
+    uint32_t          i;
+
+    /* 10 样本 1..10: count=10, min=1, max=10, mean=5.5->6(远离零), 方差 8.25*1024=8448 */
+    memset(&st, 0, sizeof(st));
+    ST_CHECK(et_stats_init(&st));
+    for (i = 1u; i <= 10u; i++) {
+        et_stats_push(&st, (int32_t)i);
+    }
+    ST_CHECK(et_stats_count(&st) == 10u);
+    ST_CHECK(et_stats_min(&st) == 1);
+    ST_CHECK(et_stats_max(&st) == 10);
+    ST_CHECK(et_stats_mean(&st) == 6);
+    ST_CHECK(et_stats_var_q10(&st) == 8448);
+
+    et_stats_reset(&st);
+    ST_CHECK(et_stats_count(&st) == 0u);
+    ST_CHECK(et_stats_mean(&st) == 0);      /* 空集各项报 0 */
+
+    return (ctx->fails == 0);
+}
+#endif /* ET_MODULE_STATS */
+
+/* ===================== 5d. bytes (v2.2 纯逻辑冒烟) ===================== */
+#if ET_MODULE_BYTES
+static bool st_bytes(st_ctx_t *ctx)
+{
+    uint8_t  buf[8];
+    uint16_t v16 = 0xAAAAu;
+    uint32_t v32 = 0u;
+
+    memset(buf, 0, sizeof(buf));
+    ST_CHECK(et_bytes_be32_put(buf, sizeof(buf), 0u, 0xDEADBEEFu));
+    ST_CHECK(buf[0] == 0xDEu && buf[1] == 0xADu && buf[2] == 0xBEu && buf[3] == 0xEFu);
+    ST_CHECK(et_bytes_be32_get(buf, sizeof(buf), 0u, &v32) && (v32 == 0xDEADBEEFu));
+
+    ST_CHECK(et_bytes_le16_put(buf, sizeof(buf), 6u, 0x1234u));
+    ST_CHECK(buf[6] == 0x34u && buf[7] == 0x12u);
+    ST_CHECK(et_bytes_le16_get(buf, sizeof(buf), 6u, &v16) && (v16 == 0x1234u));
+
+    /* 越界拒绝: 不读不写 */
+    v16 = 0xAAAAu;
+    ST_CHECK(!et_bytes_be16_get(buf, 2u, 1u, &v16));    /* [1,3) 越出 len=2 */
+    ST_CHECK(v16 == 0xAAAAu);
+
+    return (ctx->fails == 0);
+}
+#endif /* ET_MODULE_BYTES */
 
 /* ===================== 6. fsm ===================== */
 #if ET_MODULE_FSM
@@ -916,6 +1017,15 @@ static const st_entry_t g_suites[] = {
 #endif
 #if defined(ET_MODULE_FILTER) && ET_MODULE_FILTER
     { "filter",    st_filter,    0u },
+#endif
+#if defined(ET_MODULE_PID) && ET_MODULE_PID
+    { "pid",       st_pid,       0u },
+#endif
+#if defined(ET_MODULE_STATS) && ET_MODULE_STATS
+    { "stats",     st_stats,     0u },
+#endif
+#if defined(ET_MODULE_BYTES) && ET_MODULE_BYTES
+    { "bytes",     st_bytes,     0u },
 #endif
 #if defined(ET_MODULE_FSM) && ET_MODULE_FSM
     { "fsm",       st_fsm,       0u },

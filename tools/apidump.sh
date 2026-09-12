@@ -12,7 +12,9 @@
 #   sh tools/apidump.sh --check                # 与已入库清单比对, 漂移退出非零
 #   sh tools/apidump.sh --snapshot <清单文件>  # 固化冻结基线 (v2.1 P0-1)
 #   sh tools/apidump.sh --diff [基线清单]      # 与基线比对: 纯新增=绿 (默认
-#                                              #   基线 docs/API_INVENTORY_v2.0.md)
+#                                              #   docs/API_INVENTORY_v2.1.md)
+# 基线滚动规则 (v2.2 P0-1): 默认基线 = 最近已发布 MINOR 的快照; 发版时用
+#   --snapshot 归档新基线后把此处默认值前滚; 旧基线文件只读保留(历史审计)。
 # 提取口径(见计划 §7 风险对策): 公开签名面 —— (et_|port_) 前缀函数/
 # 类型 + 公开宏; 行首声明识别 + 块注释状态机, 不做预处理器级全展开。
 #
@@ -188,7 +190,7 @@ if [ "${1:-}" = "--snapshot" ]; then
 fi
 
 if [ "${1:-}" = "--diff" ]; then
-    BASE="${2:-docs/API_INVENTORY_v2.0.md}"
+    BASE="${2:-docs/API_INVENTORY_v2.1.md}"    # 滚动规则: 默认 = 最近已发布 MINOR 快照
     if [ ! -f "$BASE" ]; then
         echo "apidump: FAIL —— 冻结基线不存在: $BASE (先 --snapshot 归档)"; exit 1
     fi

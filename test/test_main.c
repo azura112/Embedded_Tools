@@ -12,6 +12,7 @@ extern const et_test_case_t *test_queue_cases(size_t *count);
 extern const et_test_case_t *test_mempool_cases(size_t *count);
 extern const et_test_case_t *test_list_cases(size_t *count);
 extern const et_test_case_t *test_filter_cases(size_t *count);
+extern const et_test_case_t *test_medfilt_cases(size_t *count);
 extern const et_test_case_t *test_pid_cases(size_t *count);
 extern const et_test_case_t *test_stats_cases(size_t *count);
 extern const et_test_case_t *test_stimer_cases(size_t *count);
@@ -52,6 +53,7 @@ static const et_suite_t g_suites[] = {
     { "core/mempool", test_mempool_cases },
     { "core/list",    test_list_cases    },
     { "algo/filter",  test_filter_cases  },
+    { "algo/medfilt", test_medfilt_cases },
     { "algo/pid",     test_pid_cases     },
     { "algo/stats",   test_stats_cases   },
     { "sys/stimer",   test_stimer_cases  },

@@ -37,7 +37,7 @@ cd Embedded_Tools
 mingw32-make test        # 或 make test
 ```
 
-**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **382** 例。
+**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **398** 例。
 
 ```sh
 mingw32-make test-g4     # 双几何回归 (G474 2KB 页几何; storage 布局改动必跑)
@@ -103,13 +103,13 @@ while (et_ringbuf_read(&rx_rb, &b, 1u) == 1u) {
 
 ```c
 #if ET_MODULE_SELFTEST
-et_selftest_run_all(my_report_cb, NULL);        /* 17 套件: ringbuf/filter/fsm/... kv/bootctl */
+et_selftest_run_all(my_report_cb, NULL);        /* 20 套件: ringbuf/filter/pid/... kv/bootctl */
 #endif
 ```
 
 或挂到 AT 命令上（参考 F103/G474 demo 的 `AT+SELFTEST`）。
 
-**该看到什么**: 逐套件 `PASS` 与末行 `SELFTEST: 17/17`（`ET_MODULE_KV=1` 且已 init 时才跑 kv/bootctl
+**该看到什么**: 逐套件 `PASS` 与末行 `SELFTEST: 20/20`（`ET_MODULE_KV=1` 且已 init 时才跑 kv/bootctl
 破坏性套件）。host 侧同一组件会复跑一遍，板上/PC 结果可直接比对。
 
 ## 6. 闭环控制示例 (v2.1 新模块)

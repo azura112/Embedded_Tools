@@ -17,10 +17,10 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        2
-#define ET_VERSION_MINOR        1
+#define ET_VERSION_MINOR        2
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x020100 = 2.1.0, 便于条件编译比较: #if ET_VERSION >= 0x020100
- * v2.0 = API 冻结里程碑; v2.1 = 冻结后首个 MINOR(纯追加, 见 docs/API_STABILITY.md) */
+/* 整数编码 0x020200 = 2.2.0, 便于条件编译比较: #if ET_VERSION >= 0x020200
+ * v2.0 = API 冻结里程碑; v2.1/2.2 = 冻结后 MINOR(纯追加, 见 docs/API_STABILITY.md) */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
@@ -60,6 +60,9 @@ extern "C" {
 #endif
 #ifndef ET_MODULE_STATS
 #define ET_MODULE_STATS         1   /* algorithm: 流式运行统计(v2.1)    */
+#endif
+#ifndef ET_MODULE_MEDFILT
+#define ET_MODULE_MEDFILT       1   /* algorithm: 中值滤波器(v2.2)      */
 #endif
 #ifndef ET_MODULE_FSM
 #define ET_MODULE_FSM           1   /* algorithm: 表驱动状态机          */
@@ -128,8 +131,9 @@ extern "C" {
 #endif
 
 /* ===================== et_crc ===================== */
-/* 查表优化: 置 1 时 CRC16-CCITT 用 256 项静态表(吞吐优先, 表驻只读段),
- * 默认 0 保持位算法零 RAM; 表放置段可用 -DET_CRC_TABLE_SECTION=".段名" 指定 */
+/* 查表优化: 置 1 时 CRC16-CCITT(512B)/CRC16-MODBUS(512B, v2.2)/CRC32(1KB)
+ * 用静态表(吞吐优先, 表驻只读段), 默认 0 保持位算法零 RAM;
+ * 表放置段可用 -DET_CRC_TABLE_SECTION=".段名" 指定 */
 #ifndef ET_CRC_TABLE
 #define ET_CRC_TABLE            0
 #endif
@@ -148,6 +152,12 @@ extern "C" {
 /* 软件 PWM 最大通道数(静态注册表容量), 按需裁剪节省 RAM */
 #ifndef ET_SPWM_CH_MAX
 #define ET_SPWM_CH_MAX          4
+#endif
+
+/* ===================== et_medfilt ===================== */
+/* 中值滤波窗口容量上限(init 强制奇数窗 3~此值); 栈排序缓冲随此值增大 */
+#ifndef ET_MEDFILT_WIN_MAX
+#define ET_MEDFILT_WIN_MAX      15
 #endif
 
 /* ===================== flash 参数区几何 (port 契约, 见 port.h) ===================== */

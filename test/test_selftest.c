@@ -95,7 +95,7 @@ static void sf_suite_count(void)
     port_host_flash_reset();
     g_ev_n = 0u;
     base = et_selftest_suite_count();
-    ET_CHECK_U32_EQ(17u, base);             /* 13 G474 移植 + 4 补齐 */
+    ET_CHECK_U32_EQ(20u, base);             /* 13 G474 移植 + 4 补齐 + 3 v2.1 模块(pid/stats/bytes) */
     ET_CHECK(et_selftest_register("host.extra", extra_ok));
     ET_CHECK_U32_EQ((uint32_t)(base + 1u), et_selftest_suite_count());
 }
@@ -148,8 +148,8 @@ static void sf_run_all_pass(void)
 
     storage_enable();
     g_ev_n = 0u;
-    total = et_selftest_suite_count();      /* 17 内建 + host.extra = 18 */
-    ET_CHECK_U32_EQ(18u, total);
+    total = et_selftest_suite_count();      /* 20 内建 + host.extra = 21 */
+    ET_CHECK_U32_EQ(21u, total);
     ET_CHECK(et_selftest_run_all(collector, NULL));
     ET_CHECK(ev_find(ET_SELFTEST_BEGIN, NULL) >= 0);
     ET_CHECK_U32_EQ(total, g_ev_num[ev_find(ET_SELFTEST_BEGIN, NULL)]);

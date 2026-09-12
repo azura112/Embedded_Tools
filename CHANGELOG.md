@@ -6,6 +6,24 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-09-12 · **v2.2 — 控制上板与诊断增强**
+
+冻结契约下纯增量 MINOR（`apidump --diff` 对 v2.1 基线: 新增 10 项 / 修改删除 0 项; `et_task_t` 字段追加走附则人工登记首次实战）。
+
+### Added
+- **`et_medfilt`**（algorithm/，第 31 模块，10 例）：奇数窗（3~`ET_MEDFILT_WIN_MAX`，默认 15）中值滤波 —— 脉冲尖峰抑制（单点尖峰不影响输出，窗内尖峰 ≤ (win-1)/2 时中值不动）、窗满前"下中位"语义文档化、小窗插入排序零分配；API_GUIDE 3.5 含与 movavg 取舍对比表 + `medfilt → lpf1` 两级配方。
+- **`et_sched` 任务耗时统计（P4 增量 API）**：`et_sched_task_stats` / `et_sched_task_stats_reset`，poll_once 内注入前后时基差（不引入新时基依赖，亚毫秒任务报 0）；**`et_task_t` 尾部追加 `last_ms`/`max_ms` 字段 = API_STABILITY §5.1 登记区第一条**（破坏半径：调用方重编译即兼容，`--diff` 保持绿）。6 例。
+- **板上闭环 demo（P2，CubeMX 板侧）**：`AT+PIDSET/PIDRUN/PIDOUT` 命令组 + 模拟被控对象 `y += k(u−y)`（10ms 节拍）；真机三组走单（保守/激进/积分钳位对照）与 host 同款定点公式仿真**逐值一致**（A: 496/0%/1110ms；B: 610/22%；C: imax=50 稳态钳在 410）——记录入 `移植stm32实机记录.md` §10，作为 API_GUIDE 11.10 的板上实例。
+- **apidump 基线滚动（P0-1）**：`docs/API_INVENTORY_v2.1.md` 归档，`--diff` 默认基线切至最近已发布 MINOR（规则入 API_STABILITY §5），v2.0 归档只读保留。
+- **kv 参数备份/恢复配方（P5-1，纯文档）**：`et_kv_iter` + `et_bytes_*` + `et_xmodem_tx` 组合的导出/恢复流程，API_GUIDE 11.11。
+- **CRC16-MODBUS 查表（P5-3）**：`ET_CRC_TABLE` 第三表（512B），bench 142.9→500.0 MB/s；表路径与位算法 200 例随机对拍 + 标准向量双验证。
+- bench v2.2 行：`medfilt push` 11.0、`sched poll_once` 5.0 ns/op。
+
+### Changed
+- **selftest 17→20 套件（P1，数字回刷全链）**：pid/stats/bytes 纯逻辑冒烟进 `et_selftest`（host/板上同套件），smoke.sh 断言、README、API_GUIDE 8.4、实机记录同步回刷；板上 `AT+SELFTEST` 20/20 实证。
+- 版本 2.1.0 → **2.2.0**（`0x020100`→`0x020200`）；用例 382 → **398**（×双几何，1K 变体 399）；checklist 第 5 条交付文档命名放宽为"全角冒号或 `__` 均可"（v2.0 起实际惯例，v2.1 遗留①）。
+- CubeMX 板侧 v2.2：FLASH 32100 → **36088 B**（pid/stats/bytes 被 demo 调用链入 + selftest 扩充 + PID 命令组，预期激活）。
+
 ## [2.1.0] — 2026-09-11 · **v2.1 — 定点控制与治理收口**
 
 冻结后首个 MINOR（**API freeze 机检: 新增 27 项 / 修改删除 0 项**,纯追加实证）。

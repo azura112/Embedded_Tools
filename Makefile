@@ -28,7 +28,7 @@ CFLAGS  := -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -I. -Icore -I
 OBJDIR  := build
 
 CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c core/et_map.c core/et_smap.c
-ALGO_SRC    := algorithm/et_filter.c algorithm/et_pid.c algorithm/et_stats.c algorithm/et_fsm.c
+ALGO_SRC    := algorithm/et_filter.c algorithm/et_medfilt.c algorithm/et_pid.c algorithm/et_stats.c algorithm/et_fsm.c
 SYS_SRC     := sys/et_stimer.c sys/et_sched.c sys/et_event.c sys/et_softclock.c sys/et_wdt.c
 PROTO_SRC   := protocol/et_crc.c protocol/et_bytes.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c protocol/et_xmodem_tx.c
 DRIVERS_SRC := drivers/et_key.c drivers/et_led.c drivers/et_spwm.c
@@ -38,7 +38,7 @@ PORT_SRC    := port/host/port_host.c
 LIB_SRC     := $(CORE_SRC) $(ALGO_SRC) $(SYS_SRC) $(PROTO_SRC) $(DRIVERS_SRC) $(DEBUG_SRC) $(STORAGE_SRC)
 
 TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempool.c \
-            test/test_list.c test/test_filter.c test/test_pid.c test/test_stats.c test/test_fsm.c \
+            test/test_list.c test/test_filter.c test/test_medfilt.c test/test_pid.c test/test_stats.c test/test_fsm.c \
             test/test_stimer.c test/test_sched.c test/test_event.c test/test_softclock.c \
             test/test_crc.c test/test_bytes.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_shell.c test/test_shell_hist.c \
             test/test_key.c test/test_led.c test/test_spwm.c \

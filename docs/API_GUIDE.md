@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.1.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.2.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -19,6 +19,7 @@
   - [3.2 et_fsm 表驱动状态机](#32-et_fsm-表驱动状态机)
   - [3.3 et_pid 定点 PID 控制器](#33-et_pid-定点-pid-控制器-v21)
   - [3.4 et_stats 流式运行统计](#34-et_stats-流式运行统计-v21)
+  - [3.5 et_medfilt 中值滤波器](#35-et_medfilt-中值滤波器-v22)
 - [4. sys 系统服务层](#4-sys-系统服务层)
   - [4.1 et_stimer 软件定时器](#41-et_stimer-软件定时器)
   - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
@@ -51,6 +52,7 @@
   - [11.8 tickless 休眠](#118-tickless-休眠next_due--wfiv16)
   - [11.9 字符串键配置表与命令路由](#119-字符串键配置表与命令路由et_smap--et_shellv19)
   - [11.10 定点闭环整定配方](#1110-定点闭环整定配方et_lpf1--et_pid--et_spwm--et_statsv21)
+  - [11.11 kv 参数备份与恢复](#1111-kv-参数备份与恢复et_kv--et_kv_iter--et_xmodem_txv22)
 
 ---
 
@@ -474,6 +476,43 @@ for (;;) {                                   /* 采集被控量 */
 
 单测 11 例（双精度对拍/顺序无关/恒定输入/负值/极值饱和/多实例，`test/test_stats.c`）。
 
+### 3.5 et_medfilt 中值滤波器 (v2.2)
+
+奇数窗中值滤波：**脉冲尖峰去除标配**，与 movavg/lpf1/slew 并列。纯算法层，零分配，小窗（≤15）每步插入排序 O(win²)（10kHz 采样下 < 0.1% CPU）。
+
+**与滑动均值的取舍**：
+
+| | `et_medfilt` | `et_movavg` |
+|---|---|---|
+| 单点大尖峰 | **完全抑制**（窗内尖峰数 ≤ (win-1)/2 时输出不变） | 被摊进均值（尖峰/窗宽） |
+| 相位滞后 | 阶跃延迟 (win-1)/2 样本 | 线性渐变，稳态无偏 |
+| 计算代价 | O(win²) 排序 | O(1) 减旧加新 |
+| 典型链位 | 前级（去脉冲） | 后级（平滑） |
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_medfilt_init(f, buf, win_len)` | 🏠MAIN | 绑定窗口存储区；**win_len 强制奇数且 3~ET_MEDFILT_WIN_MAX**（偶数/超长拒绝——避免"上/下中位"歧义） |
+| `int32_t et_medfilt_push(f, v)` | 🏠MAIN | 送入样本（环形覆盖最旧），返回当前窗口中值 |
+| `void et_medfilt_reset(f)` | 🏠MAIN | 清空历史 |
+| `uint32_t et_medfilt_count/window(f)` | 读 | 窗内样本数 / 窗容量 |
+
+**窗满前语义（文档化决议）**：输出 = 当前已入样本升序第 ⌊n/2⌋ 位（0 基）。窗满后 n=win_len（奇数）即真中位数；窗满前偶数样本取**下中位**，确定性好且与全满语义同式。阶跃响应延迟 = (win_len-1)/2 样本。
+
+```c
+#include "et_medfilt.h"
+#include "et_filter.h"
+
+static et_medfilt_t mf;  static int32_t mf_win[5];
+static et_lpf1_t    lpf;
+
+et_medfilt_init(&mf, mf_win, 5u);        /* 去脉冲 */
+et_lpf1_init(&lpf, 8192u);               /* 再平滑 */
+
+int32_t pv = et_lpf1_update(&lpf, et_medfilt_push(&mf, adc_read()));
+```
+
+尖峰场景标准两级 = `medfilt → lpf1`（配方见 11.10）。单测 10 例（单点尖峰抑制/阶跃延迟窗/2/窗满前后语义/init 校验含偶数窗拒绝，`test/test_medfilt.c`）。
+
 ---
 
 ## 4. sys 系统服务层
@@ -524,6 +563,8 @@ while (1) {
 | `void et_sched_poll_once(void)` | 🏠MAIN | 扫描并执行一遍到期任务后返回（非阻塞，可配 WFI） |
 | `port_tick_ms_t et_sched_next_due(void)` | 🏠MAIN | v1.6 tickless：最近到期任务剩余毫秒（0=已到期应立即 poll_once）；无注册任务返回 `PORT_TICK_WAIT_FOREVER` |
 | `void et_sched_reset(void)` | 🏠MAIN | 注销全部 |
+| `void et_sched_task_stats(t, &last_ms, &max_ms)` (v2.2) | 读 | 任务执行耗时：上次 / 注册以来最长（毫秒时基分辨率，亚毫秒任务报 0；输出指针可空） |
+| `void et_sched_task_stats_reset(t)` (v2.2) | 🏠MAIN | 清零该任务耗时统计（不影响调度；重注册即重新起算） |
 
 ⚠️ 与 stimer 不同，本模块**全部 API 仅限主循环**——因此内部零临界区。ISR 与调度任务的交互请走 `et_event` 或 `et_queue`。
 
@@ -1121,7 +1162,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 ### 8.4 et_selftest 板上自测组件 (v1.7)
 
-验证金字塔封顶：PC 单测(279+) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
+验证金字塔封顶：PC 单测(398) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
 
 | 函数 | 上下文 | 说明 |
 |---|---|---|
@@ -1133,8 +1174,8 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `uint16_t et_selftest_suite_count(void)` | 读 | 内建 + 动态套件总数 |
 
 - **报告**：结构化事件回调 `et_selftest_report_fn(user, evt, suite, num)`——BEGIN/SUITE_PASS/SUITE_FAIL/SUITE_SKIP/CHECK_FAIL(带行号)/DONE；组件内不做格式化，接 et_log 或 shell 由应用决定；
-- **17 内建套件**：ringbuf/queue/mempool/list/filter/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
-- **覆盖边界**：冒烟非对等 host 300 用例，掉电注入类 host-only 用例不移植；
+- **20 内建套件**（v2.2 起 +pid/stats/bytes）：ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
+- **覆盖边界**：冒烟非对等 host 398 用例，掉电注入类 host-only 用例不移植；
 - **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
 - **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
 
@@ -1156,7 +1197,8 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / PID / STATS / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MEDFILT_WIN_MAX` | 15 | et_medfilt 窗口容量上限（init 强制奇数窗 3~此值；栈排序缓冲随此值增大） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
 | `ET_MEMPOOL_STRICT` | 1 | free 时校验指针归属/重复释放 |
@@ -1169,7 +1211,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `ET_MODULE_SMAP` | 1 | 定容字符串键映射（v1.9，core） |
 | `ET_SMAP_KEY_MAX` | 16 | et_smap 键长上限（字节，不含 NUL）；`-D` 覆盖需同步扩池预算 |
 | `ET_SELFTEST_MAX_EXTRA` | 4 | et_selftest 动态注册套件槽位数 |
-| `ET_CRC_TABLE` | 0 | 查表加速：CRC16-CCITT(512B 表) 与 CRC32/IEEE(1KB 表) 同开关（v1.9 扩展 CRC32），静态表驻只读段；默认位算法零 RAM |
+| `ET_CRC_TABLE` | 0 | 查表加速：CRC16-CCITT(512B 表) / CRC16-MODBUS(512B 表, v2.2 扩展) / CRC32/IEEE(1KB 表) 同开关，静态表驻只读段；默认位算法零 RAM |
 | `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |
 | `PORT_FLASH_SECTOR_SIZE` | 1024 | 参数区单扇区字节数（F103 页=1KB） |
 | `PORT_FLASH_SECTOR_COUNT` | 16 | 参数区扇区数（et_kv 用其中两扇区） |
@@ -1460,3 +1502,26 @@ void ctrl_task(void)
 ```
 
 **常见坑**：① 微分噪声大 → 检查 `pv` 是否已滤波、`d_on_measure` 是否为 1；② 积分饱和不回来 → 检查 `i_min/i_max` 是否给得过宽、输出限幅是否与执行器一致；③ 增益单位混乱 → 记住 `ki` 是 1/s、`kd` 是 s，`dt_ms` 必须是 ms；④ 定点死区 → 误差极小时 P 项可能因 Q15 取整为 0，长稳态精度靠 I 项（`ki` 不宜为 0）。
+
+### 11.11 kv 参数备份与恢复（et_kv × et_kv_iter × et_xmodem_tx，v2.2，纯文档配方）
+
+场景：现场参数（PID 整定值、标定系数、用户配置）随固件升级或换板需要**导出/恢复**。全部用既有模块组合，不动库代码。
+
+**导出（MCU → 主机）**：`et_kv_iter` 枚举全部有效 key → 逐条 `et_kv_get` 取值 → 用 `et_bytes_*` 按约定字节序拼成备份帧（`key(u16,BE) + len(u16,BE) + value`）→ 经 `et_xmodem_tx` 发给主机落文件（或经 shell/串口直出）。
+
+**恢复（主机 → MCU）**：主机把备份文件按同帧格式经 XMODEM 发回（`et_xmodem` 接收）→ 逐帧 `et_bytes_be16_get` 解析 key/len → `et_kv_set` 写回。
+
+```c
+/* 导出侧骨架 */
+et_kv_iter_t it;  uint16_t k, len;
+et_kv_iter_init(&kv, &it);
+while (et_kv_iter_next(&kv, &it, &k, &len)) {
+    uint8_t frame[4 + ET_KV_VAL_MAX];
+    et_bytes_be16_put(frame, sizeof(frame), 0u, k);
+    et_bytes_be16_put(frame, sizeof(frame), 2u, len);
+    (void)et_kv_get(&kv, k, frame + 4u, len, NULL);
+    xmodem_or_uart_send(frame, 4u + len);        /* 或 et_xmodem_tx 全量发送 */
+}
+```
+
+**注意**：① 恢复前 `et_kv_format`（或确认 key 冲突语义 = 覆盖）——破坏性操作须应用确认；② 备份帧自带 len，校验用 `et_crc16_modbus_update`（`ET_CRC_TABLE=1` 时走查表，吞吐 3.5×）拼在帧尾；③ 该配方为文档级组合，XMODEM 传输细节见 5.4/5.5，kv 语义见 6.1。

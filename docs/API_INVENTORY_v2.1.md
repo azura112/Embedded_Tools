@@ -6,13 +6,12 @@
 
 ## et_config.h
 
-### 宏 (48)
+### 宏 (46)
 
 - `ET_ASSERT(cond) ((void)0)`
 - `ET_CRC_TABLE 0`
 - `ET_DEPRECATED`
 - `ET_DEPRECATED __attribute__((deprecated))`
-- `ET_MEDFILT_WIN_MAX 15`
 - `ET_MEMPOOL_ALIGN ((uint32_t)sizeof(void *))`
 - `ET_MEMPOOL_STRICT 1`
 - `ET_MODULE_ATCMD 1`
@@ -29,7 +28,6 @@
 - `ET_MODULE_LIST 1`
 - `ET_MODULE_LOG 1`
 - `ET_MODULE_MAP 1`
-- `ET_MODULE_MEDFILT 1`
 - `ET_MODULE_MEMPOOL 1`
 - `ET_MODULE_PID 1`
 - `ET_MODULE_QUEUE 1`
@@ -48,7 +46,7 @@
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
-- `ET_VERSION_MINOR 2`
+- `ET_VERSION_MINOR 1`
 - `ET_VERSION_PATCH 0`
 - `ET_VERSION_STR(x) ET_VERSION_STR_(x)`
 - `ET_VERSION_STRING ET_VERSION_STR(ET_VERSION_MAJOR) "." ET_VERSION_STR(ET_VERSION_MINOR) "." ET_VERSION_STR(ET_VERSION_PATCH)`
@@ -117,20 +115,6 @@
 - `et_fsm_state_t`
 - `et_fsm_t`
 - `et_fsm_trans_t`
-
-## algorithm/et_medfilt.h
-
-### 函数声明 (5)
-
-- `bool et_medfilt_init(et_medfilt_t *f, int32_t *buf, uint32_t win_len)`
-- `int32_t et_medfilt_push(et_medfilt_t *f, int32_t v)`
-- `uint32_t et_medfilt_count(const et_medfilt_t *f)`
-- `uint32_t et_medfilt_window(const et_medfilt_t *f)`
-- `void et_medfilt_reset(et_medfilt_t *f)`
-
-### 类型 (1)
-
-- `et_medfilt_t`
 
 ## algorithm/et_pid.h
 
@@ -619,15 +603,13 @@
 
 ## sys/et_sched.h
 
-### 函数声明 (7)
+### 函数声明 (5)
 
 - `bool et_sched_register(et_task_t *t, et_task_fn fn, void *arg, uint32_t period_ms)`
 - `bool et_sched_unregister(et_task_t *t)`
 - `port_tick_ms_t et_sched_next_due(void)`
 - `void et_sched_poll_once(void)`
 - `void et_sched_reset(void)`
-- `void et_sched_task_stats(const et_task_t *t, uint32_t *last_ms, uint32_t *max_ms)`
-- `void et_sched_task_stats_reset(et_task_t *t)`
 
 ### 类型 (2)
 

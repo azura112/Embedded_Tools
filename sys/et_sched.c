@@ -26,6 +26,8 @@ bool et_sched_register(et_task_t *t, et_task_fn fn, void *arg, uint32_t period_m
     t->arg       = arg;
     t->period_ms = period_ms;
     t->last_run  = port_tick_get_ms();  /* 从注册时刻起算第一个周期 */
+    t->last_ms   = 0u;                  /* 耗时统计随注册重新起算(v2.2) */
+    t->max_ms    = 0u;
     t->next      = NULL;
     if (g_tail == NULL) {
         g_head = t;
@@ -91,7 +93,20 @@ void et_sched_poll_once(void)
         }
 
         hit->last_run = now;            /* 重锚定, 错过的周期不补跑 */
-        hit->fn(hit->arg);
+
+        {
+            /* 耗时计量(v2.2): 执行前后各取一次时基, 无符号减法回绕安全;
+             * 分辨率 = 时基粒度, 亚毫秒任务报 0(头注口径) */
+            uint32_t t0 = port_tick_get_ms();
+            uint32_t dur;
+
+            hit->fn(hit->arg);
+            dur = port_tick_get_ms() - t0;
+            hit->last_ms = dur;
+            if (dur > hit->max_ms) {
+                hit->max_ms = dur;
+            }
+        }
     }
 }
 
@@ -127,6 +142,34 @@ void et_sched_reset(void)
     }
     g_head = NULL;
     g_tail = NULL;
+}
+
+void et_sched_task_stats(const et_task_t *t, uint32_t *last_ms, uint32_t *max_ms)
+{
+    uint32_t l = 0u;
+    uint32_t m = 0u;
+
+    ET_ASSERT(t != NULL);
+    if (t != NULL) {
+        l = t->last_ms;
+        m = t->max_ms;
+    }
+    if (last_ms != NULL) {
+        *last_ms = l;
+    }
+    if (max_ms != NULL) {
+        *max_ms = m;
+    }
+}
+
+void et_sched_task_stats_reset(et_task_t *t)
+{
+    ET_ASSERT(t != NULL);
+    if (t == NULL) {
+        return;
+    }
+    t->last_ms = 0u;
+    t->max_ms  = 0u;
 }
 
 #endif /* ET_MODULE_SCHED */
