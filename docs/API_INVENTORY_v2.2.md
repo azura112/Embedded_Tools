@@ -6,13 +6,12 @@
 
 ## et_config.h
 
-### 宏 (50)
+### 宏 (48)
 
 - `ET_ASSERT(cond) ((void)0)`
 - `ET_CRC_TABLE 0`
 - `ET_DEPRECATED`
 - `ET_DEPRECATED __attribute__((deprecated))`
-- `ET_HIST_BIN_MAX 255`
 - `ET_MEDFILT_WIN_MAX 15`
 - `ET_MEMPOOL_ALIGN ((uint32_t)sizeof(void *))`
 - `ET_MEMPOOL_STRICT 1`
@@ -24,7 +23,6 @@
 - `ET_MODULE_FILTER 1`
 - `ET_MODULE_FRAME 1`
 - `ET_MODULE_FSM 1`
-- `ET_MODULE_HIST 1`
 - `ET_MODULE_KEY 1`
 - `ET_MODULE_KV 1`
 - `ET_MODULE_LED 1`
@@ -50,7 +48,7 @@
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
-- `ET_VERSION_MINOR 3`
+- `ET_VERSION_MINOR 2`
 - `ET_VERSION_PATCH 0`
 - `ET_VERSION_STR(x) ET_VERSION_STR_(x)`
 - `ET_VERSION_STRING ET_VERSION_STR(ET_VERSION_MAJOR) "." ET_VERSION_STR(ET_VERSION_MINOR) "." ET_VERSION_STR(ET_VERSION_PATCH)`
@@ -119,23 +117,6 @@
 - `et_fsm_state_t`
 - `et_fsm_t`
 - `et_fsm_trans_t`
-
-## algorithm/et_hist.h
-
-### 函数声明 (8)
-
-- `bool et_hist_init(et_hist_t *h, uint32_t *bins, uint32_t bin_count, int32_t lo, int32_t hi)`
-- `int32_t et_hist_percentile(const et_hist_t *h, uint8_t pct)`
-- `uint32_t et_hist_bin(const et_hist_t *h, uint32_t i)`
-- `uint32_t et_hist_count(const et_hist_t *h)`
-- `uint32_t et_hist_over(const et_hist_t *h)`
-- `uint32_t et_hist_under(const et_hist_t *h)`
-- `void et_hist_clear(et_hist_t *h)`
-- `void et_hist_push(et_hist_t *h, int32_t v)`
-
-### 类型 (1)
-
-- `et_hist_t`
 
 ## algorithm/et_medfilt.h
 

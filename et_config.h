@@ -17,10 +17,10 @@ extern "C" {
 /* ===================== 版本信息 ===================== */
 /* 发布时须与 git tag 一致 (tag 规则: v主.次.补) */
 #define ET_VERSION_MAJOR        2
-#define ET_VERSION_MINOR        2
+#define ET_VERSION_MINOR        3
 #define ET_VERSION_PATCH        0
-/* 整数编码 0x020200 = 2.2.0, 便于条件编译比较: #if ET_VERSION >= 0x020200
- * v2.0 = API 冻结里程碑; v2.1/2.2 = 冻结后 MINOR(纯追加, 见 docs/API_STABILITY.md) */
+/* 整数编码 0x020300 = 2.3.0, 便于条件编译比较: #if ET_VERSION >= 0x020300
+ * v2.0 = API 冻结里程碑; v2.x = 冻结后 MINOR(纯追加, 见 docs/API_STABILITY.md) */
 #define ET_VERSION              ((ET_VERSION_MAJOR << 16) | \
                                  (ET_VERSION_MINOR << 8)  | \
                                  (ET_VERSION_PATCH))
@@ -63,6 +63,9 @@ extern "C" {
 #endif
 #ifndef ET_MODULE_MEDFILT
 #define ET_MODULE_MEDFILT       1   /* algorithm: 中值滤波器(v2.2)      */
+#endif
+#ifndef ET_MODULE_HIST
+#define ET_MODULE_HIST          1   /* algorithm: 定容直方图(v2.3)      */
 #endif
 #ifndef ET_MODULE_FSM
 #define ET_MODULE_FSM           1   /* algorithm: 表驱动状态机          */
@@ -158,6 +161,12 @@ extern "C" {
 /* 中值滤波窗口容量上限(init 强制奇数窗 3~此值); 栈排序缓冲随此值增大 */
 #ifndef ET_MEDFILT_WIN_MAX
 #define ET_MEDFILT_WIN_MAX      15
+#endif
+
+/* ===================== et_hist ===================== */
+/* 直方图桶数上限(uint8 索引); 桶数组由调用方按实际 bin_count 分配 */
+#ifndef ET_HIST_BIN_MAX
+#define ET_HIST_BIN_MAX         255
 #endif
 
 /* ===================== flash 参数区几何 (port 契约, 见 port.h) ===================== */

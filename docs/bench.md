@@ -35,6 +35,8 @@
 | stats push(Welford 整数;v2.1) | 6.0 ns/op | — |
 | medfilt push(win 5;v2.2) | 11.0 ns/op | — |
 | sched poll_once(1 任务到期+耗时计量;v2.2) | 5.0 ns/op | — |
+| hist push(16 桶;v2.3) | 2.0 ns/op | — |
+| hist percentile(16 桶,插值;v2.3) | 10.0 ns/op | — |
 
 ## 观察与备注
 
@@ -47,6 +49,7 @@
 - `stats push` Welford 单样本更新 6 ns/op, 与 filter movavg(2 ns/op)同档, 适合在线长期统计;
 - `medfilt push` 小窗插入排序 O(win²): win=5 为 11 ns/op, 量级与 smap 查找同档; win 增到 15 时按平方律增长, 高频采样场景窗口别贪大;
 - `sched poll_once` 含时基读取×3 + 任务调用 + 耗时计量, 5 ns/op 量级 —— 任务耗时统计的诊断收益远大于计量开销;
+- `hist push` O(1) 等宽映射 2 ns/op(与 movavg 同档); `percentile` 逐桶线性扫 10 ns/op(16 桶), 255 桶按桶数线性增长 —— 高频调用场景桶数别超配;
 - crc16-modbus 位算法 142.9 MB/s → 查表 500.0 MB/s(v2.2 P5-3 补表后与 ccitt 同档, 反射位算法为 ccitt 的 ~1/3.5);
 - 复现:`make bench`(或 Makefile 注释中的 gcc 命令),查表变体 `make bench-table`。
 
@@ -54,6 +57,7 @@
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| v2.3.0 | 2026-09-12 | 复测无回归; 新增 hist push 2.0 / hist percentile 10.0 ns/op(直方图可观测, O(1) 入桶 + 桶内插值分位) |
 | v2.2.0 | 2026-09-12 | 复测: pid/stats 在 `clock()` 1ms 粒度内波动(9~15/4~6 ns/op, 非回归); 新增 medfilt push 11.0、sched poll_once 5.0 ns/op; crc16-modbus 补表 142.9→500.0 MB/s |
 | v2.1.0 | 2026-09-11 | 复测: 既有行在 `clock()` 1ms 粒度抖动内(如 crc16 400/500、smap 8/11 为 tick 级波动, 非回归); 新增 pid step 15.0 ns/op、stats push 6.0 ns/op |
 | v2.0.0 | 2026-09-09 | 复测无回归; 新增 smap_ci 折叠查找行 11.0 ns/op(折叠循环 +3ns, 查表/命令路由可忽略) |

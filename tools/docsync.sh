@@ -280,9 +280,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "398"             "getting-started 用例数与实测一致(v2.2 回刷)"
+assert_grep "docs/getting-started.md" "409"             "getting-started 用例数与实测一致(v2.3 回刷)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "398"                 "README 用例数终值回刷(v2.2)"
+assert_grep "README.md"           "409"                 "README 用例数终值回刷(v2.3)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
@@ -297,8 +297,9 @@ for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 
 done
 
 # ---- v2.2 P0 基线滚动 + P1 selftest 20 套件 + P3 medfilt + P4 sched stats ----
-assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.1.md"     "apidump 默认基线滚动至 v2.1(P0-1)"
-assert_grep "docs/API_INVENTORY_v2.1.md" "自动生成"                  "v2.1 冻结基线已归档(P0-1 滚动)"
+assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.2.md"     "apidump 默认基线滚动至 v2.2(P0-1 滚动规则)"
+assert_grep "docs/API_INVENTORY_v2.1.md" "自动生成"                  "v2.1 冻结基线已归档(只读保留)"
+assert_grep "docs/API_INVENTORY_v2.2.md" "自动生成"                  "v2.2 冻结基线已归档(P0-1 滚动)"
 assert_grep "docs/API_STABILITY.md"      "字段追加登记区"             "API_STABILITY 结构体字段登记区(P4 附则实战)"
 assert_grep "et_config.h"         "ET_MODULE_MEDFILT"   "et_config 含 MEDFILT 开关(P3)"
 assert_grep "et_config.h"         "ET_MEDFILT_WIN_MAX"  "et_config 含 medfilt 窗上限(P3)"
@@ -319,6 +320,32 @@ assert_grep "protocol/et_crc.c"   "s_modbus_tbl"        "CRC16-MODBUS 查表路�
 assert_grep "docs/bench.md"       "medfilt push"        "bench 含 medfilt 行(P5-2)"
 assert_grep "docs/bench.md"       "v2.2.0"              "bench 文档含 v2.2 版本行"
 assert_grep "docs/API_GUIDE.md"   "11.11 kv"            "API_GUIDE: kv 备份恢复配方(P5-1)"
+
+# ---- v2.3 P0 基线滚动 + P1 et_hist + P2 配方可执行化 + P3 architecture ----
+assert_grep "et_config.h"         "ET_MODULE_HIST"      "et_config 含 HIST 开关(P1)"
+assert_grep "et_config.h"         "ET_HIST_BIN_MAX"     "et_config 含 hist 桶上限(P1)"
+assert_grep "Makefile"            "algorithm/et_hist.c" "Makefile 含 et_hist 源(P1)"
+assert_grep "Makefile"            "test/test_hist.c"    "Makefile 含 test_hist(P1)"
+assert_grep "test/test_main.c"    "test_hist_cases"     "test_main 注册 hist 套件(P1)"
+assert_grep "README.md"           "et_hist"             "README 特性表: hist(P1)"
+assert_grep "docs/API_GUIDE.md"   "3.6 et_hist"         "API_GUIDE: hist 章节(P1)"
+assert_grep "docs/API_GUIDE.md"   "11.12 任务耗时分布诊断" "API_GUIDE: taskhist 配方(P1)"
+assert_grep "algorithm/et_hist.h" "闭区间"              "et_hist 闭区间语义(头注,P1)"
+assert_grep "algorithm/et_hist.h" "粗估"                "et_hist 百分位粗估语义(头注,P1)"
+assert_grep "Makefile"            "^ex:"                "Makefile 含 make ex 目标(P2)"
+assert_grep "examples/ex_pid_loop.c"   "11.10"          "示例1 载体标注 11.10(P2)"
+assert_grep "examples/ex_kv_backup.c"  "11.11"          "示例2 载体标注 11.11(P2)"
+assert_grep "examples/ex_upgrade_flow.c" "bootctl"      "示例3 升级流程载体(P2)"
+assert_grep "examples/ex_pid_loop.c"   "PASS"           "示例1 自检输出(P2)"
+assert_grep "docs/API_GUIDE.md"   "ex_pid_loop"         "API_GUIDE 互链: 闭环载体(P2)"
+assert_grep "docs/API_GUIDE.md"   "ex_kv_backup"        "API_GUIDE 互链: kv 备份载体(P2)"
+assert_grep "docs/API_GUIDE.md"   "ex_upgrade_flow"     "API_GUIDE 互链: 升级载体(P2)"
+assert_grep ".github/workflows/ci.yml" "make ex"        "CI 常设 make ex(P2)"
+assert_grep "docs/architecture.md" "分层"                "architecture.md 在档(P3)"
+assert_grep "docs/architecture.md" "模块选型"             "architecture.md 选型导航(P3)"
+assert_grep "docs/v3-candidates.md" "biquad"             "v2.4 候选: 定点 biquad 评估(P4-2)"
+assert_grep "docs/bench.md"       "hist push"           "bench 含 hist 行(P4-1)"
+assert_grep "docs/bench.md"       "v2.3.0"              "bench 文档含 v2.3 版本行"
 
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格

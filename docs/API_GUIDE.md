@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.2.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.3.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -20,6 +20,7 @@
   - [3.3 et_pid 定点 PID 控制器](#33-et_pid-定点-pid-控制器-v21)
   - [3.4 et_stats 流式运行统计](#34-et_stats-流式运行统计-v21)
   - [3.5 et_medfilt 中值滤波器](#35-et_medfilt-中值滤波器-v22)
+  - [3.6 et_hist 定容直方图](#36-et_hist-定容直方图-v23)
 - [4. sys 系统服务层](#4-sys-系统服务层)
   - [4.1 et_stimer 软件定时器](#41-et_stimer-软件定时器)
   - [4.2 et_sched 任务调度器](#42-et_sched-任务调度器)
@@ -53,6 +54,7 @@
   - [11.9 字符串键配置表与命令路由](#119-字符串键配置表与命令路由et_smap--et_shellv19)
   - [11.10 定点闭环整定配方](#1110-定点闭环整定配方et_lpf1--et_pid--et_spwm--et_statsv21)
   - [11.11 kv 参数备份与恢复](#1111-kv-参数备份与恢复et_kv--et_kv_iter--et_xmodem_txv22)
+  - [11.12 任务耗时分布诊断](#1112-任务耗时分布诊断et_sched_task_stats--et_histv23)
 
 ---
 
@@ -513,6 +515,44 @@ int32_t pv = et_lpf1_update(&lpf, et_medfilt_push(&mf, adc_read()));
 
 尖峰场景标准两级 = `medfilt → lpf1`（配方见 11.10）。单测 10 例（单点尖峰抑制/阶跃延迟窗/2/窗满前后语义/init 校验含偶数窗拒绝，`test/test_medfilt.c`）。
 
+### 3.6 et_hist 定容直方图 (v2.3)
+
+分布视图（可观测性收尾）：与 `et_stats`（点估计）、`et_sched_task_stats`（单任务 last/max）互补——"任务耗时集中还是长尾"由 percentile(99) 回答。纯算法层，零分配，push O(1)。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_hist_init(h, bins, bin_count, lo, hi)` | 🏠MAIN | 绑定调用方桶数组；bin_count 1~`ET_HIST_BIN_MAX`(255) 且 **lo < hi**，否则拒绝 |
+| `void et_hist_push(h, v)` | 🏠MAIN | O(1) 入桶；越界进 under/over 计数**不丢弃** |
+| `void et_hist_clear(h)` | 🏠MAIN | 桶/计数归零（保留区间与桶配置） |
+| `uint32_t et_hist_count(h)` | 读 | 总计数（**含**越界） |
+| `uint32_t et_hist_bin(h, i)` | 读 | 第 i 桶计数（i 越界报 0） |
+| `uint32_t et_hist_under/over(h)` | 读 | v<lo / v>hi 计数 |
+| `int32_t et_hist_percentile(h, pct)` | 读 | 百分位**粗估**（0~100；区间内无样本报 0） |
+
+**区间/分桶语义（与 et_hist.h 头注一致，双处同文）**：统计区间为**闭区间 [lo, hi]**（下含上含——v==hi 恰落末桶，配"判稳带宽"类闭区间直觉）；等宽分桶，v 落入桶 `(v−lo)·bin_count/width`（0 基整数除法，width = hi−lo+1）。
+
+**percentile 语义（粗估，非精确分位数）**：rank = 区间内样本数×pct/100（0 基，pct=100 取最大样本）；定位桶后按 `(2·offset+1)/(2·cnt)` 在桶值域内**线性插值取中点**，截断取整。精度受桶宽/桶计数限制（桶宽=1 时精确；单样本在宽桶内报桶中点）——用于分布/长尾判断，不做精确承诺。
+
+```c
+#include "et_hist.h"
+
+static et_hist_t  h;
+static uint32_t   bins[16];
+
+et_hist_init(&h, bins, 16u, 0, 1023);        /* 12 位 ADC 值域 */
+for (;;) {
+    et_hist_push(&h, adc_read());
+    if (et_hist_count(&h) >= 1000u) {
+        report(et_hist_percentile(&h, 50u),   /* 中位 */
+               et_hist_percentile(&h, 99u),   /* 尾部分位(长尾检测) */
+               et_hist_under(&h), et_hist_over(&h));
+        et_hist_clear(&h);
+    }
+}
+```
+
+单测 11 例（等宽映射/闭区间边界/under-over/百分位精确与插值/极值域不溢出/多实例，`test/test_hist.c`）。
+
 ---
 
 ## 4. sys 系统服务层
@@ -942,6 +982,8 @@ if (st.staged_slot >= 0) {
 }
 ```
 
+**可执行载体**：xmodem→bootctl 完整升级流程的自检式 host 版（含 confirm 与超次回滚双路径）= [`examples/ex_upgrade_flow.c`](../examples/ex_upgrade_flow.c)（`make ex` 运行，CI 常设守护；真机走单见 `移植stm32实机记录.md` §5/§10）。
+
 ---
 
 ## 7. drivers 设备驱动层
@@ -1197,7 +1239,8 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / HIST / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_HIST_BIN_MAX` | 255 | et_hist 桶数上限（uint8 索引；桶数组由调用方按实际 bin_count 分配） |
 | `ET_MEDFILT_WIN_MAX` | 15 | et_medfilt 窗口容量上限（init 强制奇数窗 3~此值；栈排序缓冲随此值增大） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
 | `ET_MEMPOOL_ALIGN` | sizeof(void*) | 内存池块区对齐粒度 |
@@ -1501,6 +1544,8 @@ void ctrl_task(void)
 }
 ```
 
+**可执行载体**：本配方的自检式 host 版 = [`examples/ex_pid_loop.c`](../examples/ex_pid_loop.c)（`make ex` 运行，CI 常设守护；v2.2 板上走单见 `移植stm32实机记录.md` §10）。
+
 **常见坑**：① 微分噪声大 → 检查 `pv` 是否已滤波、`d_on_measure` 是否为 1；② 积分饱和不回来 → 检查 `i_min/i_max` 是否给得过宽、输出限幅是否与执行器一致；③ 增益单位混乱 → 记住 `ki` 是 1/s、`kd` 是 s，`dt_ms` 必须是 ms；④ 定点死区 → 误差极小时 P 项可能因 Q15 取整为 0，长稳态精度靠 I 项（`ki` 不宜为 0）。
 
 ### 11.11 kv 参数备份与恢复（et_kv × et_kv_iter × et_xmodem_tx，v2.2，纯文档配方）
@@ -1524,4 +1569,65 @@ while (et_kv_iter_next(&kv, &it, &k, &len)) {
 }
 ```
 
+**可执行载体**：本配方的自检式 host 版 = [`examples/ex_kv_backup.c`](../examples/ex_kv_backup.c)（`make ex` 运行，CI 常设守护）。
+
 **注意**：① 恢复前 `et_kv_format`（或确认 key 冲突语义 = 覆盖）——破坏性操作须应用确认；② 备份帧自带 len，校验用 `et_crc16_modbus_update`（`ET_CRC_TABLE=1` 时走查表，吞吐 3.5×）拼在帧尾；③ 该配方为文档级组合，XMODEM 传输细节见 5.4/5.5，kv 语义见 6.1。
+
+### 11.12 任务耗时分布诊断（et_sched_task_stats × et_hist，v2.3）
+
+场景：多任务系统里"谁在抖、谁有长尾"——`et_sched_task_stats` 只有 last/max 两个点，
+**分布**交给 `et_hist`：每次任务跑完 push 本次耗时，诊断命令（如 `AT+TASKHIST`）随时读
+p50/p99 与越界计数。99 分位看长尾任务，under/over 桶顺带回答"有没有超出量程的异常尖峰"。
+
+```c
+#include "et_sched.h"
+#include "et_hist.h"
+
+#define TASK_N      4u
+#define HIST_LO     0
+#define HIST_HI     99          /* 0~99ms 量程 (任务耗时毫秒级) */
+
+static et_task_t tasks[TASK_N];
+static et_hist_t hists[TASK_N];
+static uint32_t  hmem[TASK_N][16];
+
+void diag_init(void)
+{
+    uint32_t i;
+
+    for (i = 0u; i < TASK_N; i++) {
+        et_hist_init(&hists[i], hmem[i], 16u, HIST_LO, HIST_HI);
+    }
+}
+
+/* 任务包裹器: 真实任务执行后把本次耗时喂给直方图 */
+static void task_wrap(void *arg)
+{
+    et_task_t  *self  = (et_task_t *)arg;   /* 实际项目用 arg 携带 task+hist 对 */
+    et_hist_t  *h     = &hists[0];
+    uint32_t    last = 0u;
+
+    do_real_work();
+    et_sched_task_stats(self, &last, NULL); /* last = 本次执行耗时(ms 分辨率) */
+    et_hist_push(h, (int32_t)last);         /* 亚毫秒任务报 0, 长任务进 over 桶 */
+}
+
+/* 诊断输出 (挂 AT+TASKHIST 之类命令): */
+void diag_report(uint32_t idx)
+{
+    printf("task%u: n=%u p50=%d p99=%d over=%u\n", (unsigned)idx,
+           (unsigned)et_hist_count(&hists[idx]),
+           et_hist_percentile(&hists[idx], 50u),
+           et_hist_percentile(&hists[idx], 99u),   /* 长尾 */
+           (unsigned)et_hist_over(&hists[idx]));
+}
+```
+
+**注意**：① 分辨率 = 时基粒度（1ms），亚毫秒任务全落 0 桶——要看更细分布需换更细时基或
+`et_hist` 分段计位（本库不做）；② 量程 [lo,hi] 按任务周期设（周期 100ms 的任务耗时量程
+0~99 足够），超量程进 over 不丢数；③ p99 突增 = 长尾信号，配合 11.8 tickless 与
+`et_sched_task_stats` 的 max 定位异常任务。
+
+**可执行载体**：闭环/备份/升级三配方的自检式 host 版在 [`examples/`](../examples/)（`make ex`
+一键全跑，CI 常设守护）；本配方为 v2.3 新增的纯组合配方，未单列示例（组件均已被 11.10
+载体覆盖）。

@@ -37,12 +37,13 @@ cd Embedded_Tools
 mingw32-make test        # 或 make test
 ```
 
-**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **398** 例。
+**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **409** 例。
 
 ```sh
 mingw32-make test-g4     # 双几何回归 (G474 2KB 页几何; storage 布局改动必跑)
 mingw32-make test-tab    # shell Tab 补全形态 (ET_SHELL_TAB=1) 独立矩阵
 mingw32-make bench       # host 基准 (数字入 docs/bench.md, 须附环境注记)
+mingw32-make ex          # 配方可执行载体自检 (11.10/11.11/升级流程, v2.3)
 ```
 
 没有 `make` 时，直接照 [README](../README.md) "快速开始" 里的纯 gcc 命令复制粘贴即可。

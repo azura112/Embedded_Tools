@@ -26,6 +26,7 @@
 #include "et_crc.h"
 #include "et_filter.h"
 #include "et_medfilt.h"
+#include "et_hist.h"
 #include "et_pid.h"
 #include "et_stats.h"
 #include "et_fsm.h"
@@ -363,6 +364,45 @@ static double bench_medfilt(void)
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
 }
 
+static et_hist_t   b_hist;
+static uint32_t    b_hist_mem[16];
+
+static double bench_hist_push(void)
+{
+    uint32_t n = 1000000u;
+    uint32_t i;
+    clock_t  t0;
+
+    memset(&b_hist, 0, sizeof(b_hist));
+    (void)et_hist_init(&b_hist, b_hist_mem, 16u, 0, 1023);
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        et_hist_push(&b_hist, (int32_t)(i % 1024u));
+    }
+    g_sink = (uint32_t)et_hist_percentile(&b_hist, 99u);
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+static double bench_hist_percentile(void)
+{
+    uint32_t n = 100000u;
+    uint32_t i;
+    int32_t  acc = 0;
+    clock_t  t0;
+
+    memset(&b_hist, 0, sizeof(b_hist));
+    (void)et_hist_init(&b_hist, b_hist_mem, 16u, 0, 1023);
+    for (i = 0u; i < 1024u; i++) {
+        et_hist_push(&b_hist, (int32_t)i);
+    }
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        acc += et_hist_percentile(&b_hist, (uint8_t)(i % 101u));
+    }
+    g_sink = (uint32_t)acc;
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
 static double bench_sched_poll(void)
 {
     uint32_t n = 200000u;
@@ -522,6 +562,8 @@ int main(void)
     report_ops("kv set+get (32B val, host flash)", bench_kv, 2000.0);
     report_ns("filter movavg update", bench_filter, 1000000.0);
     report_ns("medfilt push (win 5, v2.2)", bench_medfilt, 1000000.0);
+    report_ns("hist push (16 bins, v2.3)", bench_hist_push, 1000000.0);
+    report_ns("hist percentile (16 bins, v2.3)", bench_hist_percentile, 100000.0);
     report_ns("pid step (P+I+D, d-on-measure)", bench_pid, 1000000.0);
     report_ns("stats push (Welford integer)", bench_stats, 1000000.0);
     report_ns("sched poll_once (1 task due + stats, v2.2)", bench_sched_poll,

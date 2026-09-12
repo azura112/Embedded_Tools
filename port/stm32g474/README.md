@@ -78,6 +78,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v2.0 | 18208 | 28 | 740 | 默认裁剪（终值 [数字回刷]）；API 冻结版本；+et_smap_ci 入 core glob；CI 转调 `tools/docbuild.sh` 单一来源 |
 | v2.1 | 20008 | 28 | 740 | 默认裁剪（终值）；+et_pid/et_stats/et_bytes（demo 未调用，`-nostartfiles` 无 gc-sections 全量入 ELF，+1800B） |
 | v2.2 | 20264 | 28 | 740 | 默认裁剪（终值）；+et_medfilt +et_sched 耗时统计字段 |
+| v2.3 | 20736 | 28 | 740 | 默认裁剪（终值）；+et_hist |
 
 ## 烧录与运行
 

@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.2.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.2开发交付__控制上板与诊断增强.md](v2.2开发交付__控制上板与诊断增强.md)**（控制上板 + 诊断增强）
+> 当前版本：**v2.3.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.3开发交付__配方可执行化与直方图.md](v2.3开发交付__配方可执行化与直方图.md)**（配方可执行化 + 直方图）
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**
 
@@ -20,6 +20,7 @@
 |  | `et_medfilt` | 中值滤波器（v2.2）：奇数窗 3~15，脉冲尖峰抑制（单点尖峰不影响输出），小窗插入排序零分配 |
 |  | `et_pid` | 定点 PID 控制器（v2.1）：位置式、Q15 增益、int64 饱和中间量、积分限幅抗饱和、d-on-measure |
 |  | `et_stats` | 流式运行统计（v2.1）：Welford 整数增量，min/max/均值/方差(Q10)，判稳整定配套 |
+|  | `et_hist` | 定容直方图（v2.3）：等宽分桶 + under/over 越界计数 + 百分位粗估(p99 长尾视图) |
 |  | `et_fsm` | 表驱动状态机：const 迁移表可驻 flash，guard 回退链，零分配 |
 | sys/ | `et_stimer` | 软件定时器，ISR 可启停，周期追赶语义 |
 |  | `et_wdt` | 看门狗封装 + et_wdt_guard 阻塞段保护（F103/G474 IWDG 直驱） |
@@ -52,11 +53,14 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 398 个单元用例（bootctl 掉电矩阵 24 + kv 35 + sched 19 + pid 18 + medfilt 10 + map 13 + smap 18 + stats 11 + bytes 8 + shell_tab 8）
+├── test/              # 迷你框架 + 409 个单元用例（bootctl 掉电矩阵 24 + kv 35 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
-│   └── stm32g474_demo.c   # G474VET6 真机 demo（同 f103 全栈 + 交互壳/升级链路）
+│   ├── stm32g474_demo.c   # G474VET6 真机 demo（同 f103 全栈 + 交互壳/升级链路）
+│   ├── ex_pid_loop.c      # 配方载体: 11.10 闭环整定自检版（v2.3）
+│   ├── ex_kv_backup.c     # 配方载体: 11.11 kv 备份恢复自检版（v2.3）
+│   └── ex_upgrade_flow.c  # 配方载体: xmodem+bootctl 升级流程自检版（v2.3）
 └── Makefile
 ```
 
@@ -169,13 +173,14 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，398 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/任务耗时计量）。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，409 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/任务耗时计量）。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（398 例，另 1K 变体 399 例、shell Tab 开启形态同套件数）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（409 例，另 1K 变体 410 例、shell Tab 开启形态同套件数）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，20 套件一条命令冒烟（host/板上结果可比对；v2.2 起 pid/stats/bytes 进板上冒烟）；
+- **配方可执行载体**（v2.3）：`make ex` 一键跑三个自检式示例（闭环整定/kv 备份恢复/升级流程），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对 v2.0 基线必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
@@ -203,4 +208,4 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 5. **交付文档命名**：`v<版本号>开发交付__<重点概况>.md` 或 `v<版本号>开发交付：<重点概况>.md`（全角冒号或 `__` 分隔符均可，v2.0 起实际惯例），里程碑对照提交哈希逐条可回溯；
 6. **量化声明附复现命令 + 环境注记**（v1.3 验收教训）：任何体积/覆盖率/用例数声明必须注明测量工具链精确版本与 shell，并给出可复现命令（例：`arm-none-eabi-size` + GNU Tools for STM32 13.3.rel1；`gcovr --print-summary` 于 MinGW gcc 16.1）——无环境注记的裸数字视为无效。
 7. **数字回刷纪律（v1.9 P1-4）**：交付定稿后凡改变可观测数字的提交（体积表/用例数/docsync 断言数/smoke 计数），**同一提交内回刷所有引用处**（README / port README / 实机记录 / 交付文档）并在 commit message 注明"数字回刷"；文档命令由 CI `docbuild` job 以 ```docbuild 定界块原样执行守护（v1.8 三处滞后数字的制度化根治）。
-8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.1.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。
+8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.2.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。

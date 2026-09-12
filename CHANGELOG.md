@@ -6,6 +6,21 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-09-12 · **v2.3 — 配方可执行化与直方图**
+
+冻结契约下纯增量 MINOR（`apidump --diff` 对 v2.2 基线: 新增 11 项 / 修改删除 0 项）。本版全部项无板上依赖（刻意选择）。
+
+### Added
+- **`et_hist`**（algorithm/，第 32 模块，11 例）：定容直方图 —— 闭区间 [lo,hi] 等宽分桶（下含上含）、under/over 越界计数不丢弃、percentile 桶内线性插值**粗估**（桶宽=1 精确；声明非精确分位数）、O(1) 入桶零分配；`ET_MODULE_HIST`/`ET_HIST_BIN_MAX` 开关；与 et_stats（点估计）、et_sched_task_stats（last/max）互补的可观测性收尾。API_GUIDE 3.6 + 11.12 任务耗时分布诊断配方。
+- **配方可执行化（★ P2）**：API_GUIDE 11.10/11.11 与升级流程落地为三个**自检式示例**——`examples/ex_pid_loop.c`（闭环整定 host 版，收敛值与 host 定点仿真逐值一致 + stats 判稳 + hist 控制量分布）、`ex_kv_backup.c`（kv_iter 导出 → xmodem 回环 → 解帧重灌 → 逐 key 比对）、`ex_upgrade_flow.c`（xmodem 写槽 → verify/stage → 模拟重启 → confirm 与超次回滚双路径）；`make ex` 一键全跑、CI 常设、任一 FAIL 即红——**配方正确性由 CI 守护而非由文档维护者保证**；示例只用公开 API（API 升级即编译错，证据不腐化）。API_GUIDE 三处"可执行载体"互链。
+- **`docs/architecture.md`（P3）**：分层图 + 两条典型数据流 + **模块选型表**（按场景查 32 模块）+ 验证金字塔；与 getting-started 分工（architecture 管是什么/怎么选，getting-started 管怎么跑起来）。
+- **apidump 基线滚动（P0-1）**：`docs/API_INVENTORY_v2.2.md` 归档（384 项比较单元），默认基线切至 v2.2，v2.1 归档只读保留。
+- bench v2.3 行：`hist push` 2.0、`hist percentile` 10.0 ns/op（O(1) 入桶 + 桶内插值）。
+- **v2.4 候选评估（P4-2）**：定点 Q15 双二阶（biquad）入 `docs/v3-candidates.md` #8（只评估立项条件，不实现）。
+
+### Changed
+- 版本 2.2.0 → **2.3.0**（`0x020200`→`0x020300`）；用例 398 → **409**（× 双几何，1K 变体 410）；CI unit-tests job 增设 `make ex` 步骤；selftest 维持 20 套件（沿 v2.2 决议不为扩充而扩充）。
+
 ## [2.2.0] — 2026-09-12 · **v2.2 — 控制上板与诊断增强**
 
 冻结契约下纯增量 MINOR（`apidump --diff` 对 v2.1 基线: 新增 10 项 / 修改删除 0 项; `et_task_t` 字段追加走附则人工登记首次实战）。

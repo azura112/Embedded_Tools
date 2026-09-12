@@ -56,7 +56,7 @@
 ## 5. 附则:`apidump --diff` 判定规则 (v2.1)
 
 "MINOR 只追加"的**机检**实现 —— 用 `tools/apidump.sh --diff [基线]` 比对当前头文件与冻结基线。
-**基线滚动规则(v2.2)**:默认基线 = 最近已发布 MINOR 的快照(当前 `docs/API_INVENTORY_v2.1.md`),
+**基线滚动规则(v2.2)**:默认基线 = 最近已发布 MINOR 的快照(当前 `docs/API_INVENTORY_v2.2.md`),
 发版时 `--snapshot` 归档新基线后前滚默认值;旧基线(`API_INVENTORY_v2.0.md`)只读保留作历史审计:
 
 | 情形 | 判定 |

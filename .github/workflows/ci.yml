@@ -20,6 +20,10 @@ jobs:
       - name: Run unit tests (make)
         if: runner.os == 'Linux'
         run: make test
+
+      - name: Run self-checking recipe examples (make ex, v2.3)
+        if: runner.os == 'Linux'
+        run: make ex
       - name: Run unit tests (shell Tab variant, v2.0)
         if: runner.os == 'Linux'
         run: make test-tab
