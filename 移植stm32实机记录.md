@@ -345,3 +345,72 @@ cmake --preset Release && cmake --build --preset Release          # 0 warning
 STM32_Programmer_CLI -c port=SWD -w build/Release/G474VET6_ET_TEST.elf -rst
 # COM12 115200: AT+SELFTEST(20/20) / AT+PIDSET+PIDRUN+PIDOUT(三组) / AT+SELFSTOR / AT+SIMUPGRADE 3|4
 ```
+
+## 11. v2.4.0 板侧同步与 Modbus RTU 从站真机走单 (2026-09-12)
+
+**同步**:`Core/et/` 全量重拷(七目录 + `et_config.h` + `port/port.h`),`diff -rq` 全 OK —— 本次为**跨 v2.2→v2.4** 两版同步(含 v2.3 的 et_hist 与 v2.4 的 et_modbus)。
+**构建**:0 warning;**FLASH 37428 B**(v2.2 基线 36088 → +1340B = et_hist + et_modbus + demo 挂载),RAM 5312B。
+**既有回归不破**:`AT+SELFTEST` **20/20 PASS**;`AT+SELFSTOR` kv+bootctl PASS;`AT+SIMUPGRADE 3` → CONFIRMED。
+
+**挂载方案（偏差与理由，如实记录）**:计划预填 **USART2 独立**;bench 上只有一路 USB-TTL(CH343→COM12),故板侧实测采用 **USART1 帧首字节分流**:
+```
+分流规则: 突发首字节 == 从站地址 0x11 或 0x00(广播) → et_modbus; 否则 → et_shell
+半帧延续: et_modbus_rx_pending() > 0 时后续字节一律继续喂从站
+```
+- **生产建议仍为 USART2 独立**（避免与 shell 争用、无分流歧义）；分流方案作为单串口场景的备选已文档化（API_GUIDE 5.7）。
+- **分流局限（本记录的第 3 条已知限制）**:发往**其它从站地址**的帧（如 0x22）首字节不匹配 → 被分流到 shell 并回显（shell 语义），因此"地址不符静默"**不能**在共享口上验证 —— 该路径由 host 单测 `mb.addr_mismatch_silent` 与示例 `ex_modbus_slave` 覆盖。
+
+**真机走单（`tools/modbus_master.py`，COM12 115200, 逐字节证据）**:
+
+```
+开机横幅 : Embedded_Tools v2.4.0 (0x20400)
+          modbus rtu slave addr=0x11 (kv regs 1000..1003)
+AT+VER   : ver=2.4.0 boot=5                       # shell 与 Modbus 共存
+
+[c1] 0x03 读保持 0..3
+  tx: 11 03 00 00 00 04 46 99
+  rx: 11 03 08 00 01 00 02 00 03 00 04 59 D4       -> 1, 2, 3, 4
+[c2] 0x04 读输入 0..3 (demo 同表)                  -> 1, 2, 3, 4
+[c3] 0x06 单写 reg2 = 4660
+  tx: 11 06 00 02 12 34 27 ED
+  rx: 11 06 00 02 12 34 27 ED                      # 应答 = 请求回显
+[c4] 0x10 多写 reg4..6 = 111,222,333
+  tx: 11 10 00 04 00 03 06 00 6F 00 DE 01 4D EC 53
+  rx: 11 10 00 04 00 03 C3 59
+[c5] 回读 reg0..5: 1, 2, 4660, 4, 111, 222        # 写入生效
+  tx: 11 03 00 00 00 06 C7 58
+  rx: 11 03 0C 00 01 00 02 12 34 00 04 00 6F 00 DE 2A 73
+
+异常三条:
+  exc 0x02 (读 addr=100 越界)  tx 11 03 00 64 00 04 07 46  rx 11 83 02 C1 34
+  exc 0x03 (qty=0)             tx 11 03 00 00 00 00 47 5A  rx 11 83 03 00 F4
+  exc 0x01 (功能码 0x63, 静默路径界定)  tx 11 63 4D C9      rx 11 E3 01 A9 35
+      ^ 与 host 示例 ex_modbus_slave 的期望字节**逐字节一致**(11 E3 01 A9 35)
+
+静默路径(板侧):
+  CRC 坏帧 (11 03 00 00 00 04 13 99) → <超时无应答>  # CRC 校验失败静默, 未误应答
+  地址不符 (22 ...) → 分流到 shell(见上文局限), 非从站静默路径
+
+kv 参数经 Modbus 读写的掉电验证:
+  写 reg1000(kv key 10)=4660: tx 11 06 03 E8 12 34 06 5D → rx 回显
+  软复位 → 读 reg5(RAM 演示寄存器) = 6              # RAM 复位回默认, 证明确已重启/读路径非陈旧 RAM
+       → 读 reg1000(kv)          = 4660 (0x1234)     # flash 保持 ✓
+  0x10 多写 kv 1001..1003 = 17,34,51 → 再复位 → 读回 17,34,51 ✓
+  (真掉电语义由 kv 双扇区乒乓+逐条 CRC 设计与其掉电矩阵用例覆盖; 本处为软复位实证)
+```
+
+**过程自省（板侧暴露的两个问题，已修）**:
+1. **静默路径应答未送出**:`et_modbus_tick()` 内产生的应答（未知功能码 0x63 的异常帧）在 demo 里没有 flush 调用点 —— `feed` 后 flush 覆盖不到 tick 路径 → 现象为"0x63 请求无任何应答"。修法: tick 后补 `mb_flush()`。**教训**: 应答可能由两条路径（feed 快路径 / tick 静默路径）产生, 调用侧两处都要发送。
+2. **`et_log` 不支持宽度/补零修饰**: 初始化日志写成 `addr=0x%02x` → 输出字面量并错位消费后续参数（打印成 `addr=0x%02x (kv regs 17..1000)`）。et_log 头注只承诺 `%d/%i/%u/%x/%X/%c/%s/%p`, 已改回 `%x`。**教训**: 受限格式化器上别用 printf 的宽度/标志位。
+
+```sh
+# ==== v2.4.0 板侧会话 (2026-09-12) ====
+cd D:\code\STM32CubeMX\G474VET6_ET_TEST
+cmake --preset Release && cmake --build --preset Release              # 0 warning
+STM32_Programmer_CLI -c port=SWD -w build/Release/G474VET6_ET_TEST.elf -rst
+# 主站走单(COM12): python tools/modbus_master.py --port COM12 --read 0 --qty 4
+#                   --write 2=4660 / --write-multi 4=111,222,333
+#                   --read 100 --qty 4 --expect-exc 0x02 / --read 0 --qty 0 --expect-exc 0x03
+#                   --raw-resp 11634DC9 --expect-exc 0x01 / --raw <bad-crc> (期望静默)
+# 工具自测(不接串口): python tools/modbus_master.py --selftest
+```

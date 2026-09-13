@@ -17,3 +17,7 @@ build/
 .idea/
 *.suo
 *.user
+
+# Python 工具缓存 (tools/*.py 自测/导入产生)
+__pycache__/
+*.pyc

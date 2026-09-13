@@ -37,7 +37,7 @@ cd Embedded_Tools
 mingw32-make test        # 或 make test
 ```
 
-**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **409** 例。
+**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **432** 例。
 
 ```sh
 mingw32-make test-g4     # 双几何回归 (G474 2KB 页几何; storage 布局改动必跑)
@@ -143,6 +143,13 @@ sh tools/sizecheck.sh            # ARM 体积表与实测逐值比对 (需 arm-n
 ```
 
 **该看到什么**: `docsync: pass=N fail=0`; `apidump: OK —— 纯新增`; `sizecheck: pass=3 fail=0`。
+
+Modbus 从站接入后，上位机侧可直接用工具验证（不依赖串口助手）：
+
+```sh
+python tools/modbus_master.py --selftest                 # 回环自测(不接串口)
+python tools/modbus_master.py --port COM12 --read 0 --qty 4   # 真机读 4 个保持寄存器
+```
 
 ---
 

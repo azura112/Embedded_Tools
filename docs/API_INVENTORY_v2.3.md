@@ -6,7 +6,7 @@
 
 ## et_config.h
 
-### 宏 (51)
+### 宏 (50)
 
 - `ET_ASSERT(cond) ((void)0)`
 - `ET_CRC_TABLE 0`
@@ -33,7 +33,6 @@
 - `ET_MODULE_MAP 1`
 - `ET_MODULE_MEDFILT 1`
 - `ET_MODULE_MEMPOOL 1`
-- `ET_MODULE_MODBUS 1`
 - `ET_MODULE_PID 1`
 - `ET_MODULE_QUEUE 1`
 - `ET_MODULE_RINGBUF 1`
@@ -51,7 +50,7 @@
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
-- `ET_VERSION_MINOR 4`
+- `ET_VERSION_MINOR 3`
 - `ET_VERSION_PATCH 0`
 - `ET_VERSION_STR(x) ET_VERSION_STR_(x)`
 - `ET_VERSION_STRING ET_VERSION_STR(ET_VERSION_MAJOR) "." ET_VERSION_STR(ET_VERSION_MINOR) "." ET_VERSION_STR(ET_VERSION_PATCH)`
@@ -520,38 +519,6 @@
 - `et_frame_crc_t`
 - `et_frame_on_frame_fn()`
 - `et_frame_parser_t`
-
-## protocol/et_modbus.h
-
-### 函数声明 (6)
-
-- `bool et_modbus_init(et_modbus_t *mb, const et_modbus_cfg_t *cfg, uint8_t *rxbuf, uint32_t rxcap, uint8_t *txbuf, uint32_t txcap)`
-- `const uint8_t *et_modbus_response(const et_modbus_t *mb, uint32_t *len)`
-- `uint32_t et_modbus_feed(et_modbus_t *mb, const uint8_t *data, uint32_t len)`
-- `uint32_t et_modbus_rx_pending(const et_modbus_t *mb)`
-- `void et_modbus_stats(const et_modbus_t *mb, et_modbus_stats_t *st)`
-- `void et_modbus_tick(et_modbus_t *mb, uint32_t now_ms)`
-
-### 类型 (5)
-
-- `et_modbus_cfg_t`
-- `et_modbus_rd_fn()`
-- `et_modbus_stats_t`
-- `et_modbus_t`
-- `et_modbus_wr_fn()`
-
-### 宏 (10)
-
-- `ET_MODBUS_ADU_MAX 256u`
-- `ET_MODBUS_EXC_ILLEGAL_ADDR 0x02u`
-- `ET_MODBUS_EXC_ILLEGAL_FUNC 0x01u`
-- `ET_MODBUS_EXC_ILLEGAL_VALUE 0x03u`
-- `ET_MODBUS_FC_READ_HOLDING 0x03u`
-- `ET_MODBUS_FC_READ_INPUT 0x04u`
-- `ET_MODBUS_FC_WRITE_MULTIPLE 0x10u`
-- `ET_MODBUS_FC_WRITE_SINGLE 0x06u`
-- `ET_MODBUS_RD_QTY_MAX 125u`
-- `ET_MODBUS_WR_QTY_MAX 123u`
 
 ## protocol/et_xmodem.h
 

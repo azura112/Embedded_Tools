@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.3.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.4.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -34,6 +34,7 @@
   - [5.4 et_xmodem XMODEM-CRC 接收器](#54-et_xmodem-xmodem-crc-接收器)
   - [5.5 et_xmodem_tx 发送器](#55-et_xmodem_tx-发送器-v18-mcu-作发送方)
   - [5.6 et_bytes 字节序打包解包](#56-et_bytes-字节序打包解包-v21)
+  - [5.7 et_modbus Modbus RTU 从站](#57-et_modbus-modbus-rtu-从站-v24)
 - [6. storage 存储层](#6-storage-存储层)
   - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
   - [6.2 et_bootctl 安全升级控制](#62-et_bootctl-安全升级控制)
@@ -55,6 +56,7 @@
   - [11.10 定点闭环整定配方](#1110-定点闭环整定配方et_lpf1--et_pid--et_spwm--et_statsv21)
   - [11.11 kv 参数备份与恢复](#1111-kv-参数备份与恢复et_kv--et_kv_iter--et_xmodem_txv22)
   - [11.12 任务耗时分布诊断](#1112-任务耗时分布诊断et_sched_task_stats--et_histv23)
+  - [11.13 kv 参数暴露为保持寄存器](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)
 
 ---
 
@@ -894,6 +896,62 @@ if (!et_bytes_be32_get(frame, sizeof(frame), 6u, &got)) { /* 越界: 拒绝且�
 
 单测 8 例（字节序向量/往返/读写边界/off 回绕/失败无副作用/偏移混排，`test/test_bytes.c`）。
 
+### 5.7 et_modbus Modbus RTU 从站 (v2.4)
+
+协议层第一个**标准应用协议**：工业现场最常见的 Modbus RTU 从站。字节流喂入 + 主循环处理（与 et_frame/et_xmodem 同范式：ISR 只入 `et_ringbuf`，主循环 `feed`）；复用 `et_crc16_modbus`（`ET_CRC_TABLE=1` 时走查表）。
+
+**协议覆盖**：`0x03/0x04` 读保持/输入寄存器、`0x06/0x10` 写单/多寄存器；其余功能码回异常 `0x01`。异常码 `0x01` 非法功能 / `0x02` 非法地址 / `0x03` 非法数据值。**广播（从站地址 0）：写执行、不应答；读忽略**。**不做** TCP/ASCII/主站模式（主站记 v2.5 候选）。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_modbus_init(mb, cfg, rxbuf, rxcap, txbuf, txcap)` | 🏠MAIN | `slave_addr` 1~247；`rxcap`/`txcap` ≥ 8；`rd`/`wr` 可 NULL（对应操作回 0x02） |
+| `uint32_t et_modbus_feed(mb, data, len)` | 🏠MAIN | 喂字节，返回本次生成的应答帧数（0/1）；`(NULL,0)` = 继续排空缓冲中的后续帧 |
+| `const uint8_t *et_modbus_response(mb, &len)` | 读 | 取待发应答（含 CRC，低字节在前）；无应答返回 NULL |
+| `void et_modbus_tick(mb, now_ms)` | 🏠MAIN | 周期调用：静默超时界定残帧/未知功能码帧 |
+| `void et_modbus_stats(mb, &st)` | 读 | 帧数/应答数/异常数/CRC 错/地址不符/丢弃 |
+
+**数量边界**：读 `ET_MODBUS_RD_QTY_MAX`=125（250 数据字节）、写 `ET_MODBUS_WR_QTY_MAX`=123（246 数据字节）、ADU 上限 `ET_MODBUS_ADU_MAX`=256B；越界回异常 `0x03`。
+
+**帧判定（双路径）**：① **快路径**——已知功能码由长度域驱动（`0x03/0x04/0x06` 定长 8；`0x10 = 9 + bytecount`），收齐即处理（低延迟）；② **静默路径**——未知功能码与畸形帧由帧间静默界定：调用方按波特率换算 **3.5 字符**时间写入 `cfg.silence_ms`，周期调用 `et_modbus_tick(now)`，缓冲在两次 tick 间无变化且累计静默满阈值即按完整帧做 CRC 兜底。**不内部取时基**（库惯例）。
+
+**缓冲与粘包**：`rxbuf` 组装请求、`txbuf` 承载应答（**独立 TX 缓冲**是粘包安全前提：应答构建不覆盖缓冲中后续帧）；`feed` 产生一个应答即停，后续帧留待 `feed(NULL,0)`。缓冲溢出 → 丢整批 + `discarded++` 重新同步。RTU ADU 上限 256B（`ET_MODBUS_ADU_MAX`）。
+
+```c
+#include "et_modbus.h"
+
+static uint8_t  rx[64], tx[256];
+static uint16_t regs[16];
+static et_modbus_t mb;
+
+static uint8_t rd_cb(void *u, uint8_t fc, uint16_t a, uint16_t q, uint8_t *d)
+{
+    uint16_t i;
+    if ((uint32_t)a + q > 16u) return ET_MODBUS_EXC_ILLEGAL_ADDR;
+    for (i = 0; i < q; i++) { d[2*i] = (uint8_t)(regs[a+i] >> 8);
+                              d[2*i+1] = (uint8_t)(regs[a+i] & 0xFF); }
+    return 0;
+}
+
+et_modbus_cfg_t cfg = { .slave_addr = 17u, .silence_ms = 4u,   /* 3.5字符@115200 ≈ 0.3ms, 取 4 */
+                        .rd = rd_cb, .wr = wr_cb };
+et_modbus_init(&mb, &cfg, rx, sizeof(rx), tx, sizeof(tx));
+
+/* 主循环: 排空 ringbuf → 喂从站 → 有应答就发 */
+uint8_t chunk[32];
+uint32_t n = et_ringbuf_read(&rb, chunk, sizeof(chunk));
+if (n > 0u) { (void)et_modbus_feed(&mb, chunk, n); }
+{
+    uint32_t len = 0u;
+    const uint8_t *resp = et_modbus_response(&mb, &len);
+    if (resp != NULL) { uart_write(resp, len); (void)et_modbus_feed(&mb, NULL, 0u); }
+}
+et_modbus_tick(&mb, port_tick_get_ms());   /* 每轮调用: 静默界定 */
+```
+
+**静默阈值换算**：`silence_ms ≈ 3.5 × 10 × 1000 / 波特率`（11 位/字符：1 起始+8 数据+1 校验+1 停止）。115200 → ≈0.30ms（实取 ≥1ms 整数，如 4ms）；9600 → ≈3.6ms（取 5ms）。**寄存器值域语义由应用钩子决定**（保持/输入、32 位组合、浮点寄存器均不在库级封装）；kv 直通配方见 [11.13](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)。
+
+单测 23 例（0x03/04/06/10 正常流、异常 0x01/0x02/0x03、CRC 坏/地址不符静默、广播写不应答、广播读忽略、分片、粘包两帧、静默丢弃重同步、qty 边界 125/123、txcap 不足、统计、多实例，`test/test_modbus.c`）；自检示例 [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`）；主站工具 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 回环自测 / 串口模式）。
+
 ---
 
 ## 6. storage 存储层
@@ -1239,7 +1297,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / HIST / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / HIST / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / MODBUS / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_HIST_BIN_MAX` | 255 | et_hist 桶数上限（uint8 索引；桶数组由调用方按实际 bin_count 分配） |
 | `ET_MEDFILT_WIN_MAX` | 15 | et_medfilt 窗口容量上限（init 强制奇数窗 3~此值；栈排序缓冲随此值增大） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |
@@ -1631,3 +1689,59 @@ void diag_report(uint32_t idx)
 **可执行载体**：闭环/备份/升级三配方的自检式 host 版在 [`examples/`](../examples/)（`make ex`
 一键全跑，CI 常设守护）；本配方为 v2.3 新增的纯组合配方，未单列示例（组件均已被 11.10
 载体覆盖）。
+
+### 11.13 kv 参数暴露为保持寄存器（et_modbus × et_kv，v2.4）
+
+场景：现场调试/上位机批量读写掉电参数（PID 整定值、标定系数）——**把 kv 挂成 Modbus 保持寄存器**，上位机用标准 Modbus 工具（本库 `tools/modbus_master.py` 或任意组态软件）直接读写，无需自定义协议。
+
+映射约定（应用层定义）：**一个 key 占一个保持寄存器**（值 ≤ 2 字节）；多字节结构（u32/float 等）按 n 个连续寄存器组合，读写钩子内做字节序转换。
+
+```c
+#include "et_modbus.h"
+#include "et_kv.h"
+
+#define KV_BASE_REG   1000u         /* 保持寄存器 1000 起映射 kv key 1~16 */
+
+static et_kv_t g_kv;
+static const et_kv_layout_t g_lay = { 14u, 15u };
+
+static uint8_t kv_rd(void *u, uint8_t fc, uint16_t a, uint16_t q, uint8_t *d)
+{
+    uint16_t i;
+    (void)u; (void)fc;
+    if ((a < KV_BASE_REG) || ((uint32_t)a + q > (KV_BASE_REG + 16u))) {
+        return ET_MODBUS_EXC_ILLEGAL_ADDR;
+    }
+    for (i = 0u; i < q; i++) {
+        uint16_t v = 0u;
+        uint16_t k = (uint16_t)(a - KV_BASE_REG + i + 1u);
+        if (!et_kv_get(&g_kv, k, &v, sizeof(v), NULL)) {
+            v = 0u;                 /* 不存在按 0 读(或改回 0x02, 由应用定) */
+        }
+        d[2u * i]      = (uint8_t)(v >> 8);
+        d[2u * i + 1u] = (uint8_t)(v & 0xFFu);
+    }
+    return 0u;
+}
+
+static uint8_t kv_wr(void *u, uint8_t fc, uint16_t a, uint16_t q, const uint8_t *s)
+{
+    uint16_t i;
+    (void)u; (void)fc;
+    if ((a < KV_BASE_REG) || ((uint32_t)a + q > (KV_BASE_REG + 16u))) {
+        return ET_MODBUS_EXC_ILLEGAL_ADDR;
+    }
+    for (i = 0u; i < q; i++) {
+        uint16_t v = (uint16_t)(((uint16_t)s[2u * i] << 8) | s[2u * i + 1u]);
+        uint16_t k = (uint16_t)(a - KV_BASE_REG + i + 1u);
+        if (!et_kv_set(&g_kv, k, &v, sizeof(v))) {
+            return ET_MODBUS_EXC_ILLEGAL_VALUE;   /* flash 满/压实失败 */
+        }
+    }
+    return 0u;
+}
+```
+
+**注意**：① kv 写是 flash 追加写（毫秒级阻塞），连续多寄存器写会放大耗时——`max_attempts`/上位机节奏要留裕量，必要时用 `et_wdt_guard` 包裹；② 写失败（空间不足）返回 `0x03` 让上位机感知，别静默丢弃；③ 32 位参数用两个寄存器时**约定高低字顺序**（建议高字在前）并写进设备文档；④ **掉电验证**：写后断电重启，读回值应保持（kv 掉电自愈语义见 6.1；真机走单见 `移植stm32实机记录.md` §11）。
+
+**可执行载体**：Modbus 从站全路径自检 = [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`）；主站侧 = [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 不接串口自测）。

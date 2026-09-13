@@ -79,6 +79,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v2.1 | 20008 | 28 | 740 | 默认裁剪（终值）；+et_pid/et_stats/et_bytes（demo 未调用，`-nostartfiles` 无 gc-sections 全量入 ELF，+1800B） |
 | v2.2 | 20264 | 28 | 740 | 默认裁剪（终值）；+et_medfilt +et_sched 耗时统计字段 |
 | v2.3 | 20736 | 28 | 740 | 默认裁剪（终值）；+et_hist |
+| v2.4 | 21608 | 28 | 740 | 默认裁剪（终值）；+et_modbus（demo 未调用，板侧 CubeMX demo 已挂从站另记 37428B） |
 
 ## 烧录与运行
 

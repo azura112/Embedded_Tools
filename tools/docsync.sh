@@ -280,9 +280,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "409"             "getting-started 用例数与实测一致(v2.3 回刷)"
+assert_grep "docs/getting-started.md" "432"             "getting-started 用例数与实测一致(v2.4 回刷)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "409"                 "README 用例数终值回刷(v2.3)"
+assert_grep "README.md"           "432"                 "README 用例数终值回刷(v2.4)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
@@ -297,9 +297,10 @@ for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 
 done
 
 # ---- v2.2 P0 基线滚动 + P1 selftest 20 套件 + P3 medfilt + P4 sched stats ----
-assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.2.md"     "apidump 默认基线滚动至 v2.2(P0-1 滚动规则)"
+assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.3.md"     "apidump 默认基线滚动至 v2.3(P0-1 滚动规则)"
 assert_grep "docs/API_INVENTORY_v2.1.md" "自动生成"                  "v2.1 冻结基线已归档(只读保留)"
-assert_grep "docs/API_INVENTORY_v2.2.md" "自动生成"                  "v2.2 冻结基线已归档(P0-1 滚动)"
+assert_grep "docs/API_INVENTORY_v2.2.md" "自动生成"                  "v2.2 冻结基线已归档(只读保留)"
+assert_grep "docs/API_INVENTORY_v2.3.md" "自动生成"                  "v2.3 冻结基线已归档(P0-1 滚动)"
 assert_grep "docs/API_STABILITY.md"      "字段追加登记区"             "API_STABILITY 结构体字段登记区(P4 附则实战)"
 assert_grep "et_config.h"         "ET_MODULE_MEDFILT"   "et_config 含 MEDFILT 开关(P3)"
 assert_grep "et_config.h"         "ET_MEDFILT_WIN_MAX"  "et_config 含 medfilt 窗上限(P3)"
@@ -346,6 +347,27 @@ assert_grep "docs/architecture.md" "模块选型"             "architecture.md �
 assert_grep "docs/v3-candidates.md" "biquad"             "v2.4 候选: 定点 biquad 评估(P4-2)"
 assert_grep "docs/bench.md"       "hist push"           "bench 含 hist 行(P4-1)"
 assert_grep "docs/bench.md"       "v2.3.0"              "bench 文档含 v2.3 版本行"
+
+# ---- v2.4 P0 基线滚动/biquad 判定 + P1 et_modbus + P2 板侧回归 ----
+assert_grep "et_config.h"         "ET_MODULE_MODBUS"    "et_config 含 MODBUS 开关(P1)"
+assert_grep "Makefile"            "protocol/et_modbus.c" "Makefile 含 et_modbus 源(P1)"
+assert_grep "Makefile"            "test/test_modbus.c"  "Makefile 含 test_modbus(P1)"
+assert_grep "Makefile"            "ex_modbus_slave"     "Makefile ex 含 modbus 示例(P1)"
+assert_grep "test/test_main.c"    "test_modbus_cases"   "test_main 注册 modbus 套件(P1)"
+assert_grep "README.md"           "et_modbus"           "README 特性表: modbus(P1)"
+assert_grep "docs/API_GUIDE.md"   "5.7 et_modbus"       "API_GUIDE: modbus 章节(P1)"
+assert_grep "docs/API_GUIDE.md"   "11.13 kv 参数暴露为保持寄存器" "API_GUIDE: kv 直通配方(P1)"
+assert_grep "docs/API_GUIDE.md"   "ET_MODBUS_RD_QTY_MAX" "API_GUIDE modbus 数量边界(P1)"
+assert_grep "protocol/et_modbus.h" "低字节在前"          "et_modbus CRC 线上序(头注,P1)"
+assert_grep "protocol/et_modbus.h" "广播"                "et_modbus 广播语义(头注,P1)"
+assert_grep "examples/ex_modbus_slave.c" "PASS"          "modbus 示例自检输出(P1)"
+assert_grep "tools/modbus_master.py" "selftest"          "主站工具回环自测入口(P1)"
+assert_grep "tools/modbus_master.py" "0x4B37"            "主站工具 CRC 标准向量自检(P1)"
+assert_grep "docs/architecture.md" "et_modbus"           "architecture 选型表含 modbus(P1)"
+assert_grep "docs/bench.md"       "modbus"               "bench 含 modbus 行(P3-1)"
+assert_grep "docs/bench.md"       "v2.4.0"               "bench 文档含 v2.4 版本行"
+assert_grep "docs/v3-candidates.md" "维持排队"            "biquad 判定决议落档(P0-2)"
+assert_grep "移植stm32实机记录.md" "modbus"               "实机记录含 Modbus 走单章节(P2)"
 
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格

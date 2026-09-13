@@ -1,4 +1,4 @@
-# 架构总览 (Embedded_Tools v2.3)
+# 架构总览 (Embedded_Tools v2.4)
 
 > 本文回答"**是什么 / 怎么选**"；上手跑通见 [getting-started.md](getting-started.md)；
 > 接口细节见 [API_GUIDE.md](API_GUIDE.md)；稳定性契约见 [API_STABILITY.md](API_STABILITY.md)。
@@ -16,7 +16,7 @@
 │  storage/ et_kv(掉电参数)  et_bootctl(安全升级 A/B)                  │
 ├────────────────────────────────────────────────────────────────────┤
 │  protocol/et_crc(校验)  et_bytes(字节序)  et_frame(帧)              │
-│           et_atcmd(AT 命令)  et_xmodem/_tx(固件传输)                │
+│           et_atcmd(AT 命令)  et_xmodem/_tx(固件传输)  et_modbus(RTU) │
 │  sys/     et_stimer  et_sched(任务调度+耗时统计)  et_event          │
 │           et_softclock(日历)  et_wdt(看门狗)                        │
 ├────────────────────────────────────────────────────────────────────┤
@@ -41,6 +41,13 @@ UART RX 中断 ──字节──> et_ringbuf ──主循环排空──> et_sh
                      AT+UPGRADE: et_xmodem(收) ──整块──> port_flash_write(B 槽)
                                  et_bootctl: stage → 重启 → attempt → confirm/rollback
  ISR 置位: et_event (通知主循环"有包/有命令", 代替信号量)
+
+Modbus RTU 从站流(工业上位机):
+上位机 ──RTU 帧──> UART RX 中断 ──> et_ringbuf ──主循环──> et_modbus_feed
+                                                            │
+                            应答(0x03/04 读 / 0x06/10 写 / 异常) ──> UART TX
+        et_modbus_tick(now) 每轮调用: 帧间 3.5 字符静默界定残帧/未知功能码
+        寄存器映射 rd/wr 钩子: 保持/输入寄存器语义由应用定义(11.13 = kv 直通)
 ```
 
 **测量→控制流**（固定周期，前后台）：
@@ -56,7 +63,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 
 ## 3. 模块选型表（按场景查）
 
-| 你要… | 用 | 搭配/备注 |
+| 你要… | 用 | 搭配/备注（33 模块按场景查） |
 |---|---|---|
 | 中断与主循环传字节 | `et_ringbuf` | SPSC 无锁，ISR-safe 写 |
 | 传"消息"而非字节流 | `et_queue` | 同款无锁技巧 |
@@ -81,6 +88,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 | AT 命令/交互壳 | `et_atcmd` / `et_shell` | Tab 补全 `ET_SHELL_TAB` |
 | MCU 作发送方 | `et_xmodem_tx` | 与接收器共享常量 |
 | 字段字节序打包 | `et_bytes` | 边界检查即唯一面 |
+| **Modbus RTU 从站** | `et_modbus` | 0x03/04/06/10；`silence_ms` 按波特率换算；`tools/modbus_master.py` 走单 |
 | CRC 校验 | `et_crc` | `ET_CRC_TABLE=1` 查表加速 |
 | 日志/断言 | `et_log` / `et_assert` | 失败钩子可落 kv |
 | 一条命令全模块冒烟 | `et_selftest` | 20 套件，板上可跑 |
@@ -90,8 +98,8 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 ```
         板上自测 (et_selftest 20 套件, AT+SELFTEST)
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 20/20)
-      host 单测  (409 用例 × 2 几何 + 1K 变体 + Tab 形态)
-     配方载体    (make ex: 三例自检式示例, CI 常设)
+      host 单测  (432 用例 × 2 几何 + 1K 变体 + Tab 形态)
+     配方载体    (make ex: 四例自检式示例, CI 常设)
     机制门       (docsync 210 断言 / apidump --diff 纯增 / sizecheck / docbuild)
 ```
 

@@ -27,6 +27,7 @@
 #include "et_filter.h"
 #include "et_medfilt.h"
 #include "et_hist.h"
+#include "et_modbus.h"
 #include "et_pid.h"
 #include "et_stats.h"
 #include "et_fsm.h"
@@ -403,6 +404,55 @@ static double bench_hist_percentile(void)
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
 }
 
+/* ===================== modbus (v2.4) ===================== */
+
+static et_modbus_t b_mb;
+static uint8_t     b_mb_rx[64];
+static uint8_t     b_mb_tx[256];
+static uint16_t    b_mb_reg[16];
+
+static uint8_t b_mb_rd(void *u, uint8_t fc, uint16_t a, uint16_t q, uint8_t *d)
+{
+    uint16_t i;
+
+    (void)u; (void)fc;
+    if (((uint32_t)a + q) > 16u) { return 0x02u; }
+    for (i = 0u; i < q; i++) {
+        d[2u * i] = (uint8_t)(b_mb_reg[a + i] >> 8);
+        d[2u * i + 1u] = (uint8_t)(b_mb_reg[a + i] & 0xFFu);
+    }
+    return 0u;
+}
+
+static double bench_modbus(void)
+{
+    et_modbus_cfg_t cfg;
+    uint8_t  req[8];
+    uint32_t n = 200000u;
+    uint32_t i;
+    clock_t  t0;
+    uint16_t crc;
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.slave_addr = 0x11u;
+    cfg.silence_ms = 5u;
+    cfg.rd = b_mb_rd;
+    (void)et_modbus_init(&b_mb, &cfg, b_mb_rx, sizeof(b_mb_rx),
+                         b_mb_tx, sizeof(b_mb_tx));
+    req[0] = 0x11u; req[1] = 0x03u;
+    req[2] = 0u; req[3] = 0u; req[4] = 0u; req[5] = 4u;
+    crc = et_crc16_modbus(req, 6u);
+    req[6] = (uint8_t)(crc & 0xFFu);
+    req[7] = (uint8_t)(crc >> 8);
+
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        (void)et_modbus_feed(&b_mb, req, 8u);      /* 含 CRC + 应答构造 */
+        g_sink = (uint32_t)(uintptr_t)et_modbus_response(&b_mb, NULL);
+    }
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
 static double bench_sched_poll(void)
 {
     uint32_t n = 200000u;
@@ -564,6 +614,7 @@ int main(void)
     report_ns("medfilt push (win 5, v2.2)", bench_medfilt, 1000000.0);
     report_ns("hist push (16 bins, v2.3)", bench_hist_push, 1000000.0);
     report_ns("hist percentile (16 bins, v2.3)", bench_hist_percentile, 100000.0);
+    report_ops("modbus 0x03 read 4 regs (frame/s, v2.4)", bench_modbus, 200000.0);
     report_ns("pid step (P+I+D, d-on-measure)", bench_pid, 1000000.0);
     report_ns("stats push (Welford integer)", bench_stats, 1000000.0);
     report_ns("sched poll_once (1 task due + stats, v2.2)", bench_sched_poll,
