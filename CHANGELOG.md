@@ -28,7 +28,17 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 - 数字回刷：README 特性表/结构树/用例数/examples 数、architecture 选型表与数据流、API_GUIDE 5.7/5.8/8.1/11.13/11.14、bench、port 体积表、docsync。
 
 ### Fixed
+- **`et_log` 的 `va_list` 链跨 ABI 缺陷（v2.5 首轮 CI 抓到并修复）**：`parse_spec`/`get_signed`/`get_unsigned`
+  声明为 `va_list *ap`，而 `vformat` 形参是 `va_list ap`；x86-64 SysV 的 `va_list` 是**数组类型**（`__va_list_tag[1]`），
+  形参退化后 `&ap` 得到 `__va_list_tag **` → `va_arg` 走错间接层（ubuntu 侧表现为**垃圾输出 + 段错误**）。
+  **MinGW 的 `va_list` 是 `char*`，该错配不报警**，故本机全绿而 CI 红。修复：全链统一以 `va_list *` 贯穿。
+  **持久门**：Makefile `CFLAGS` 增 `-Werror=incompatible-pointer-types`（Linux 侧硬失败，MinGW 侧零影响）。
 - **et_log 实参错位（静默错误）**：`ET_LOGI("p","addr=0x%02x (kv regs %u..%u)", 17u, 1000u, 1003u)` 曾输出 `addr=0x%02x (kv regs 17..1000)`——字面回显 + 实参整体前移一格；`"n=%zu tail=%u"` 曾输出 `n=%zu tail=7`；`posix_demo` 的 `%.*s` 同形。三类形态均已在 `test/test_log.c` 以**哨兵实参 + host snprintf 逐字节对拍**守护（`log.misalign_regress`）。
+
+- **计划缺陷（已实测证伪，如实记录）**：计划 §6 的「快照 tag 无副作用」**不成立** —— `release.yml` 触发条件为
+  `tags: [v*]`，`v2.5-start` 匹配之，推送后**触发了 Release workflow**（run 35378057777，指向 v2.4 提交）。
+  已立即 `gh run cancel` 取消（两 job 均 X，**未产生任何 Release**）。建议 v2.6 计划把快照 tag 改为不带 `v` 前缀
+  （`snap-<ver>-start`）；详见交付文档 D-9 / N-8。
 
 ### 挂账（如实声明，见交付文档 §5）
 - **板上真机走单未执行**：执行期 G474 板未接入本机（无 ST-Link、无 CH343 USB-TTL，仅有 WCH-Link），

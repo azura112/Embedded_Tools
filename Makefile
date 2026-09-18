@@ -24,7 +24,11 @@
 CC      := gcc
 # -DET_MODULE_SELFTEST=1: host 侧复用板上自测组件(默认 0, 见 et_config.h); test 与
 #       demo 同跑一遍, 板上/PC 结果可比对 (v1.7)
-CFLAGS  := -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host
+# v2.5: 追加 -Werror=incompatible-pointer-types —— MinGW 的 va_list 是 char*,
+# x86-64 SysV(Linux CI) 的 va_list 是数组类型, 形参取址的间接层差异**只在 Linux 报警**
+# (v2.5 首轮 CI 实测: et_log 的 va_list* 链在 ubuntu 报 -Wincompatible-pointer-types 并跑出
+#  垃圾输出+段错误, windows 侧静默通过)。该 flag 让此类跨 ABI 缺陷在 Linux 侧硬失败。
+CFLAGS  := -std=c99 -Wall -Wextra -pedantic -Werror=incompatible-pointer-types -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host
 OBJDIR  := build
 
 CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c core/et_map.c core/et_smap.c

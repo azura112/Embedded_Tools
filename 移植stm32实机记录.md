@@ -441,11 +441,11 @@ diff -q  <repo>/port/port.h  Core/et/port.h                                     
 ```
 
 **构建**:`cmake --preset Release && cmake --build --preset Release` → **0 warning / 0 error**（37 个目标全部重建）。
-**体积**:`FLASH 38704 B`（v2.4 基线 37428 → **+1276 B**）、`RAM 5312 B`（与 v2.4 等值）。
+**体积**:`FLASH 38712 B`（v2.4 基线 37428 → **+1284 B**）、`RAM 5312 B`（与 v2.4 等值）。
 **增量归因（`arm-none-eabi-nm` 实测, 非推测）**:
 - `et_modbus_master` 符号在 ELF 中**计数为 0** —— `--gc-sections` 丢弃未调用模块, **板侧零回归性质保持**
   （v2.1 建立的证明法仍成立）；
-- +1276 B 来自**`et_log` 规格解析器加固**（`vformat` 0x4A0=1184B + `emit_number` 0x1AC=428B +
+- +1284 B 来自**`et_log` 规格解析器加固**（`vformat` 0x4A0=1184B + `emit_number` 0x1AC=428B +
   两个 `emit_placeholder*` 与 `parse_spec` 内联）+ demo 侧日志格式串改为域宽形态。
   et_log 是板侧**实际使用**的模块，其体积增长属"功能换体积"的正当增量（缺陷清偿）。
 

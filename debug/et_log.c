@@ -383,7 +383,7 @@ static unsigned long long get_unsigned(va_list *ap, const et_spec_t *sp)
  * 支持: %d %i %u %x %X %c %s %p %% + 标志/域宽(含 *)/精度(.N,.*)/h hh l ll z
  * 不支持但按 C 语义消费: %o %f %e %E %g %G %a %A %n %lc %ls (输出可见占位)
  */
-static int vformat(const char *fmt, va_list ap)
+static int vformat(const char *fmt, va_list *ap)
 {
     int cnt = 0;
 
@@ -401,7 +401,7 @@ static int vformat(const char *fmt, va_list ap)
         }
         fmt++;                                  /* 跳过 '%' */
 
-        conv = parse_spec(&fmt, &sp, &ap);
+        conv = parse_spec(&fmt, &sp, ap);
         if (conv == '\0') {                     /* 尾部孤 '%': 原样输出 */
             port_putc('%');
             cnt++;
@@ -411,7 +411,7 @@ static int vformat(const char *fmt, va_list ap)
         switch (conv) {
         case 'd':
         case 'i': {
-            long long          v = get_signed(&ap, &sp);
+            long long          v = get_signed(ap, &sp);
             char               sign = '\0';
             unsigned long long mag;
 
@@ -427,12 +427,12 @@ static int vformat(const char *fmt, va_list ap)
             break;
         }
         case 'u':
-            cnt += emit_number(&sp, get_unsigned(&ap, &sp), 10u, false, '\0', "", 0u);
+            cnt += emit_number(&sp, get_unsigned(ap, &sp), 10u, false, '\0', "", 0u);
             break;
         case 'x':
         case 'X': {
             bool               up = (conv == 'X');
-            unsigned long long v  = get_unsigned(&ap, &sp);
+            unsigned long long v  = get_unsigned(ap, &sp);
 
             cnt += emit_number(&sp, v, 16u, up,
                                '\0',
@@ -442,23 +442,23 @@ static int vformat(const char *fmt, va_list ap)
         }
         case 'c':
             if (sp.len >= SP_LEN_L) {           /* %lc 宽字符: 消费不输出 */
-                (void)va_arg(ap, int);
+                (void)va_arg(*ap, int);
                 cnt += emit_placeholder("lc", 2u);
             } else {
-                port_putc((char)va_arg(ap, int));
+                port_putc((char)va_arg(*ap, int));
                 cnt++;
             }
             break;
         case 's':
             if (sp.len >= SP_LEN_L) {           /* %ls 宽字符串: 消费不输出 */
-                (void)va_arg(ap, void *);
+                (void)va_arg(*ap, void *);
                 cnt += emit_placeholder("ls", 2u);
             } else {
-                cnt += emit_str_field(&sp, va_arg(ap, const char *));
+                cnt += emit_str_field(&sp, va_arg(*ap, const char *));
             }
             break;
         case 'p': {
-            void *pv = va_arg(ap, void *);
+            void *pv = va_arg(*ap, void *);
 
             cnt += emit_number(&sp, (unsigned long long)(uintptr_t)pv, 16u, false,
                                '\0', "0x", 2u);
@@ -469,7 +469,7 @@ static int vformat(const char *fmt, va_list ap)
             cnt++;
             break;
         case 'o':                               /* 已知不支持: 消费 + 占位 */
-            (void)get_unsigned(&ap, &sp);
+            (void)get_unsigned(ap, &sp);
             cnt += emit_placeholder("o", 1u);
             break;
         case 'f':
@@ -480,11 +480,11 @@ static int vformat(const char *fmt, va_list ap)
         case 'G':
         case 'a':
         case 'A':                               /* 浮点族: 按 double 消费 */
-            (void)va_arg(ap, double);
+            (void)va_arg(*ap, double);
             cnt += emit_placeholder1(conv);
             break;
         case 'n':                               /* %n: 消费指针, 禁写内存 */
-            (void)va_arg(ap, void *);
+            (void)va_arg(*ap, void *);
             cnt += emit_placeholder1('n');
             break;
         default:                                /* 未知转换字符: 占位不消费 */
@@ -523,7 +523,7 @@ int et_log_output(et_log_level_t lv, const char *tag, const char *fmt, ...)
     emit_str("] ");
 
     va_start(ap, fmt);
-    cnt += vformat(fmt, ap);
+    cnt += vformat(fmt, &ap);
     va_end(ap);
 
     emit_char('\n');
@@ -537,7 +537,7 @@ int et_log_raw(const char *fmt, ...)
     int cnt;
 
     va_start(ap, fmt);
-    cnt = vformat(fmt, ap);
+    cnt = vformat(fmt, &ap);
     va_end(ap);
     return cnt;
 }
