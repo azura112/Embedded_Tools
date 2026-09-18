@@ -28,6 +28,7 @@
 #include "et_medfilt.h"
 #include "et_hist.h"
 #include "et_modbus.h"
+#include "et_modbus_master.h"
 #include "et_pid.h"
 #include "et_stats.h"
 #include "et_fsm.h"
@@ -453,6 +454,77 @@ static double bench_modbus(void)
     return (double)(clock() - t0) / CLOCKS_PER_SEC;
 }
 
+/* ===================== modbus_master (v2.5) ===================== */
+
+static et_modbus_master_t b_mbm;
+static uint8_t            b_mbm_rx[ET_MODBUS_ADU_MAX];
+static uint8_t            b_mbm_tx[ET_MODBUS_ADU_MAX];
+static uint8_t            b_mbm_resp[32];
+
+/* 组帧: read → tx(每轮用 sent+poll 复位到终态, 复位开销计入本行) */
+static double bench_mbm_build(void)
+{
+    et_modbus_master_cfg_t cfg;
+    uint32_t n = 200000u;
+    uint32_t i;
+    clock_t  t0;
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.addr            = 0x11u;
+    cfg.resp_timeout_ms = 50u;
+    cfg.retry_max       = 0u;                   /* 不重发: 复位一步到位 */
+    (void)et_modbus_master_init(&b_mbm, &cfg, b_mbm_rx, sizeof(b_mbm_rx),
+                                b_mbm_tx, sizeof(b_mbm_tx));
+
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        (void)et_modbus_master_read(&b_mbm, ET_MODBUS_FC_READ_HOLDING, 0u, 4u);
+        g_sink = (uint32_t)(uintptr_t)et_modbus_master_tx(&b_mbm, NULL);
+        et_modbus_master_sent(&b_mbm, 0u);
+        (void)et_modbus_master_poll(&b_mbm, 1000000u);   /* 复位到 TIMEOUT */
+    }
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
+/* 一轮完整事务: 组帧 → 上线 → 应答解析(含 CRC) → 终态 OK */
+static double bench_mbm_round(void)
+{
+    et_modbus_master_cfg_t cfg;
+    uint32_t n = 200000u;
+    uint32_t i;
+    clock_t  t0;
+    uint16_t crc;
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.addr            = 0x11u;
+    cfg.resp_timeout_ms = 50u;
+    cfg.retry_max       = 0u;
+    (void)et_modbus_master_init(&b_mbm, &cfg, b_mbm_rx, sizeof(b_mbm_rx),
+                                b_mbm_tx, sizeof(b_mbm_tx));
+
+    /* 预置一个 qty=4 的正常应答(13B) */
+    b_mbm_resp[0]  = 0x11u;
+    b_mbm_resp[1]  = ET_MODBUS_FC_READ_HOLDING;
+    b_mbm_resp[2]  = 8u;
+    b_mbm_resp[3]  = 0u; b_mbm_resp[4]  = 1u;
+    b_mbm_resp[5]  = 0u; b_mbm_resp[6]  = 2u;
+    b_mbm_resp[7]  = 0u; b_mbm_resp[8]  = 3u;
+    b_mbm_resp[9]  = 0u; b_mbm_resp[10] = 4u;
+    crc = et_crc16_modbus(b_mbm_resp, 11u);
+    b_mbm_resp[11] = (uint8_t)(crc & 0xFFu);
+    b_mbm_resp[12] = (uint8_t)(crc >> 8);
+
+    t0 = clock();
+    for (i = 0u; i < n; i++) {
+        (void)et_modbus_master_read(&b_mbm, ET_MODBUS_FC_READ_HOLDING, 0u, 4u);
+        g_sink = (uint32_t)(uintptr_t)et_modbus_master_tx(&b_mbm, NULL);
+        et_modbus_master_sent(&b_mbm, 0u);
+        g_sink += et_modbus_master_feed(&b_mbm, b_mbm_resp, 13u);
+        g_sink += (uint32_t)et_modbus_master_poll(&b_mbm, 0u);   /* → ET_MB_OK */
+    }
+    return (double)(clock() - t0) / CLOCKS_PER_SEC;
+}
+
 static double bench_sched_poll(void)
 {
     uint32_t n = 200000u;
@@ -615,6 +687,9 @@ int main(void)
     report_ns("hist push (16 bins, v2.3)", bench_hist_push, 1000000.0);
     report_ns("hist percentile (16 bins, v2.3)", bench_hist_percentile, 100000.0);
     report_ops("modbus 0x03 read 4 regs (frame/s, v2.4)", bench_modbus, 200000.0);
+    report_ns("modbus_master 请求组帧 (read+tx, v2.5)", bench_mbm_build, 200000.0);
+    report_ns("modbus_master 一轮事务 (组帧+解析+终态, v2.5)", bench_mbm_round,
+              200000.0);
     report_ns("pid step (P+I+D, d-on-measure)", bench_pid, 1000000.0);
     report_ns("stats push (Welford integer)", bench_stats, 1000000.0);
     report_ns("sched poll_once (1 task due + stats, v2.2)", bench_sched_poll,

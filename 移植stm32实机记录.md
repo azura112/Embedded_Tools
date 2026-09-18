@@ -414,3 +414,66 @@ STM32_Programmer_CLI -c port=SWD -w build/Release/G474VET6_ET_TEST.elf -rst
 #                   --raw-resp 11634DC9 --expect-exc 0x01 / --raw <bad-crc> (期望静默)
 # 工具自测(不接串口): python tools/modbus_master.py --selftest
 ```
+
+---
+
+## 12. v2.5.0 板侧同步与**未执行的走单**(如实挂账) —— 2026-09-19
+
+> **本节结论先行**: 本版**只完成了库→板侧的同步与交叉编译**（P2-1），
+> **P2-2 板侧主站命令组 / P2-3 真机走单 / P2-4 板上回归均未执行** ——
+> 执行期 G474 板**未接入本机**（`Get-PnpDevice` 无 ST-Link；无 CH343 USB-TTL，
+> 仅有 WCH-Link SERIAL(COM16)，属另一板系）。**不伪造任何板上结论**（HC-10 的
+> 板上逐字节证据未取得）。处置依据 = v2.5 计划附 B 风险表"板档期"行：
+> *"库内项（M1–M3）先合入；走单项如实挂账，不阻塞 M5 之外的进度"*。
+
+**已完成：`Core/et/` 同步至 v2.5.0（跨 v2.4→v2.5）**
+
+```sh
+# 全量重拷七目录 + 两文件（et_port/、et_demo.c/h、main.c、CMakeLists USER CODE 区为工程私有, 不覆盖）
+for d in core algorithm sys protocol drivers debug storage; do
+  cp -f <repo>/$d/*.c <repo>/$d/*.h Core/et/$d/
+done
+cp -f <repo>/et_config.h Core/et/et_config.h
+cp -f <repo>/port/port.h Core/et/port.h
+diff -rq <repo>/{core,algorithm,sys,protocol,drivers,debug,storage} Core/et/{...}   # 七目录全 OK
+diff -q  <repo>/et_config.h Core/et/et_config.h                                    # OK
+diff -q  <repo>/port/port.h  Core/et/port.h                                        # OK
+```
+
+**构建**:`cmake --preset Release && cmake --build --preset Release` → **0 warning / 0 error**（37 个目标全部重建）。
+**体积**:`FLASH 38704 B`（v2.4 基线 37428 → **+1276 B**）、`RAM 5312 B`（与 v2.4 等值）。
+**增量归因（`arm-none-eabi-nm` 实测, 非推测）**:
+- `et_modbus_master` 符号在 ELF 中**计数为 0** —— `--gc-sections` 丢弃未调用模块, **板侧零回归性质保持**
+  （v2.1 建立的证明法仍成立）；
+- +1276 B 来自**`et_log` 规格解析器加固**（`vformat` 0x4A0=1184B + `emit_number` 0x1AC=428B +
+  两个 `emit_placeholder*` 与 `parse_spec` 内联）+ demo 侧日志格式串改为域宽形态。
+  et_log 是板侧**实际使用**的模块，其体积增长属"功能换体积"的正当增量（缺陷清偿）。
+
+**未执行项（挂账，附理由与触发条件）**
+
+| 项 | 状态 | 理由 / 触发条件 |
+|---|---|---|
+| P2-2 板侧主站命令组 `AT+MBRD`/`AT+MBWR`/`AT+MBPOLL` | **未执行** | 该命令组必须改**共享 USART1 的分流/回显抑制**才能让主站收帧；而 v2.4 的分流规则是**板上验证过的**（首字节 ==0x11/0x00 → modbus，`et_modbus_rx_pending()` 判半帧延续）。**在无板可验的情况下改这条路径，风险是把已验证的从站路径改坏且无法察觉** —— 比留一个诚实的缺口更糟。触发条件 = 板接入本机 |
+| P2-3 真机走单（逐字节：请求/应答/重发/异常/广播/日志行） | **未执行** | 同 P2-2（无板）；**HC-10 未满足**，见交付文档 §5/§6 |
+| P2-4 板上既有回归（`AT+SELFTEST` / `AT+SELFSTOR` / `AT+SIMUPGRADE 3`） | **未执行** | 无板；smoke.sh 断言行本版零改动（selftest 维持 20，见下） |
+| CO-2 / CO-11（USART2 独立口 / 共享口地址不符静默） | **维持暂缓** | 与 v2.4 同源硬件阻塞（仅一路 USB-TTL） |
+
+**替代证据（本版已取得，非板上）**: 主站与日志两项的库内证据由
+`test/test_modbus_master.c`(25 例) + `test/test_log.c`(24 例) + `make ex` 五例 +
+`tools/modbus_master.py --selftest`(29 项，含**跨实现对拍**) 承担；
+其中 `ex_modbus_master` 打印的请求/应答字节与 §11 的 v2.4 板上记录**逐字节一致**
+（`11 03 00 00 00 04 46 99` / `11 06 00 02 12 34 27 ED` / `11 10 00 04 00 03 06 00 6F 00 DE 01 4D EC 53`
+→ 应答 `11 10 00 04 00 03 C3 59` / 异常 `11 83 02 C1 34`）—— 这说明**协议组帧/解析实现与
+板上已验证的从站侧同源**，但**不能替代**主站在真实串口时序（超时阈值、帧间静默、shell 争用）下的验证。
+
+**下版（v2.6）板侧待办（按优先级）**:
+1. 板接入后执行本节未执行的三项（P2-2/P2-3/P2-4），走单脚本已就绪：
+   ```sh
+   # 板侧主站 → PC 从站仿真器（不依赖第二台设备, 绕开 CO-2/CO-11）
+   python tools/modbus_master.py --port COM12 --slave                     # 基础走单
+   python tools/modbus_master.py --port COM12 --slave --slave-drop 2      # 超时重发
+   python tools/modbus_master.py --port COM12 --slave --slave-exc 0x02    # 异常路径
+   python tools/modbus_master.py --port COM12 --slave --slave-regs 1,2,3,4
+   ```
+2. `et_log` 域宽行板面原样比对（`%04u-%02u-%02u %02u:%02u:%02u`）。
+3. selftest 套件 20 → 21（本版因无板复验而**维持 20**，见交付文档 §5）。

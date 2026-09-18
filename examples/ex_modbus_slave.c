@@ -213,13 +213,25 @@ int main(void)
     EX_CHECK((g_hold[1] == 0x0011u) && (g_hold[2] == 0x0022u) &&
              (g_hold[3] == 0x0033u));
 
-    /* ---- 5. 异常 0x01: 未知功能码(静默路径界定) ---- */
+    /* ---- 5. 异常 0x01: 未知功能码(静默路径界定) ----
+     * v2.5 CO-8 守护: 应答有**两条产生路径**(feed 快路径 / tick 静默路径),
+     * 调用侧两处都要复查并发送。本段显式建模两个 flush 点:
+     *   flush 点① (feed 之后) 必须无应答; flush 点② (tick 之后) 必须拿到异常帧。
+     * v2.4 板上正是漏了 flush 点② → 现象"0x63 请求无任何应答"。 */
     req[0] = SLAVE; req[1] = 0x63u;
     crc = et_crc16_modbus(req, 2u);
     req[2] = (uint8_t)(crc & 0xFFu); req[3] = (uint8_t)(crc >> 8);
     g_step++;
-    printf("  [%02d] %-30s (silence-delimited)\n", g_step, "0x63 illegal function");
+    printf("  [%02d] %-30s (silence-delimited, 2 flush points)\n", g_step,
+           "0x63 illegal function");
     EX_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, req, 4u));
+    {
+        uint32_t len = 0u;
+
+        /* flush 点①: feed 快路径未产生应答(未知功能码只能靠静默界定) */
+        EX_CHECK(et_modbus_response(&g_mb, &len) == NULL);
+        EX_CHECK_U32_EQ(0u, len);
+    }
     et_modbus_tick(&g_mb, 0u);
     et_modbus_tick(&g_mb, SILENCE_MS + 1u);
     (void)mk_exc(exp, SLAVE, 0x63u, ET_MODBUS_EXC_ILLEGAL_FUNC);
@@ -227,8 +239,9 @@ int main(void)
     exp[3] = (uint8_t)(crc & 0xFFu); exp[4] = (uint8_t)(crc >> 8);
     {
         uint32_t len = 0u;
-        const uint8_t *r = et_modbus_response(&g_mb, &len);
+        const uint8_t *r = et_modbus_response(&g_mb, &len);   /* flush 点② */
 
+        EX_CHECK(r != NULL);                    /* tick 静默路径产生了应答 */
         EX_CHECK_U32_EQ(5u, len);
         EX_CHECK(r != NULL && memcmp(r, exp, 5u) == 0);
         hexdump("resp:", r, len);

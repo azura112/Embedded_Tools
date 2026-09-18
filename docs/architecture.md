@@ -48,6 +48,14 @@ Modbus RTU 从站流(工业上位机):
                             应答(0x03/04 读 / 0x06/10 写 / 异常) ──> UART TX
         et_modbus_tick(now) 每轮调用: 帧间 3.5 字符静默界定残帧/未知功能码
         寄存器映射 rd/wr 钩子: 保持/输入寄存器语义由应用定义(11.13 = kv 直通)
+        应答有两条产生路径(feed 快路径 / tick 静默路径) → 调用侧两处都要 flush
+
+Modbus RTU 主站流(v2.5, 单事务; 多从站轮询见配方 11.14):
+本机应用 ──> et_modbus_master_read/write ──> et_modbus_master_tx ──> UART TX
+                    ▲                                                  │
+                    │                                   从站应答 ──> UART RX 中断
+       et_modbus_master_poll(now) 每轮: 超时 → 重发(tx 再返回同一帧) 或终态
+                                    迟到/陈旧字节按非 BUSY 丢弃(不污染下一事务)
 ```
 
 **测量→控制流**（固定周期，前后台）：
@@ -63,7 +71,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 
 ## 3. 模块选型表（按场景查）
 
-| 你要… | 用 | 搭配/备注（33 模块按场景查） |
+| 你要… | 用 | 搭配/备注（34 模块按场景查） |
 |---|---|---|
 | 中断与主循环传字节 | `et_ringbuf` | SPSC 无锁，ISR-safe 写 |
 | 传"消息"而非字节流 | `et_queue` | 同款无锁技巧 |
@@ -89,6 +97,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 | MCU 作发送方 | `et_xmodem_tx` | 与接收器共享常量 |
 | 字段字节序打包 | `et_bytes` | 边界检查即唯一面 |
 | **Modbus RTU 从站** | `et_modbus` | 0x03/04/06/10；`silence_ms` 按波特率换算；`tools/modbus_master.py` 走单 |
+| **Modbus RTU 主站** | `et_modbus_master` | 单事务 + 超时重发 + 异常上报；复用从站常量与开关；**不含调度器**（多从站轮询见 11.14） |
 | CRC 校验 | `et_crc` | `ET_CRC_TABLE=1` 查表加速 |
 | 日志/断言 | `et_log` / `et_assert` | 失败钩子可落 kv |
 | 一条命令全模块冒烟 | `et_selftest` | 20 套件，板上可跑 |
@@ -98,7 +107,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 ```
         板上自测 (et_selftest 20 套件, AT+SELFTEST)
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 20/20)
-      host 单测  (432 用例 × 2 几何 + 1K 变体 + Tab 形态)
+      host 单测  (474 用例 × 2 几何 + 1K 变体 + Tab 形态)
      配方载体    (make ex: 四例自检式示例, CI 常设)
     机制门       (docsync 210 断言 / apidump --diff 纯增 / sizecheck / docbuild)
 ```

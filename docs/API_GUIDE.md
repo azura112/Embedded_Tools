@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.4.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.5.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -35,6 +35,7 @@
   - [5.5 et_xmodem_tx 发送器](#55-et_xmodem_tx-发送器-v18-mcu-作发送方)
   - [5.6 et_bytes 字节序打包解包](#56-et_bytes-字节序打包解包-v21)
   - [5.7 et_modbus Modbus RTU 从站](#57-et_modbus-modbus-rtu-从站-v24)
+  - [5.8 et_modbus_master Modbus RTU 主站](#58-et_modbus_master-modbus-rtu-主站-v25)
 - [6. storage 存储层](#6-storage-存储层)
   - [6.1 et_kv flash 键值存储](#61-et_kv-flash-键值存储)
   - [6.2 et_bootctl 安全升级控制](#62-et_bootctl-安全升级控制)
@@ -57,6 +58,7 @@
   - [11.11 kv 参数备份与恢复](#1111-kv-参数备份与恢复et_kv--et_kv_iter--et_xmodem_txv22)
   - [11.12 任务耗时分布诊断](#1112-任务耗时分布诊断et_sched_task_stats--et_histv23)
   - [11.13 kv 参数暴露为保持寄存器](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)
+  - [11.14 主站轮询多从站(与 et_sched 协作)](#1114-主站轮询多从站与-et_sched-协作v25)
 
 ---
 
@@ -900,7 +902,7 @@ if (!et_bytes_be32_get(frame, sizeof(frame), 6u, &got)) { /* 越界: 拒绝且�
 
 协议层第一个**标准应用协议**：工业现场最常见的 Modbus RTU 从站。字节流喂入 + 主循环处理（与 et_frame/et_xmodem 同范式：ISR 只入 `et_ringbuf`，主循环 `feed`）；复用 `et_crc16_modbus`（`ET_CRC_TABLE=1` 时走查表）。
 
-**协议覆盖**：`0x03/0x04` 读保持/输入寄存器、`0x06/0x10` 写单/多寄存器；其余功能码回异常 `0x01`。异常码 `0x01` 非法功能 / `0x02` 非法地址 / `0x03` 非法数据值。**广播（从站地址 0）：写执行、不应答；读忽略**。**不做** TCP/ASCII/主站模式（主站记 v2.5 候选）。
+**协议覆盖**：`0x03/0x04` 读保持/输入寄存器、`0x06/0x10` 写单/多寄存器；其余功能码回异常 `0x01`。异常码 `0x01` 非法功能 / `0x02` 非法地址 / `0x03` 非法数据值。**广播（从站地址 0）：写执行、不应答；读忽略**。**不做** TCP/ASCII；**主站**见 [5.8](#58-et_modbus_master-modbus-rtu-主站v25)（`et_modbus_master`，v2.5）。
 
 | 函数 | 上下文 | 说明 |
 |---|---|---|
@@ -915,6 +917,8 @@ if (!et_bytes_be32_get(frame, sizeof(frame), 6u, &got)) { /* 越界: 拒绝且�
 **帧判定（双路径）**：① **快路径**——已知功能码由长度域驱动（`0x03/0x04/0x06` 定长 8；`0x10 = 9 + bytecount`），收齐即处理（低延迟）；② **静默路径**——未知功能码与畸形帧由帧间静默界定：调用方按波特率换算 **3.5 字符**时间写入 `cfg.silence_ms`，周期调用 `et_modbus_tick(now)`，缓冲在两次 tick 间无变化且累计静默满阈值即按完整帧做 CRC 兜底。**不内部取时基**（库惯例）。
 
 **缓冲与粘包**：`rxbuf` 组装请求、`txbuf` 承载应答（**独立 TX 缓冲**是粘包安全前提：应答构建不覆盖缓冲中后续帧）；`feed` 产生一个应答即停，后续帧留待 `feed(NULL,0)`。缓冲溢出 → 丢整批 + `discarded++` 重新同步。RTU ADU 上限 256B（`ET_MODBUS_ADU_MAX`）。
+
+**应答有两条产生路径（v2.5 范式修正，务必两条都复查）**：① **feed 快路径** —— 已知功能码收齐即处理；② **tick 静默路径** —— 未知功能码/畸形帧在 `et_modbus_tick()` 内按静默界定后才处理。**调用侧两个位置都要调用 `et_modbus_response()` 并发送**：只在 `feed()` 之后复查会漏掉路径 ②，现象为"未知功能码请求无任何应答"（v2.4 板上实测踩过，见 `移植stm32实机记录.md` §11 自省①）。下方示例循环用 `mb_flush()` 覆盖两个点。
 
 ```c
 #include "et_modbus.h"
@@ -932,25 +936,141 @@ static uint8_t rd_cb(void *u, uint8_t fc, uint16_t a, uint16_t q, uint8_t *d)
     return 0;
 }
 
+/* 应答发送点: **应答有两条产生路径, 两处都必须复查** ——
+ *   ① feed 快路径: 已知功能码收齐即处理(低延迟)
+ *   ② tick 静默路径: 未知功能码/畸形帧由帧间静默界定后才处理
+ * 只在 feed 之后复查会漏掉 ② —— 现象是"未知功能码请求无任何应答"(v2.4 板上踩过)。*/
+static void mb_flush(void)
+{
+    uint32_t len = 0u;
+    const uint8_t *resp = et_modbus_response(&mb, &len);
+    if (resp != NULL) {
+        uart_write(resp, len);
+        (void)et_modbus_feed(&mb, NULL, 0u);     /* 排空粘包中的后续帧 */
+    }
+}
+
 et_modbus_cfg_t cfg = { .slave_addr = 17u, .silence_ms = 4u,   /* 3.5字符@115200 ≈ 0.3ms, 取 4 */
                         .rd = rd_cb, .wr = wr_cb };
 et_modbus_init(&mb, &cfg, rx, sizeof(rx), tx, sizeof(tx));
 
-/* 主循环: 排空 ringbuf → 喂从站 → 有应答就发 */
-uint8_t chunk[32];
-uint32_t n = et_ringbuf_read(&rb, chunk, sizeof(chunk));
-if (n > 0u) { (void)et_modbus_feed(&mb, chunk, n); }
-{
-    uint32_t len = 0u;
-    const uint8_t *resp = et_modbus_response(&mb, &len);
-    if (resp != NULL) { uart_write(resp, len); (void)et_modbus_feed(&mb, NULL, 0u); }
+/* 主循环: 排空 ringbuf → 喂从站 → 送应答 → tick → **再送应答** */
+for (;;) {
+    uint8_t chunk[32];
+    uint32_t n = et_ringbuf_read(&rb, chunk, sizeof(chunk));
+    if (n > 0u) { (void)et_modbus_feed(&mb, chunk, n); }
+    mb_flush();                                  /* 路径 ① */
+    et_modbus_tick(&mb, port_tick_get_ms());     /* 每轮调用: 静默界定残帧 */
+    mb_flush();                                  /* 路径 ②: tick 产生的应答必须送出 */
 }
-et_modbus_tick(&mb, port_tick_get_ms());   /* 每轮调用: 静默界定 */
 ```
 
 **静默阈值换算**：`silence_ms ≈ 3.5 × 10 × 1000 / 波特率`（11 位/字符：1 起始+8 数据+1 校验+1 停止）。115200 → ≈0.30ms（实取 ≥1ms 整数，如 4ms）；9600 → ≈3.6ms（取 5ms）。**寄存器值域语义由应用钩子决定**（保持/输入、32 位组合、浮点寄存器均不在库级封装）；kv 直通配方见 [11.13](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)。
 
-单测 23 例（0x03/04/06/10 正常流、异常 0x01/0x02/0x03、CRC 坏/地址不符静默、广播写不应答、广播读忽略、分片、粘包两帧、静默丢弃重同步、qty 边界 125/123、txcap 不足、统计、多实例，`test/test_modbus.c`）；自检示例 [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`）；主站工具 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 回环自测 / 串口模式）。
+单测 23 例（0x03/04/06/10 正常流、异常 0x01/0x02/0x03、CRC 坏/地址不符静默、广播写不应答、广播读忽略、分片、粘包两帧、静默丢弃重同步、qty 边界 125/123、txcap 不足、统计、多实例，`test/test_modbus.c`）；自检示例 [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`，v2.5 起含 **tick 静默路径应答**的两个 flush 点断言）；主站工具 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 回环自测 / `--slave` 从站仿真 / 串口模式）。
+
+### 5.8 et_modbus_master Modbus RTU 主站 (v2.5)
+
+与 5.7 从站**配对**的主站侧：发起 `0x03/0x04` 读、`0x06/0x10` 写，处理**应答超时重发**、**异常码上报**、**迟到/陈旧字节隔离**。与从站**共享协议常量**（本头文件 `#include "et_modbus.h"`，功能码/异常码/数量边界/ADU 上限一律 `ET_MODBUS_*` 引用，禁止复制数值；模块开关同为 `ET_MODULE_MODBUS`，沿 `et_xmodem_tx` 共享开关先例）。
+
+**职责边界（HC-4，先读这条）**：本模块**只做单事务状态机** —— 一次一个在途请求。
+**不内置**多从站轮询表、**不内置**调度器、**不内部取时基**（`now_ms` 由调用方注入）、**不**按波特率自动换算超时。
+多从站轮询 = 本模块 × `et_sched` × 应用侧从站表 —— 见 [11.14](#1114-主站轮询多从站与-et_sched-协作v25)。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_modbus_master_init(m, cfg, rxbuf, rxcap, txbuf, txcap)` | 🏠MAIN | `addr` ≤ 247（0 = 广播，仅写）；`resp_timeout_ms` > 0；`rxcap`/`txcap` 均 ≥ `ET_MODBUS_ADU_MAX`（硬底线） |
+| `bool et_modbus_master_read(m, fc, reg, qty)` | 🏠MAIN | `fc` 仅 `ET_MODBUS_FC_READ_HOLDING`/`READ_INPUT`；`qty` 1~`ET_MODBUS_RD_QTY_MAX`；广播读无效 |
+| `bool et_modbus_master_write(m, fc, reg, vals, qty)` | 🏠MAIN | `fc` 仅 `ET_MODBUS_FC_WRITE_SINGLE`（须 `qty==1`）/`WRITE_MULTIPLE`；`qty` 1~`ET_MODBUS_WR_QTY_MAX`；`vals` 每寄存器 2B 高字节在前 |
+| `const uint8_t *et_modbus_master_tx(m, &len)` | 读 | 取**待上线**请求（含 CRC）；返回非 NULL 即"必须上线" |
+| `void et_modbus_master_sent(m, now_ms)` | 🏠MAIN | 声明已上线 → 起等应答计时；广播写在此直接进终态 `ET_MB_OK` |
+| `uint32_t et_modbus_master_feed(m, data, len)` | 🏠MAIN | 喂接收字节，返回消耗的完整应答帧数（0/1） |
+| `et_mb_status_t et_modbus_master_poll(m, now_ms)` | 🏠MAIN | 周期调用：超时 → 置重发（`tx()` 会再返回同一请求）或进终态 |
+| `uint16_t et_modbus_master_result(m, &qty)` | 读 | 读事务**首个寄存器值**；`*qty` 收寄存器个数 |
+| `const uint8_t *et_modbus_master_data(m, &len)` | 读 | 读事务应答的寄存器原始字节（BE16 对），供多寄存器逐值取用 |
+| `uint8_t et_modbus_master_exc(m)` | 读 | 最近一次异常应答的异常码 |
+| `void et_modbus_master_stats(m, &st)` | 读 | 统计快照（口径见下） |
+
+**状态机**（`et_mb_status_t`）：
+
+| 状态 | 含义 |
+|---|---|
+| `ET_MB_IDLE` | 无在途事务（初始态） |
+| `ET_MB_BUSY` | 请求已组帧/已上线，等应答（或待重发） |
+| `ET_MB_OK` | 收到正常应答；广播写在 `sent()` 后立即置此态 |
+| `ET_MB_EXC` | 收到异常应答（`fc\|0x80`），**不重试**；异常码见 `_exc()` |
+| `ET_MB_TIMEOUT` | 超时且重发耗尽 |
+| `ET_MB_REJECT` | 组帧参数非法/未初始化 —— `read`/`write` 直接返回 `false`（该值供状态语义完备性保留，不作 `poll` 返回值） |
+
+**四步事务流程**（调用方视角）：
+
+```c
+#include "et_modbus_master.h"
+
+static uint8_t rx[ET_MODBUS_ADU_MAX], tx[ET_MODBUS_ADU_MAX];
+static et_modbus_master_t m;
+
+et_modbus_master_cfg_t cfg = { .addr = 17u,
+                               .resp_timeout_ms = 50u,   /* 见下方换算 */
+                               .retry_max = 2u };
+et_modbus_master_init(&m, &cfg, rx, sizeof(rx), tx, sizeof(tx));
+
+/* ① 组帧 */
+if (et_modbus_master_read(&m, ET_MODBUS_FC_READ_HOLDING, 0u, 4u)) {
+    /* ② 上线: tx() 返回非 NULL = 有请求待发(首次组帧或超时重发) */
+    uint32_t len = 0u;
+    const uint8_t *req = et_modbus_master_tx(&m, &len);
+    if (req != NULL) { uart_write(req, len); et_modbus_master_sent(&m, port_tick_get_ms()); }
+}
+
+/* ③ 收到字节就喂 */
+uint32_t n = et_ringbuf_read(&rb, chunk, sizeof(chunk));
+if (n > 0u) { (void)et_modbus_master_feed(&m, chunk, n); }
+
+/* ④ 周期推进(主循环每轮): 若 tx() 又非 NULL, 说明要重发 */
+et_mb_status_t st = et_modbus_master_poll(&m, port_tick_get_ms());
+if (st == ET_MB_BUSY) {
+    uint32_t len = 0u;
+    const uint8_t *req = et_modbus_master_tx(&m, &len);
+    if (req != NULL) { uart_write(req, len); et_modbus_master_sent(&m, port_tick_get_ms()); }
+} else if (st == ET_MB_OK) {
+    uint16_t qty = 0u, first = et_modbus_master_result(&m, &qty);
+    uint32_t dlen = 0u;
+    const uint8_t *d = et_modbus_master_data(&m, &dlen);   /* 逐值取用 */
+} else if (st == ET_MB_EXC) {
+    uint8_t code = et_modbus_master_exc(&m);               /* 异常码上报 */
+}
+```
+
+**超时阈值换算**（调用方负责，库不内部取时基）：`resp_timeout_ms ≈ (请求帧长 + 应答帧长) × 字符时间 + 从站周转裕量`，
+其中字符时间 = `11 × 1000 / 波特率` ms（11 位/字符）。115200 → 约 `0.1ms/字符`；一次 qty=4 的读往返约 21 字节 ≈ 2.2ms，
+取 **20~50ms** 留从站处理裕量；9600 → 约 `1.15ms/字符`，同例约 24ms，取 **100~200ms**。**阈值过小 = 误判超时并重发风暴**。
+
+**重发与隔离语义**：
+
+- 超时 → **重发同一请求** ≤ `cfg.retry_max` 次（重发字节与首帧**逐字节相同，含 CRC**）→ 仍无应答则 `ET_MB_TIMEOUT`；
+- 应答**地址不符 / CRC 坏 / 功能码不符 / 回显不符 / 长度不符** → 按已确定的帧边界**整帧丢弃**并计数，**继续等至超时**（不立即失败）；
+- 异常应答（`fc|0x80`）→ `ET_MB_EXC`，**不重试**（重试不会改变从站的拒绝理由）；
+- 广播写（`addr=0`）→ `sent()` 后立即 `ET_MB_OK`，**不等应答**（协议规定广播不应答）；广播**读**在 `read()` 阶段即被拒绝；
+- **终态后的迟到/陈旧字节 → 丢弃并计入 `late`，不得污染下一事务**：非 BUSY 状态喂入的字节一律不入缓冲，且每次 `read`/`write` 发起新事务时接收缓冲清零。
+
+**统计口径**（`et_modbus_master_stats_t`，与 API 一并固定并测）：
+
+| 字段 | 口径 |
+|---|---|
+| `requests` | 已上线请求帧数，**含重发**（每次 `sent()` 计一次） |
+| `responses` | CRC 通过且地址/功能码/回显匹配的**正常**应答数（异常应答不计入） |
+| `exceptions` | 异常应答数（终态 `ET_MB_EXC` 的成因） |
+| `timeouts` | 终态为 `ET_MB_TIMEOUT` 的**事务数**（不是超时次数） |
+| `retries` | 重发次数（不含首帧） |
+| `crc_err` | CRC 失败被丢弃的候选帧数 |
+| `addr_mismatch` | 地址不符被丢弃的候选帧数 |
+| `late` | 非 BUSY 状态下被丢弃的**喂入突发数**（陈旧字节） |
+| `discarded` | 其它丢弃：功能码不符/长度非法/回显不符/缓冲溢出 |
+
+单测 25 例（`test/test_modbus_master.c`：0x03/0x04/0x06/0x10 正常流、分片应答、超时重发耗尽与重发后成功、异常不重试、广播写不等应答、迟到不污染、CRC 坏/地址不符丢弃、垃圾重同步、qty 边界、缓冲下限、多实例、统计累积、未初始化拒绝）；
+自检示例 [`examples/ex_modbus_master.c`](../examples/ex_modbus_master.c)（内置确定性模拟从站，含丢首应答驱动重发与异常路径，`make ex`）；
+跨实现对拍：C 库组帧字节 == Python 工具组帧字节（`11 03 00 00 00 04 46 99` / `11 06 00 02 12 34 27 ED` / `11 10 00 04 00 03 06 00 6F 00 DE 01 4D EC 53` / `11 83 02 C1 34` / `00 06 00 05 BE EF A8 36`，见 `tools/modbus_master.py --selftest`）。
 
 ---
 
@@ -1168,15 +1288,36 @@ while (1) {
 
 便捷宏：`ET_LOGT / ET_LOGD / ET_LOGI / ET_LOGW / ET_LOGE(tag, fmt, ...)`。
 
-格式化支持：`%d %i %u %x %X %c %s %p %%` 及 `l/ll` 修饰（如 `%llu`）。不支持浮点与域宽。
+**格式化支持（v2.5 加固，缺陷清偿）：**
+
+| 类别 | 规格 | 行为 |
+|---|---|---|
+| 支持 | `%d %i %u %x %X %c %s %p %%` | 完整格式化 |
+| 修饰 | 标志 `-` `0` `+` 空格 `#`；域宽（十进制，含 `*` 从实参取）；精度（`.N` / `.*`）；长度 `h` `hh` `l` `ll` `z` | 语义与 C `printf` 一致：`%04u` 补零、`%-5u` 左对齐、`%+d`/`% d` 符号、`%#x` 的 `0x` 前缀、`%.3d` 最少位数、`%.Ns`/`%.*s` 截断、`%lld`/`%zu`/`%hu` 长度 |
+| 已知不支持（**按 C 语义消费实参** + 可见占位） | `%o %f %F %e %E %g %G %a %A`（按 `double` 消费）、`%n`（消费指针，**禁写内存**）、`%lc` / `%ls` | 输出可见占位 `<?转换字符>`，如 `%f` → `<?f>`、`%lc` → `<?lc>` |
+| 未知转换字符（**不消费实参**，例外） | 非上述集合，如 `%y`、`%jd` | 输出 `<?y>`、`<?jd>` 形态占位；**不消费** |
+
+**域宽/精度上限**：`ET_LOG_FIELD_MAX`（默认 255，可 `-D` 覆盖）—— 规格里的域宽与精度超过它即按上限输出，防止 `%9999u` 在阻塞式 `port_putc` 上刷出上万字符。
+
+**v2.5 修的是什么（重要）**：v2.4 及以前，不支持的规格（如 `%02x`、`%.*s`）会**原样回显字面量并错位消费后续实参** ——
+`ET_LOGI("p", "addr=0x%02x (kv regs %u..%u)", 17u, 1000u, 1003u)` 曾输出 `addr=0x%02x (kv regs 17..1000)`
+（`%02x` 不吃实参，后续 `%u` 整体前移一格，板侧已咬人）。v2.5 起该行为被**清除**：规格序列被完整解析、
+实参消费与 C 语义一致，不支持的规格给可见占位。**日志里出现 `<?...>` 即表示该规格不被支持**，请改用受支持规格。
+
+**浮点仍不格式化**：`%f/%e/%g` 只保证"可见占位 + 实参不错位"；需要打印浮点请先在应用侧定点化（如 `%d` 打 Q10 值）。
 
 ```c
 et_log_set_level(ET_LOG_LEVEL_INFO);       /* 发布可改 ERROR */
 
 ET_LOGI("uart", "rx %u bytes", n);         /* [12345][I][uart] rx 12 bytes */
+ET_LOGI("kv", "reg %04u = 0x%02x", i, v);  /* 域宽/补零: v2.5 起可用 */
+ET_LOGI("sc", "%04u-%02u-%02u %02u:%02u:%02u", y, mo, d, h, mi, s);
 ET_LOGE("net", "crc mismatch");
+ET_LOGD("dbg", "len=%zu head=%.*s", (size_t)len, 8, buf);   /* 长度修饰 + 精度截断 */
 et_log_hexdump(ET_LOG_LEVEL_DEBUG, "rx", buf, len);
 ```
+
+单测 `test/test_log.c` 24 例（v2.5 起：每条规格用例**后随哨兵实参**断言取值正确以检出错位，受支持规格与 host `snprintf` **逐字节对拍**，不支持规格的占位与不错位、域宽上限、`%%`/尾部 `%` 边界）。
 
 编译期一刀切示例：`-DET_LOG_MAX_LEVEL=4`（仅保留 ERROR 及以上）。
 
@@ -1744,4 +1885,111 @@ static uint8_t kv_wr(void *u, uint8_t fc, uint16_t a, uint16_t q, const uint8_t 
 
 **注意**：① kv 写是 flash 追加写（毫秒级阻塞），连续多寄存器写会放大耗时——`max_attempts`/上位机节奏要留裕量，必要时用 `et_wdt_guard` 包裹；② 写失败（空间不足）返回 `0x03` 让上位机感知，别静默丢弃；③ 32 位参数用两个寄存器时**约定高低字顺序**（建议高字在前）并写进设备文档；④ **掉电验证**：写后断电重启，读回值应保持（kv 掉电自愈语义见 6.1；真机走单见 `移植stm32实机记录.md` §11）。
 
-**可执行载体**：Modbus 从站全路径自检 = [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`）；主站侧 = [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 不接串口自测）。
+**32 位参数组合读写（最小说明，v2.5 P3-3；库**不做**库级封装）**：
+① **约定高低字顺序**（建议高字在前）并写进设备文档——两侧不一致是现场最常见的"值翻 65536 倍"类故障；
+② 读：`qty=2` 一次读回两个寄存器，在钩子里 `v = ((uint32_t)hi << 16) | lo`（或反向，按①）；
+③ 写：`0x10` 多写一次写两个寄存器，**注意该组合不是原子操作**——上位机若需一致性快照，应读两遍比对或由应用加版本号寄存器；
+④ 单写 `0x06` 只能写一个寄存器，**32 位值必须用 `0x10`**（两次 `0x06` 会被对端观察到中间态）。
+
+**可执行载体**：Modbus 从站全路径自检 = [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`）；主站侧 = [`examples/ex_modbus_master.c`](../examples/ex_modbus_master.c)（内置模拟从站，`make ex`）与 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 不接串口自测 / `--slave` 作 PC 从站仿真器）。
+
+### 11.14 主站轮询多从站(与 et_sched 协作，v2.5)
+
+场景：一台 MCU 作为主站轮询若干从站(电表/变频器/传感器)。**库不提供调度器与从站表**
+（HC-4：`et_modbus_master` 只做单事务）——本配方给出应用侧的最小协作范式：
+**`et_sched` 周期任务 + 从站表 + 一次一个在途事务**。
+
+```c
+#include "et_modbus_master.h"
+#include "et_sched.h"
+
+#define POLL_PERIOD_MS  20u        /* 轮询节拍: 须 ≥ 单事务最坏耗时(超时×(重发+1)) */
+#define SLAVE_N         3u
+
+typedef struct {
+    uint16_t addr;
+    uint16_t reg;
+    uint16_t qty;
+    uint16_t last[4];              /* 最近一次读回值 */
+    uint32_t err;                  /* 连续失败次数 */
+} poll_slot_t;
+
+static poll_slot_t slot[SLAVE_N] = {
+    { 1u, 0u, 4u, { 0 }, 0u },
+    { 2u, 10u, 2u, { 0 }, 0u },
+    { 17u, 0u, 4u, { 0 }, 0u },
+};
+
+static uint8_t  rx[ET_MODBUS_ADU_MAX], tx[ET_MODBUS_ADU_MAX];
+static et_modbus_master_t m;
+static uint8_t  cur;               /* 当前轮询下标 */
+static bool     awaiting;          /* 有在途事务 */
+
+/* 任务: 每 POLL_PERIOD_MS 推进一次 —— 有在途就推进, 空闲就发起下一从站 */
+static void poll_task(void *arg)
+{
+    uint32_t now = port_tick_get_ms();
+    et_mb_status_t st;
+
+    (void)arg;
+    if (!awaiting) {
+        et_modbus_master_cfg_t cfg = { slot[cur].addr, 50u, 2u };
+
+        (void)et_modbus_master_init(&m, &cfg, rx, sizeof(rx), tx, sizeof(tx));
+        if (et_modbus_master_read(&m, ET_MODBUS_FC_READ_HOLDING,
+                                  slot[cur].reg, slot[cur].qty)) {
+            awaiting = true;
+        } else {
+            cur = (uint8_t)((cur + 1u) % SLAVE_N);   /* 组帧失败: 跳过该从站 */
+        }
+        return;
+    }
+
+    st = et_modbus_master_poll(&m, now);
+    if (st == ET_MB_BUSY) {
+        uint32_t len = 0u;
+        const uint8_t *req = et_modbus_master_tx(&m, &len);   /* 非 NULL = 要(重)发 */
+        if (req != NULL) {
+            uart_write(req, len);
+            et_modbus_master_sent(&m, now);
+        }
+        return;
+    }
+
+    /* 终态: 取结果或计错, 然后换下一个从站 */
+    if (st == ET_MB_OK) {
+        uint32_t dlen = 0u;
+        const uint8_t *d = et_modbus_master_data(&m, &dlen);
+        uint16_t i;
+        for (i = 0u; (i < slot[cur].qty) && (d != NULL) && ((2u * i + 1u) < dlen); i++) {
+            slot[cur].last[i] = (uint16_t)(((uint16_t)d[2u * i] << 8) | d[2u * i + 1u]);
+        }
+        slot[cur].err = 0u;
+    } else {
+        slot[cur].err++;                 /* ET_MB_TIMEOUT / ET_MB_EXC 统一计错 */
+    }
+    awaiting = false;
+    cur = (uint8_t)((cur + 1u) % SLAVE_N);
+}
+
+/* 主循环: RX 入 ringbuf, 喂给在途事务; 调度器驱动轮询任务 */
+for (;;) {
+    uint8_t chunk[32];
+    uint32_t n = et_ringbuf_read(&rb, chunk, sizeof(chunk));
+    if ((n > 0u) && awaiting) { (void)et_modbus_master_feed(&m, chunk, n); }
+    et_sched_poll_once();
+    /* tickless 见 11.8 */
+}
+```
+
+**注意**：① **一次一个在途事务**是硬约束——`read`/`write` 在 `ET_MB_BUSY` 期间返回 `false`，
+所以轮询表必须"发一个、等终态、再发下一个"（上例用 `awaiting` 表达）；
+② `POLL_PERIOD_MS` 必须 ≥ 单事务最坏耗时（`resp_timeout_ms × (retry_max + 1)`），否则任务会
+在上一个事务未终结时反复调用 `poll`（无害但无意义）——**超时阈值见 5.8 的换算**；
+③ 每个从站用**独立的 `et_modbus_master_t`**（上例为简化用同一实例逐站重 init），
+因为 `cfg.addr` 属于实例；多实例并发见 5.8 的多实例单测；
+④ 连续 `err` 超阈值时应降级（拉长该从站轮询间隔/告警），而不是提高重发次数——
+重发解决不了从站掉线；
+⑤ **库不提供**：从站表、优先级、轮询调度、告警策略 —— 这些是应用职责（HC-4）。
+
+**可执行载体**：主站单事务全路径自检 = [`examples/ex_modbus_master.c`](../examples/ex_modbus_master.c)（内置模拟从站，`make ex`）；PC 侧从站仿真器 = [`tools/modbus_master.py --slave`](../tools/modbus_master.py)。

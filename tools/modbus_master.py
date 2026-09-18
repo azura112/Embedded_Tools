@@ -6,8 +6,16 @@
 0x03/0x04 读、0x06/0x10 写; 异常 0x01/0x02/0x03; CRC16-MODBUS **低字节在前**。
 
 用法:
-  回环自测 (不接串口, 内置从站仿真器逐条验证本工具的编解码/CRC/异常路径):
+  回环自测 (不接串口, 内置从站仿真器逐条验证本工具的编解码/CRC/异常/注入路径):
     python tools/modbus_master.py --selftest
+
+  **从站仿真模式 (v2.5)**: PC 扮演从站, 板上 et_modbus_master 作主站真机走单 ——
+  板侧走单不再依赖第二台设备(绕开 USART2 独立口阻塞):
+    python tools/modbus_master.py --port COM12 --slave
+    python tools/modbus_master.py --port COM12 --slave --slave-drop 2      # 丢前 2 个应答
+    python tools/modbus_master.py --port COM12 --slave --slave-exc 0x02    # 强制异常
+    python tools/modbus_master.py --port COM12 --slave --slave-regs 1,2,3,4
+    python tools/modbus_master.py --port COM12 --slave --slave-frames 8    # 处理 8 帧后退出
 
   真机读寄存器 (板上从站 addr=17):
     python tools/modbus_master.py --port COM12 --read 0 --qty 4
@@ -82,16 +90,30 @@ def parse_response(frame, addr, func):
     return ("write", None)
 
 
-# ===================== 内置从站仿真器 (--selftest 用) =====================
+# ===================== 内置从站仿真器 (--selftest / --slave 共用) =====================
 class LoopbackSlave:
-    """最小从站: 与 et_modbus 语义对齐(供本工具自测, 非库实现)"""
+    """最小从站: 与 et_modbus 语义对齐(供本工具自测 + 串口从站仿真)
 
-    def __init__(self, addr=0x11, n_regs=16):
+    注入能力(v2.5):
+      drop: 丢弃前 N 个应答(驱动对端主站的超时重发路径)
+      exc : 强制返回该异常码(驱动对端主站的异常路径)
+      regs: 保持寄存器初值(配合 --slave-regs)
+    """
+
+    def __init__(self, addr=0x11, n_regs=16, regs=None, drop=0, exc=None):
         self.addr = addr
-        self.hold = [i + 1 for i in range(n_regs)]
-        self.n = n_regs
+        self.n = n_regs if regs is None else max(n_regs, len(regs))
+        self.hold = [i + 1 for i in range(self.n)]
+        if regs:
+            for i, v in enumerate(regs):
+                if i < self.n:
+                    self.hold[i] = v & 0xFFFF
+        self.drop = drop                    # 丢弃前 N 个应答
+        self.exc = exc                      # 强制异常码(None = 不注入)
         self.crc_err = 0
         self.mismatch = 0
+        self.dropped = 0
+        self.served = 0
 
     def handle(self, frame):
         if not check_crc(frame):
@@ -103,6 +125,14 @@ class LoopbackSlave:
         if frame[0] == 0:                       # 广播: 执行写, 不应答
             self._exec(frame, reply=False)
             return None
+        if self.drop > 0:                       # 丢包注入: 本次不应答
+            self.drop -= 1
+            self.dropped += 1
+            return None
+        if self.exc is not None:                # 异常注入
+            self.served += 1
+            return build_frame(self.addr, frame[1] | 0x80, [self.exc])
+        self.served += 1
         return self._exec(frame, reply=True)
 
     def _exec(self, frame, reply):
@@ -183,6 +213,56 @@ def selftest():
     chk(sl.handle(build_frame(0x22, FC_RD_HOLDING, [0, 0, 0, 1])) is None
         and sl.mismatch == 1, "addr mismatch silent")
 
+    # 4. 从站仿真器注入能力 (v2.5 P1-9: --slave 模式的同一内核)
+    sd = LoopbackSlave(0x11, drop=2)
+    chk(sd.handle(build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 1])) is None
+        and sd.dropped == 1, "slave-drop: 1st reply dropped")
+    chk(sd.handle(build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 1])) is None
+        and sd.dropped == 2, "slave-drop: 2nd reply dropped")
+    r = sd.handle(build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 1]))
+    chk(r is not None and parse_response(r, 0x11, FC_RD_HOLDING) == ("read", [1]),
+        "slave-drop: 3rd reply served")
+    chk(sd.dropped == 2, "slave-drop: counter exhausted")
+
+    se = LoopbackSlave(0x11, exc=0x02)
+    r = se.handle(build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 1]))
+    chk(parse_response(r, 0x11, FC_RD_HOLDING) == ("exc", 0x02),
+        "slave-exc: forced exception 0x02")
+    r = se.handle(build_frame(0x11, FC_WR_SINGLE, [0, 2, 0x12, 0x34]))
+    chk(parse_response(r, 0x11, FC_WR_SINGLE) == ("exc", 0x02),
+        "slave-exc: applies to write too")
+
+    sr = LoopbackSlave(0x11, regs=[100, 200, 300, 400])
+    r = sr.handle(build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 4]))
+    chk(parse_response(r, 0x11, FC_RD_HOLDING) == ("read", [100, 200, 300, 400]),
+        "slave-regs: initial values applied")
+
+    # 5. 请求帧提取(--slave 串口路径的核心): 变长 0x10 / 广播 / 抗噪声
+    rq = build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 4])
+    chk(extract_request(rq, 0x11) == (rq, 8), "extract_request: 0x03 fixed len")
+    rq10 = build_frame(0x11, FC_WR_MULTIPLE, [0, 1, 0, 2, 4, 0, 7, 0, 9])
+    chk(extract_request(rq10, 0x11) == (rq10, 13), "extract_request: 0x10 variable len")
+    rqb = build_frame(0, FC_WR_SINGLE, [0, 3, 0, 0x21])
+    chk(extract_request(rqb, 0x11) == (rqb, 8), "extract_request: broadcast accepted")
+    noisy = b"\x00\xff" + rq
+    got = extract_request(noisy, 0x11)
+    chk(got is not None and got[0] == rq and got[1] == len(noisy),
+        "extract_request: resync past noise")
+    chk(extract_request(rq[:5], 0x11) is None, "extract_request: partial -> None")
+
+    # 6. 跨实现对拍: C 库(ex_modbus_master / 板上走单)记录的字节 == python 组帧
+    chk(build_frame(0x11, FC_RD_HOLDING, [0, 0, 0, 4]).hex().upper()
+        == "1103000000044699", "cross-impl: read 0..3 frame")
+    chk(build_frame(0x11, FC_WR_SINGLE, [0, 2, 0x12, 0x34]).hex().upper()
+        == "11060002123427ED", "cross-impl: write single reg2")
+    chk(build_frame(0x11, FC_WR_MULTIPLE,
+                    [0, 4, 0, 3, 6, 0, 0x6F, 0, 0xDE, 1, 0x4D]).hex().upper()
+        == "11100004000306006F00DE014DEC53", "cross-impl: write multiple 4..6")
+    chk(build_frame(0x11, FC_RD_HOLDING | 0x80, [0x02]).hex().upper()
+        == "118302C134", "cross-impl: exception reply 0x02")
+    chk(build_frame(0, FC_WR_SINGLE, [0, 5, 0xBE, 0xEF]).hex().upper()
+        == "000600 05BEEFA836".replace(" ", ""), "cross-impl: broadcast write reg5")
+
     print("[modbus_master --selftest] %s" % ("PASS" if fails == 0 else "FAIL"))
     return 0 if fails == 0 else 2
 
@@ -216,6 +296,96 @@ def extract_frame(buf, addr):
     return None
 
 
+# ===================== 从站仿真模式 (--slave, v2.5 P1-9) =====================
+def extract_request(buf, slave_addr):
+    """从接收缓冲提取一个 CRC 有效的完整**请求**帧; 返回 (frame, end) 或 None
+
+    与 extract_frame 的差别: 请求侧 0x10 是变长(9 + bytecount), 且需接受
+    广播地址 0。`end` = 该帧在 buf 中的结束下标(调用方据此裁掉已消费字节)。
+    """
+    n = len(buf)
+    for i in range(n):
+        if buf[i] not in (0, slave_addr):
+            continue
+        f = buf[i:]
+        if len(f) < 4:
+            continue
+        fc = f[1]
+        if fc in (FC_RD_HOLDING, FC_RD_INPUT, FC_WR_SINGLE):
+            need = 8
+        elif fc == FC_WR_MULTIPLE:
+            if len(f) < 7:
+                continue
+            need = 9 + f[6]
+        else:
+            need = 4                            # 未知功能码: 最小帧
+        if len(f) < need:
+            continue
+        cand = f[:need]
+        if check_crc(cand):
+            return cand, i + need
+    return None
+
+
+def slave_run(args):
+    """串口从站仿真器: 监听请求并应答(可注入丢包/异常), 供板上主站真机走单
+
+    板侧(et_modbus_master)发出的请求帧在此被解析并应答 —— 走单不再依赖第二台
+    设备(绕开 v2.4 的 USART2 独立口阻塞, 见交付文档 CO-2/CO-11)。
+    """
+    try:
+        import serial
+    except ImportError:
+        print("需要 pyserial: pip install pyserial", file=sys.stderr)
+        return 2
+
+    regs = None
+    if args.slave_regs:
+        regs = [int(x, 0) for x in args.slave_regs.split(",")]
+    sl = LoopbackSlave(addr=args.addr, n_regs=args.slave_nregs,
+                       regs=regs, drop=args.slave_drop, exc=args.slave_exc)
+    limit = args.slave_frames
+
+    print("[slave] addr=0x%02X nregs=%d regs=%s drop=%d exc=%s frames=%s"
+          % (sl.addr, sl.n,
+             ",".join(str(v) for v in sl.hold[:min(8, sl.n)]),
+             sl.drop, ("0x%02X" % sl.exc) if sl.exc is not None else "-",
+             limit if limit else "until-interrupt"))
+
+    with serial.Serial(args.port, args.baud, timeout=0.05) as ser:
+        time.sleep(0.2)
+        ser.reset_input_buffer()
+        buf = bytearray()
+        try:
+            while (limit == 0) or (sl.served + sl.dropped < limit):
+                chunk = ser.read(64)
+                if not chunk:
+                    continue
+                buf += chunk
+                while True:
+                    r = extract_request(bytes(buf), sl.addr)
+                    if r is None:
+                        break
+                    frame, end = r
+                    del buf[:end]
+                    resp = sl.handle(frame)
+                    if resp is None:
+                        print("  req %s -> <无应答%s>"
+                              % (frame.hex(" ").upper(),
+                                 "(丢包注入)" if sl.dropped else "(广播)"))
+                    else:
+                        print("  req %s -> %s"
+                              % (frame.hex(" ").upper(), resp.hex(" ").upper()))
+                        ser.write(resp)
+                        ser.flush()
+        except KeyboardInterrupt:
+            pass
+
+    print("[slave] 统计: served=%d dropped=%d crc_err=%d addr_mismatch=%d"
+          % (sl.served, sl.dropped, sl.crc_err, sl.mismatch))
+    return 0
+
+
 def transact(ser, tx, addr, func, timeout, verbose):
     if verbose:
         print("  tx: %s" % tx.hex(" ").upper())
@@ -244,6 +414,18 @@ def main():
     ap = argparse.ArgumentParser(description="Modbus RTU slave walkthrough tool "
                                              "(paired with et_modbus)")
     ap.add_argument("--selftest", action="store_true", help="回环自测(不接串口)")
+    ap.add_argument("--slave", action="store_true",
+                    help="从站仿真模式(v2.5): 监听串口并应答主站请求")
+    ap.add_argument("--slave-drop", type=int, default=0,
+                    help="从站仿真: 丢弃前 N 个应答(驱动对端超时重发)")
+    ap.add_argument("--slave-exc", type=lambda s: int(s, 0), default=None,
+                    help="从站仿真: 强制返回该异常码(如 0x02)")
+    ap.add_argument("--slave-regs", default=None,
+                    help="从站仿真: 保持寄存器初值, 逗号分隔(如 1,2,3,4)")
+    ap.add_argument("--slave-nregs", type=int, default=16,
+                    help="从站仿真: 保持寄存器个数 (默认 16)")
+    ap.add_argument("--slave-frames", type=int, default=0,
+                    help="从站仿真: 处理 N 个请求后退出 (0 = 直到 Ctrl-C)")
     ap.add_argument("--port", help="串口名 (如 COM12 / /dev/ttyUSB0)")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--addr", type=lambda s: int(s, 0), default=0x11,
@@ -266,6 +448,12 @@ def main():
 
     if args.selftest:
         return selftest()
+
+    if args.slave:
+        if not args.port:
+            print("需要 --port (从站仿真模式)", file=sys.stderr)
+            return 2
+        return slave_run(args)
 
     if not args.port:
         print("需要 --port (或 --selftest)", file=sys.stderr)

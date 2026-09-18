@@ -37,7 +37,7 @@ cd Embedded_Tools
 mingw32-make test        # 或 make test
 ```
 
-**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **432** 例。
+**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **474** 例。
 
 ```sh
 mingw32-make test-g4     # 双几何回归 (G474 2KB 页几何; storage 布局改动必跑)

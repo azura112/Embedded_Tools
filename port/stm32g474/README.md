@@ -80,6 +80,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v2.2 | 20264 | 28 | 740 | 默认裁剪（终值）；+et_medfilt +et_sched 耗时统计字段 |
 | v2.3 | 20736 | 28 | 740 | 默认裁剪（终值）；+et_hist |
 | v2.4 | 21608 | 28 | 740 | 默认裁剪（终值）；+et_modbus（demo 未调用，板侧 CubeMX demo 已挂从站另记 37428B） |
+| v2.5 | 23848 | 28 | 740 | 默认裁剪（终值）；+et_modbus_master 入 glob；**et_log 规格解析加固** + demo 改域宽格式串（删 24 行逐位拼字符绕行）。板侧 CubeMX 工程本版**仅同步 Core/et 并交叉编译（0 warning）**，**未上板**（执行期板未接入），故无 CubeMX 侧体积读数 |
 
 ## 烧录与运行
 

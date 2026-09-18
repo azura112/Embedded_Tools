@@ -51,7 +51,7 @@
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
-- `ET_VERSION_MINOR 5`
+- `ET_VERSION_MINOR 4`
 - `ET_VERSION_PATCH 0`
 - `ET_VERSION_STR(x) ET_VERSION_STR_(x)`
 - `ET_VERSION_STRING ET_VERSION_STR(ET_VERSION_MAJOR) "." ET_VERSION_STR(ET_VERSION_MINOR) "." ET_VERSION_STR(ET_VERSION_PATCH)`
@@ -345,7 +345,7 @@
 
 - `et_log_level_t`
 
-### 宏 (18)
+### 宏 (17)
 
 - `ET_LOGD(tag, ...) ((void)0)`
 - `ET_LOGD(tag, ...) et_log_output(ET_LOG_LEVEL_DEBUG, (tag), __VA_ARGS__)`
@@ -357,7 +357,6 @@
 - `ET_LOGT(tag, ...) et_log_output(ET_LOG_LEVEL_TRACE, (tag), __VA_ARGS__)`
 - `ET_LOGW(tag, ...) ((void)0)`
 - `ET_LOGW(tag, ...) et_log_output(ET_LOG_LEVEL_WARN, (tag), __VA_ARGS__)`
-- `ET_LOG_FIELD_MAX 255u`
 - `ET_LOG_LEVEL_DEBUG 1`
 - `ET_LOG_LEVEL_ERROR 4`
 - `ET_LOG_LEVEL_INFO 2`
@@ -553,29 +552,6 @@
 - `ET_MODBUS_FC_WRITE_SINGLE 0x06u`
 - `ET_MODBUS_RD_QTY_MAX 125u`
 - `ET_MODBUS_WR_QTY_MAX 123u`
-
-## protocol/et_modbus_master.h
-
-### 函数声明 (11)
-
-- `bool et_modbus_master_init(et_modbus_master_t *m, const et_modbus_master_cfg_t *cfg, uint8_t *rxbuf, uint32_t rxcap, uint8_t *txbuf, uint32_t txcap)`
-- `bool et_modbus_master_read(et_modbus_master_t *m, uint8_t fc, uint16_t reg, uint16_t qty)`
-- `bool et_modbus_master_write(et_modbus_master_t *m, uint8_t fc, uint16_t reg, const uint16_t *vals, uint16_t qty)`
-- `const uint8_t *et_modbus_master_data(const et_modbus_master_t *m, uint32_t *len)`
-- `const uint8_t *et_modbus_master_tx(const et_modbus_master_t *m, uint32_t *len)`
-- `et_mb_status_t et_modbus_master_poll(et_modbus_master_t *m, uint32_t now_ms)`
-- `uint16_t et_modbus_master_result(const et_modbus_master_t *m, uint16_t *qty)`
-- `uint32_t et_modbus_master_feed(et_modbus_master_t *m, const uint8_t *data, uint32_t len)`
-- `uint8_t et_modbus_master_exc(const et_modbus_master_t *m)`
-- `void et_modbus_master_sent(et_modbus_master_t *m, uint32_t now_ms)`
-- `void et_modbus_master_stats(const et_modbus_master_t *m, et_modbus_master_stats_t *st)`
-
-### 类型 (4)
-
-- `et_mb_status_t`
-- `et_modbus_master_cfg_t`
-- `et_modbus_master_stats_t`
-- `et_modbus_master_t`
 
 ## protocol/et_xmodem.h
 

@@ -28,6 +28,10 @@ jobs:
         if: runner.os == 'Linux'
         run: make test-tab
 
+      - name: Run unit tests under AddressSanitizer (make test-asan, v2.5 AC-8)
+        if: runner.os == 'Linux'
+        run: make test-asan
+
       - name: API inventory consistency (tools/apidump.sh --check, v2.0)
         if: runner.os == 'Linux'
         run: sh tools/apidump.sh --check

@@ -30,7 +30,7 @@ OBJDIR  := build
 CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c core/et_map.c core/et_smap.c
 ALGO_SRC    := algorithm/et_filter.c algorithm/et_medfilt.c algorithm/et_pid.c algorithm/et_stats.c algorithm/et_hist.c algorithm/et_fsm.c
 SYS_SRC     := sys/et_stimer.c sys/et_sched.c sys/et_event.c sys/et_softclock.c sys/et_wdt.c
-PROTO_SRC   := protocol/et_crc.c protocol/et_bytes.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c protocol/et_xmodem_tx.c protocol/et_modbus.c
+PROTO_SRC   := protocol/et_crc.c protocol/et_bytes.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c protocol/et_xmodem_tx.c protocol/et_modbus.c protocol/et_modbus_master.c
 DRIVERS_SRC := drivers/et_key.c drivers/et_led.c drivers/et_spwm.c
 DEBUG_SRC   := debug/et_log.c debug/et_assert.c debug/et_shell.c debug/et_selftest.c
 STORAGE_SRC := storage/et_kv.c storage/et_bootctl.c
@@ -40,7 +40,7 @@ LIB_SRC     := $(CORE_SRC) $(ALGO_SRC) $(SYS_SRC) $(PROTO_SRC) $(DRIVERS_SRC) $(
 TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempool.c \
             test/test_list.c test/test_filter.c test/test_medfilt.c test/test_pid.c test/test_stats.c test/test_hist.c test/test_fsm.c \
             test/test_stimer.c test/test_sched.c test/test_event.c test/test_softclock.c \
-            test/test_crc.c test/test_bytes.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_modbus.c test/test_shell.c test/test_shell_hist.c \
+            test/test_crc.c test/test_bytes.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_modbus.c test/test_modbus_master.c test/test_shell.c test/test_shell_hist.c \
             test/test_key.c test/test_led.c test/test_spwm.c \
             test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c \
             test/test_selftest.c test/test_map.c test/test_smap.c test/test_shell_tab.c test/test_xmodem_tx.c test/test_main.c
@@ -87,6 +87,18 @@ $(OBJDIR)/et_tests_tab.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 	-mkdir $(OBJDIR)
 	$(CC) $(CFLAGS) -DET_SHELL_TAB=1 -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 
+# v2.5 P1-3: AddressSanitizer 构建 —— 域宽/精度上限用例(AC-8)的越界门。
+# et_log 规格解析器改动后, "超限域宽是否写越界"必须有机器证据, 不能只看输出长度。
+# CI(Linux) 常设; Windows 本机 MinGW gcc 不带 libasan, clang 的 ASan 运行时在
+# 本机初始化失败(见交付文档环境注记), 故本目标以 Linux 为准。
+ASAN_CFLAGS := $(CFLAGS) -fsanitize=address -g -fno-omit-frame-pointer
+test-asan: $(OBJDIR)/et_tests_asan.exe
+	./$(OBJDIR)/et_tests_asan.exe
+
+$(OBJDIR)/et_tests_asan.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(ASAN_CFLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+
 # host 基准 (v1.7): 数字入 docs/bench.md 须附环境注记; 查表变体单独构建
 bench: $(OBJDIR)/bench.exe
 	./$(OBJDIR)/bench.exe
@@ -115,13 +127,15 @@ EX1_SRC := examples/ex_pid_loop.c
 EX2_SRC := examples/ex_kv_backup.c
 EX3_SRC := examples/ex_upgrade_flow.c
 EX4_SRC := examples/ex_modbus_slave.c
+EX5_SRC := examples/ex_modbus_master.c
 
 .PHONY: ex
-ex: $(OBJDIR)/ex_pid_loop.exe $(OBJDIR)/ex_kv_backup.exe $(OBJDIR)/ex_upgrade_flow.exe $(OBJDIR)/ex_modbus_slave.exe
+ex: $(OBJDIR)/ex_pid_loop.exe $(OBJDIR)/ex_kv_backup.exe $(OBJDIR)/ex_upgrade_flow.exe $(OBJDIR)/ex_modbus_slave.exe $(OBJDIR)/ex_modbus_master.exe
 	./$(OBJDIR)/ex_pid_loop.exe
 	./$(OBJDIR)/ex_kv_backup.exe
 	./$(OBJDIR)/ex_upgrade_flow.exe
 	./$(OBJDIR)/ex_modbus_slave.exe
+	./$(OBJDIR)/ex_modbus_master.exe
 
 $(OBJDIR)/ex_pid_loop.exe: $(EX1_SRC) $(LIB_SRC) $(PORT_SRC)
 	-mkdir $(OBJDIR)
@@ -138,6 +152,10 @@ $(OBJDIR)/ex_upgrade_flow.exe: $(EX3_SRC) $(LIB_SRC) $(PORT_SRC)
 $(OBJDIR)/ex_modbus_slave.exe: $(EX4_SRC) $(LIB_SRC) $(PORT_SRC)
 	-mkdir $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ $(EX4_SRC) $(LIB_SRC) $(PORT_SRC)
+
+$(OBJDIR)/ex_modbus_master.exe: $(EX5_SRC) $(LIB_SRC) $(PORT_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ $(EX5_SRC) $(LIB_SRC) $(PORT_SRC)
 
 clean:
 	-rm -rf $(OBJDIR)

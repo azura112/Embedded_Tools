@@ -280,9 +280,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "432"             "getting-started 用例数与实测一致(v2.4 回刷)"
+assert_grep "docs/getting-started.md" "474"             "getting-started 用例数与实测一致(v2.5 回刷)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "432"                 "README 用例数终值回刷(v2.4)"
+assert_grep "README.md"           "474"                 "README 用例数终值回刷(v2.5)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
@@ -297,7 +297,7 @@ for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 
 done
 
 # ---- v2.2 P0 基线滚动 + P1 selftest 20 套件 + P3 medfilt + P4 sched stats ----
-assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.3.md"     "apidump 默认基线滚动至 v2.3(P0-1 滚动规则)"
+assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.4.md"     "apidump 默认基线滚动至 v2.4(v2.5 P0-1 滚动规则)"
 assert_grep "docs/API_INVENTORY_v2.1.md" "自动生成"                  "v2.1 冻结基线已归档(只读保留)"
 assert_grep "docs/API_INVENTORY_v2.2.md" "自动生成"                  "v2.2 冻结基线已归档(只读保留)"
 assert_grep "docs/API_INVENTORY_v2.3.md" "自动生成"                  "v2.3 冻结基线已归档(P0-1 滚动)"
@@ -368,6 +368,49 @@ assert_grep "docs/bench.md"       "modbus"               "bench 含 modbus 行(P
 assert_grep "docs/bench.md"       "v2.4.0"               "bench 文档含 v2.4 版本行"
 assert_grep "docs/v3-candidates.md" "维持排队"            "biquad 判定决议落档(P0-2)"
 assert_grep "移植stm32实机记录.md" "modbus"               "实机记录含 Modbus 走单章节(P2)"
+
+# ---- v2.5 P0 基线滚动/评审记录载体 + P1 et_log 加固 + P2 et_modbus_master ----
+assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.4.md"     "apidump 默认基线滚动至 v2.4(P0-1 滚动规则)"
+assert_grep "docs/API_INVENTORY_v2.4.md" "自动生成"                  "v2.4 冻结基线已归档(P0-1 滚动)"
+assert_grep "docs/v3-candidates.md"      "v2.5 复评记录"             "候选池 v2.5 复评记录落档(P0-2)"
+assert_grep "docs/v3-candidates.md"      "单事务"                    "主站边界: 单事务不含调度器(P0-2/HC-4)"
+assert_grep "docs/v3-candidates.md"      "CO-5"                      "32 位组合封装拒绝理由落档(P0-2)"
+assert_grep "docs/评审记录模板.md"        "CO 编号规则"               "评审记录模板: CO 编号规则(P0-4)"
+assert_grep "docs/评审记录模板.md"        "触发条件"                  "评审记录模板: 处置字段含触发条件(P0-4)"
+assert_grep "README.md"                  "每版交付后产出评审记录"     "README checklist 含评审记录行(P0-4)"
+# (自指) 当前版本交付文档须引用评审记录或显式声明其缺失 —— 关闭"评审记录持续缺失"风险
+if [ -n "$V" ]; then
+    VMM2=$(echo "$V" | cut -d. -f1,2)
+    doc2=$(ls v${VMM2}开发交付*.md 2>/dev/null | head -1)
+    if [ -z "$doc2" ]; then
+        echo "FAIL [评审记录] 缺当前版本交付文档 v${VMM2}开发交付*.md"; FAIL=$((FAIL + 1))
+    elif grep -Eq "评审记录" "$doc2"; then
+        echo "ok   交付文档引用评审记录或声明缺失(P0-4)"; PASS=$((PASS + 1))
+    else
+        echo "FAIL [评审记录] $doc2 既未引用评审记录也未声明其缺失(P0-4)"; FAIL=$((FAIL + 1))
+    fi
+fi
+assert_grep "debug/et_log.h"      "ET_LOG_FIELD_MAX"       "et_log 域宽上限常量(P1-1)"
+assert_grep "debug/et_log.h"      "可见占位"                "et_log 不支持规格的可见占位规约(P1-2/HC-3)"
+assert_grep "Makefile"            "test/test_modbus_master.c" "Makefile 含 test_modbus_master(P1-7)"
+assert_grep "Makefile"            "protocol/et_modbus_master.c" "Makefile 含 et_modbus_master 源(P1-6)"
+assert_grep "Makefile"            "ex_modbus_master"       "Makefile ex 含主站示例(P1-8)"
+assert_grep "test/test_main.c"    "test_modbus_master_cases" "test_main 注册 modbus_master 套件(P1-7)"
+assert_grep "README.md"           "et_modbus_master"       "README 特性表: modbus_master(P1-11)"
+assert_grep "docs/API_GUIDE.md"   "5.8 et_modbus_master"   "API_GUIDE: 主站章节(P1-11)"
+assert_grep "docs/API_GUIDE.md"   "11.14"                  "API_GUIDE: 主站轮询协作配方(P1-11)"
+assert_grep "docs/API_GUIDE.md"   "应答有两条产生路径"      "API_GUIDE 5.7 范式修正(CO-8/P1-10)"
+assert_grep "protocol/et_modbus_master.h" "单事务"          "主站单事务语义(头注, HC-4)"
+assert_grep "protocol/et_modbus_master.h" "et_modbus.h"     "主站复用从站协议常量(HC-5)"
+assert_grep "examples/ex_modbus_master.c" "PASS"            "主站示例自检输出(P1-8)"
+assert_grep "examples/ex_modbus_slave.c"  "tick"            "从站示例含 tick 路径应答断言(P1-10)"
+assert_grep "tools/modbus_master.py" "slave-drop"           "从站仿真器丢包注入(P1-9)"
+assert_grep "tools/modbus_master.py" "slave-exc"            "从站仿真器异常注入(P1-9)"
+assert_grep "docs/architecture.md" "et_modbus_master"       "architecture 选型表含主站(P1-11)"
+assert_grep "docs/bench.md"       "modbus_master"           "bench 含主站行(P3-1)"
+assert_grep "docs/bench.md"       "v2.5.0"                  "bench 文档含 v2.5 版本行"
+assert_grep "docs/API_GUIDE.md"   "32 位参数"               "API_GUIDE 11.13 补 32 位组合说明(P3-3)"
+assert_grep "移植stm32实机记录.md" "v2.5.0"                 "实机记录含 v2.5 板侧章节(P2)"
 
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格
