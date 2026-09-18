@@ -193,8 +193,8 @@ static void mb_read_holding_normal(void)
 {
     uint8_t req[8];
     uint8_t pay[4];
-    uint8_t exp[16];
-    uint8_t d[8];
+    uint8_t d[16];                          /* 应答 13B: [0..12] —— 原 d[8] 越界写 d[9..12]
+                                             * (v2.5 新增 ASan 门 make test-asan 抓到) */
 
     setup();
     put16(pay, 0u); put16(pay + 2u, 4u);
@@ -211,7 +211,6 @@ static void mb_read_holding_normal(void)
         d[11] = (uint8_t)(crc & 0xFFu);
         d[12] = (uint8_t)(crc >> 8);
     }
-    (void)exp;
     expect_resp(d, 13u);
 }
 

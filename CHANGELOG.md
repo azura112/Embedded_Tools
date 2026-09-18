@@ -28,6 +28,7 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 - 数字回刷：README 特性表/结构树/用例数/examples 数、architecture 选型表与数据流、API_GUIDE 5.7/5.8/8.1/11.13/11.14、bench、port 体积表、docsync。
 
 ### Fixed
+- **既有测试缺陷（v2.5 新增 ASan 门抓到）**：`test/test_modbus.c` 的 `mb_read_holding_normal()` 把 13 字节应答写进 `uint8_t d[8]`（`d[9..12]` 越界，ASan: stack-buffer-overflow）—— 自 v2.4 起存在，**非 ASan 构建不可见**。已修 `d[16]`。
 - **`et_log` 的 `va_list` 链跨 ABI 缺陷（v2.5 首轮 CI 抓到并修复）**：`parse_spec`/`get_signed`/`get_unsigned`
   声明为 `va_list *ap`，而 `vformat` 形参是 `va_list ap`；x86-64 SysV 的 `va_list` 是**数组类型**（`__va_list_tag[1]`），
   形参退化后 `&ap` 得到 `__va_list_tag **` → `va_arg` 走错间接层（ubuntu 侧表现为**垃圾输出 + 段错误**）。
