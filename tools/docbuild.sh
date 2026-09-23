@@ -13,8 +13,12 @@ ROOT="${1:-.}"
 cd "$ROOT"
 
 PORTS="port/stm32f103/README.md port/stm32g474/README.md"
-DB_SCRIPT="$(mktemp)"
-trap 'rm -f "$DB_SCRIPT"' EXIT
+# 提取脚本体写到 build/(已 gitignore) 的固定路径, **不逐次删除** —— v2.6 本机实测:
+# 系统临时目录在受限 shell 封装下 mktemp 返回 Windows 形式路径, 且 rm 走"安全删除"
+# wrapper 会失败(exit 1), 在 set -e 下把整体判红(构建其实全成功)。固定路径即无此耦合。
+DB_DIR="build"
+mkdir -p "$DB_DIR" 2>/dev/null || DB_DIR="."
+DB_SCRIPT="$DB_DIR/.docbuild_block.sh"
 FAIL=0
 
 for f in $PORTS; do

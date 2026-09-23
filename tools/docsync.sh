@@ -412,6 +412,50 @@ assert_grep "docs/bench.md"       "v2.5.0"                  "bench 文档含 v2.
 assert_grep "docs/API_GUIDE.md"   "32 位参数"               "API_GUIDE 11.13 补 32 位组合说明(P3-3)"
 assert_grep "移植stm32实机记录.md" "v2.5.0"                 "实机记录含 v2.5 板侧章节(P2)"
 
+# ---- v2.6 P0-2 跨文档计数一致性 (CO-3/CO-4 漏刷的根因根治, HC-4) ----
+# 单一来源 = README(交付时回刷的唯一权威); architecture 机制门行与 API_GUIDE 的
+# 对应数字必须**与实测/README 一致**, 而非各自写死。v2.5 的 examples 数(architecture
+# 仍写"四例")与用例数(API_GUIDE 仍写 398) 无门守护即漏刷 —— 本断言把它们变成硬门。
+# 门自证可红: 故意改任一处数字 → 本节 FAIL(证据记交付文档 §7 机制自证表)。
+cn_num() {                              # 中文数字 → 阿拉伯(1~10: examples 数够用)
+    case "$1" in
+        一) echo 1 ;; 二) echo 2 ;; 三) echo 3 ;; 四) echo 4 ;; 五) echo 5 ;;
+        六) echo 6 ;; 七) echo 7 ;; 八) echo 8 ;; 九) echo 9 ;; 十) echo 10 ;;
+        *)  echo 0 ;;
+    esac
+}
+
+rd_cases_a=$(sed -n 's/.*ALL PASS（\([0-9][0-9]*\) 例.*/\1/p' README.md | head -1)
+rd_cases_b=$(sed -n 's/.*迷你框架 + \([0-9][0-9]*\) 个单元用例.*/\1/p' README.md | head -1)
+ar_cases=$(sed -n 's/.*host 单测 *(\([0-9][0-9]*\) 用例.*/\1/p' docs/architecture.md | head -1)
+ag_cases_a=$(sed -n 's/.*PC 单测(\([0-9][0-9]*\)).*/\1/p' docs/API_GUIDE.md | head -1)
+ag_cases_b=$(sed -n 's/.*冒烟非对等 host \([0-9][0-9]*\) 用例.*/\1/p' docs/API_GUIDE.md | head -1)
+if [ -z "${rd_cases_a:-}" ] || [ -z "${rd_cases_b:-}" ] || [ -z "${ar_cases:-}" ] \
+   || [ -z "${ag_cases_a:-}" ] || [ -z "${ag_cases_b:-}" ]; then
+    echo "FAIL 跨文档用例数断言: 解析失败(模式未命中) README=$rd_cases_a/$rd_cases_b arch=$ar_cases guide=$ag_cases_a/$ag_cases_b"
+    FAIL=$((FAIL + 1))
+elif [ "$rd_cases_a" = "$rd_cases_b" ] && [ "$rd_cases_a" = "$ar_cases" ] \
+     && [ "$rd_cases_a" = "$ag_cases_a" ] && [ "$rd_cases_a" = "$ag_cases_b" ]; then
+    echo "ok   跨文档用例数一致 ($rd_cases_a): README×2 / architecture / API_GUIDE×2"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL 跨文档用例数不一致: README=$rd_cases_a/$rd_cases_b arch=$ar_cases guide=$ag_cases_a/$ag_cases_b"
+    FAIL=$((FAIL + 1))
+fi
+
+ex_files=$(ls examples/ex_*.c 2>/dev/null | grep -c .)
+ar_ex=$(sed -n 's/.*make ex: \(.\)例自检式示例.*/\1/p' docs/architecture.md | head -1)
+rd_ex=$(sed -n 's/.*扩至\(.\)例.*/\1/p' README.md | head -1)
+ar_ex_n=$(cn_num "${ar_ex:-}")
+rd_ex_n=$(cn_num "${rd_ex:-}")
+if [ "$ex_files" -gt 0 ] && [ "$ex_files" = "$ar_ex_n" ] && [ "$ex_files" = "$rd_ex_n" ]; then
+    echo "ok   跨文档 examples 数一致 ($ex_files): examples/ex_*.c 实测 / architecture / README"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL 跨文档 examples 数不一致: 实测=$ex_files arch=$ar_ex→$ar_ex_n README=$rd_ex→$rd_ex_n"
+    FAIL=$((FAIL + 1))
+fi
+
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格
 #   前缀 > 或 |)以 "本版 docsync" 开头, 形如 "> 本版 docsync：**186/186**";
@@ -437,8 +481,14 @@ if [ -n "$V" ]; then
             for c in $claims; do
                 [ "$c" = "$expect" ] || bad=1
             done
+            # v2.6 P0-2 (HC-4): architecture 机制门行的 docsync 计数须与同一实测值一致
+            ar_ds=$(sed -n 's/.*docsync \([0-9][0-9]*\) 断言.*/\1/p' docs/architecture.md | head -1)
+            if [ -z "${ar_ds:-}" ] || [ "$ar_ds" != "$expect" ]; then
+                bad=1
+                echo "FAIL [自指] docs/architecture.md 机制门行 docsync 计数 [${ar_ds:-未解析}] ≠ 实测 $expect"
+            fi
             if [ "$bad" -eq 0 ]; then
-                echo "ok   自指断言: 交付文档 docsync 计数 = 实测 $expect"
+                echo "ok   自指断言: 交付文档与 architecture 机制门行的 docsync 计数 = 实测 $expect"
                 PASS=$((PASS + 1))
             else
                 echo "FAIL [自指] $doc 声明 docsync [$(echo $claims | tr '\n' ' ')] ≠ 实测 $expect"

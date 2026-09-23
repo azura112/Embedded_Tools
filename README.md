@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.5.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.5开发交付__Modbus主站补齐与日志规格解析加固.md](v2.5开发交付__Modbus主站补齐与日志规格解析加固.md)**（Modbus 主站 + et_log 规格解析加固）
+> 当前版本：**v2.6.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.6开发交付__解析边界清偿与检出能力补强.md](v2.6开发交付__解析边界清偿与检出能力补强.md)**（主站解析边界清偿 + et_log 修饰面收口 + 检出能力补强）
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**
 
@@ -55,7 +55,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 474 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 23 + modbus_master 25 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + log 24 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
+├── test/              # 迷你框架 + 487 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 23 + modbus_master 32 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -177,12 +177,14 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，474 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍）。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，487 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步）。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（474 例，另 1K 变体 475 例、shell Tab 开启形态同套件数）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（487 例，另 1K 变体 488 例、shell Tab 开启形态同套件数）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
+- **host 零警告门**（v2.6 P2-1）：`make WERROR=1 test` / `make WERROR=1 ex`（CI 的 Linux 与 Windows 两个 job 同用 `-Werror`）——把"只有 ARM 交叉编译有零警告门"扩到 host 侧；
+- **内存检查门**（v2.5 起，v2.6 扩变体）：`make test-asan` + `make test-asan-1k`（ASan 覆盖默认几何与 1K 块变体），CI 常设；
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，20 套件一条命令冒烟（host/板上结果可比对；v2.2 起 pid/stats/bytes 进板上冒烟）；
 - **配方可执行载体**（v2.3，v2.5 扩至五例）：`make ex` 一键跑五个自检式示例（闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
@@ -190,6 +192,26 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对 v2.0 基线必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85% × ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 20/20）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
+
+### 质量门与检出边界（v2.6 P2-1/P2-2）
+
+**CI 侧硬门**（每次 push / PR 全跑，任一红即门失败）：
+
+| 门 | 命令 | 覆盖面 |
+|---|---|---|
+| host 零警告 | `make WERROR=1 test` / `make WERROR=1 ex`（Linux）、纯 gcc `-Werror`（Windows） | 全库 + 五例配方 |
+| 内存检查 | `make test-asan` + `make test-asan-1k` | 默认几何 + 1K 块变体（Linux） |
+| 冻结面 | `sh tools/apidump.sh --check` | 公开 API 清单与头文件一致 |
+| 文档同步 | `sh tools/docsync.sh` | 跨文档计数一致性 + 自指断言（含 architecture 机制门行） |
+| 覆盖率 | `gcovr --fail-under-line 85` | 行覆盖 ≥85% |
+| 移植文档可执行 | `sh tools/docbuild.sh` | port README 的 ```docbuild 块原样执行 |
+
+**本机（Windows / MinGW）检出边界 —— 如实声明，未执行者不得按通过计**：
+
+- `make test-asan` / `make test-asan-1k` **本机不可执行**：MinGW-w64 gcc 不带 `libasan`；clang 17 的 ASan 运行时在本机 Windows 初始化失败（v2.5 D-2、v2.6 CO-13）。内存类缺陷在本机**只能靠 Linux CI 前置拦截**。
+- 本机无 WSL、无 MSYS2（v2.6 起草期实测）→ 跨 ABI 缺陷（如 `va_list` 形态差异）本机静默、Linux 侧硬失败（v2.5 D-8 的 `-Werror=incompatible-pointer-types` 门即为此设）。
+- 触发条件：安装 WSL 或 MSYS2 后补本机 ASan 执行路径（v2.6 P3-3，**未触发则不做**）。
+- 治理脚本 `apidump.sh` / `docsync.sh` 在逐文件临时文件清理受限的 shell 封装环境下耗时较长（前者需按头文件逐个清理临时产物），建议后台执行并保留日志。
 
 ## 测试策略亮点
 
@@ -214,3 +236,4 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 7. **数字回刷纪律（v1.9 P1-4）**：交付定稿后凡改变可观测数字的提交（体积表/用例数/docsync 断言数/smoke 计数），**同一提交内回刷所有引用处**（README / port README / 实机记录 / 交付文档）并在 commit message 注明"数字回刷"；文档命令由 CI `docbuild` job 以 ```docbuild 定界块原样执行守护（v1.8 三处滞后数字的制度化根治）。
 8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.4.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。
 9. **每版交付后产出评审记录（v2.5 P0-4）**：按 [`docs/评审记录模板.md`](docs/评审记录模板.md) 产出 `vX.Y评审记录__<slug>.md`（HC/AC 逐条核验 + CO 编号 + 新发现问题），交付文档须引用该记录或显式声明其缺失；下一版计划 §1.1 的 CO 处置表以它为唯一输入——**没有评审记录，下一版计划就无输入可依**（v1.x~v2.4 十五版无评审记录，遗留项靠人工回收，v2.5 起根治）。
+10. **计划起草按模板自检（v2.6 P0-4）**：每版计划按 [`docs/开发计划模板.md`](docs/开发计划模板.md) 的六节骨架起草，并在交付前完成其 **§7 起草期核验清单四项**（内部 tag 一律 `snap-*` 且触发面实测 / "无副作用"类断言必须实测 / 板侧落点写库外私有全路径 / AC ↔ 冻结 API 形状互洽），文末附"起草期合规声明"——四项未过的计划不得进入开发（`CO-12(v2.5)` 的机制化根治）。

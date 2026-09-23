@@ -10,6 +10,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>     /* intmax_t / uintmax_t (%j 的消费类型, v2.6 CO-8) */
 
 static volatile et_log_level_t g_level = ET_LOG_LEVEL_INFO;
 
@@ -91,12 +92,15 @@ static void emit_hex_byte(uint8_t b)
  * 实参的值)。新实现按 C 语义**完整吃掉**规格序列并消费实参:
  *
  *   标志{- 0 + 空格 #} + 十进制域宽(含 * 取实参) + 精度(.N / .*)
- *   + 长度修饰{h hh l ll z} + 转换字符
+ *   + 长度修饰{h hh l ll z j t L} + 转换字符
  *
  * 三类转换字符的处置:
  *   - 支持   : d i u x X c s p %      → 按新语义格式化输出
+ *              (c 的域宽/左对齐自 v2.6 CO-7 起生效, 精度按 C 语义不起作用)
  *   - 已知不支持(标准 C 有定义, 消费实参 + 输出可见占位):
- *              o f F e E g G a A n, 以及宽字符 lc/ls
+ *              o f F e E g G a A n, 宽字符 lc/ls,
+ *              以及长度修饰 j/t/L(v2.6 CO-8: `%jd` → `<?jd>`, 按 C 取
+ *              intmax_t/ptrdiff_t/long double 各一次 —— 不再错位)
  *   - 未知   : 输出可见占位且**不消费**(该例外见 et_log.h 头注)
  *
  * 可见占位字形 = `<?` + 转换字符 + `>`(如 `%f` → `<?f>`, `%lc` → `<?lc>`)。
@@ -110,6 +114,9 @@ static void emit_hex_byte(uint8_t b)
 #define SP_LEN_L        3u
 #define SP_LEN_LL       4u
 #define SP_LEN_Z        5u
+#define SP_LEN_J        6u      /* j: intmax_t/uintmax_t —— v2.6 CO-8 */
+#define SP_LEN_T        7u      /* t: ptrdiff_t —— v2.6 CO-8 */
+#define SP_LEN_BL       8u      /* L: long double —— v2.6 CO-8 */
 
 typedef struct {
     bool     left;          /* '-' 左对齐 */
@@ -263,6 +270,24 @@ static int emit_str_field(const et_spec_t *sp, const char *s)
     return cnt;
 }
 
+/* 单字符域输出(v2.6 CO-7): 域宽/左对齐生效 —— 与 C printf 一致
+ * (C 标准: 'c' 转换的精度不起作用, 故此处只处理 width 与 '-') */
+static int emit_char_field(const et_spec_t *sp, char c)
+{
+    uint32_t pad = (sp->width > 1u) ? (sp->width - 1u) : 0u;
+    int      cnt = 0;
+
+    if (!sp->left) {
+        cnt += emit_pad(' ', pad);
+    }
+    port_putc(c);
+    cnt++;
+    if (sp->left) {
+        cnt += emit_pad(' ', pad);
+    }
+    return cnt;
+}
+
 /* 解析一个规格序列: 入口 *pp 指向 '%' 之后, 出口 *pp 指向转换字符 */
 static char parse_spec(const char **pp, et_spec_t *sp, va_list *ap)
 {
@@ -347,9 +372,43 @@ static char parse_spec(const char **pp, et_spec_t *sp, va_list *ap)
     } else if (*p == 'z') {
         sp->len = SP_LEN_Z;
         p++;
+    } else if (*p == 'j') {                     /* v2.6 CO-8: 已知不支持的长度修饰 */
+        sp->len = SP_LEN_J;
+        p++;
+    } else if (*p == 't') {
+        sp->len = SP_LEN_T;
+        p++;
+    } else if (*p == 'L') {
+        sp->len = SP_LEN_BL;
+        p++;
     }
     *pp = p;
     return (*p != '\0') ? *p : '\0';
+}
+
+/* 长度修饰字形(j/t/L 的可见占位用; 均为单字符) */
+static const char *len_letter(uint8_t len)
+{
+    switch (len) {
+    case SP_LEN_J:  return "j";
+    case SP_LEN_T:  return "t";
+    case SP_LEN_BL: return "L";
+    default:        return "";
+    }
+}
+
+/* 消费"已知不支持的长度修饰"对应的实参(v2.6 CO-8):
+ * 按 C 语义取对应类型的实参一次 —— 目的是**消灭错位**(此前这类修饰走"未知转换
+ * 字符"分支不消费, 其后实参整体错位)。j → intmax_t/uintmax_t; t → ptrdiff_t;
+ * L → long double(仅对浮点有意义, 用整数转换时属未定义行为, 库按此消费并占位)。 */
+static void consume_len_mod(va_list *ap, const et_spec_t *sp)
+{
+    switch (sp->len) {
+    case SP_LEN_J:  (void)va_arg(*ap, intmax_t);    break;
+    case SP_LEN_T:  (void)va_arg(*ap, ptrdiff_t);   break;
+    case SP_LEN_BL: (void)va_arg(*ap, long double); break;
+    default:                                        break;
+    }
 }
 
 /* 消费有符号实参(h/hh 按 C 语义截断; z 取 size_t 同宽有符号) */
@@ -381,7 +440,8 @@ static unsigned long long get_unsigned(va_list *ap, const et_spec_t *sp)
 /*
  * 精简格式化: 直接写 port_putc。
  * 支持: %d %i %u %x %X %c %s %p %% + 标志/域宽(含 *)/精度(.N,.*)/h hh l ll z
- * 不支持但按 C 语义消费: %o %f %e %E %g %G %a %A %n %lc %ls (输出可见占位)
+ * 不支持但按 C 语义消费: %o %f %e %E %g %G %a %A %n %lc %ls, 长度修饰 j/t/L
+ *   (输出可见占位; j/t/L 的占位含长度修饰字形, 如 `%jd` → `<?jd>`)
  */
 static int vformat(const char *fmt, va_list *ap)
 {
@@ -406,6 +466,21 @@ static int vformat(const char *fmt, va_list *ap)
             port_putc('%');
             cnt++;
             return cnt;
+        }
+
+        if ((sp.len == SP_LEN_J) || (sp.len == SP_LEN_T) || (sp.len == SP_LEN_BL)) {
+            /* 已知不支持的长度修饰(j/t/L, v2.6 CO-8): 按 C 语义**消费实参**并输出
+             * 含长度修饰的完整占位(如 `%jd` → `<?jd>`)—— 消灭"不消费 → 错位"口子 */
+            char pb[2];
+
+            pb[0] = len_letter(sp.len)[0];
+            pb[1] = conv;
+            consume_len_mod(ap, &sp);
+            cnt += emit_placeholder(pb, 2u);
+            if (*fmt != '\0') {
+                fmt++;
+            }
+            continue;
         }
 
         switch (conv) {
@@ -445,8 +520,7 @@ static int vformat(const char *fmt, va_list *ap)
                 (void)va_arg(*ap, int);
                 cnt += emit_placeholder("lc", 2u);
             } else {
-                port_putc((char)va_arg(*ap, int));
-                cnt++;
+                cnt += emit_char_field(&sp, (char)va_arg(*ap, int));  /* 域宽生效(CO-7) */
             }
             break;
         case 's':

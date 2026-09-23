@@ -6,6 +6,36 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-09-22 · **v2.6 — 解析边界清偿与检出能力补强**
+
+冻结契约下**纯内部修复 MINOR**（`apidump --diff` 对 v2.5 基线：**新增 0 项 / 修改删除 0 项**）；无新模块（模块数维持 34）、无新增开关、无签名变更。
+
+### Added
+- **跨文档计数一致性门（P0-2，`CO-3`/`CO-4` 的机制化根治）**：`tools/docsync.sh` 增两条断言 —— README 的**用例数与 examples 数**（单一来源）须与 `docs/architecture.md` 机制门行、`docs/API_GUIDE.md` 8.4 的对应数字**逐值一致**，且 examples 数须等于 `examples/ex_*.c` 实测文件数；自指断言同时把 `architecture.md` 机制门行的 `docsync N 断言` 纳入 `expect` 对账。**v2.5 的三处漏刷（"四例"/"docsync 210"/"398"）从此有门守护**。
+- **`tools/docref.sh`（P0-3，`CO-5` 的机制化）**：交付文档 §4 自指核验 —— 提取"记录范围 `git diff --stat <base>..<end>` = **N files / M insertions / K deletions**"声明，与实测**逐值**比对（`<base>`/`<end>` 须可解析）。CI 不跑（浅检出无 tag 历史），属**发布前本机门**（沿 sizecheck 先例）。根治 v2.5 D-10 的"§4 滞后自身提交"。
+- **`docs/开发计划模板.md`（P0-4，`CO-12`）**：六节骨架 + **起草期核验清单四项**（① 内部 tag 一律 `snap-<ver>-start` 且触发面须实测；② "无副作用/不会触发"类断言起草期必须实测；③ 板侧落点写**库外私有全路径**；④ **AC ↔ 冻结 API 形状互洽**检查）；README 发布 checklist 第 10 条指向；`docs/评审记录模板.md` §3.1 增"AC ↔ 形状互洽"复核项。
+- **`make test-1k` / `make test-asan-1k` 常设目标（P1-6，HC-10）**：1K 块变体此前靠手工 gcc 命令，现为 Makefile 目标；ASan 门自 v2.6 起**覆盖 1K 变体**，CI 增两步。
+- **host 零警告硬门（P2-1，`CO-13`）**：`make WERROR=1 <目标>`（Linux）与纯 gcc `-Werror`（Windows job）—— 把"只有 ARM 交叉编译有零警告门"扩到 host 侧（CI 两个 job 同用；本机 `WERROR=1` 全绿实测）。
+- **README「质量门与检出边界」小节（P2-2）**：CI 硬门清单（零警告/ASan/冻结面/文档同步/覆盖率/docbuild）+ **本机检出边界如实声明**（MinGW 无 `libasan`、clang ASan 运行时本机不可用、无 WSL、无 MSYS2）+ 触发条件。
+- **7 例主站噪声用例**（`mbm.noise_*`）+ **6 例 `et_log` 修饰面用例**（`log.char_field_*` / `log.len_mod_*`）。
+- `docs/bench.md` **口径声明（P3-1 轻量分支）**：本表数字**仅供量级参考、不作回归判据**（v2.5 评审实测同机同日差幅最大 59%），性能结论须附同轮原始读数。
+
+### Changed
+- 版本 2.5.0 → **2.6.0**（`0x020500`→`0x020600`）；用例 474 → **487**（×双几何；**1K 变体 488**、Tab 形态 **494**、G4 几何 487）；`modbus_master` 25→32、`log` 24→30。
+- **`et_modbus_master` 读应答定长判据（P1-1，`CO-6` ★ 核心）**：收到读类应答时，其**字节数域必须严格等于 `2*exp_qty`**（单事务语义下主站已知期望寄存器数），否则判为噪声 → **逐字节重同步**；`crc_err` 只统计**与在途事务严格同形**（帧首=本站地址且功能码/字节数域一致）的候选帧 CRC 失败。**行为修正**：① 半双工单线上"主站自身请求回显"（形如 `11 03 00 00 00 04 …`）不再伪造帧长、不再把真应答切走（v2.5 行为只能靠超时重发收场）；② `crc_err` 口径收紧（字段与签名未动，属语义修正，已在 API_GUIDE 5.8 与交付文档 §2 登记）。
+- **`et_log` 修饰面与承诺对齐（P1-3/P1-4，`CO-7`/`CO-8`）**：`%c` 的**域宽与左对齐**真正生效（按 C 语义精度对 `%c` 不起作用）；长度修饰 **`j`/`t`/`L`** 从"未知转换字符（不消费）"移入"已知不支持 → 消费 `intmax_t`/`ptrdiff_t`/`long double` + 完整字形占位"（`%jd` → `<?jd>`、`%Lf` → `<?Lf>`），消灭错位的最后口子。`et_log.h` 头注、API_GUIDE 8.1 规格表、`test/test_log.c` 三者**差集为空**（HC-3）。
+- **`tools/apidump.sh` 环境适配修复（本版新增，工具缺陷）**：① Windows/MSYS 下 `TEMP` 为 `C:\...` 形式时，gawk 的 `>> path` 把反斜杠当转义 → 提取文件写到别处 → 清单**误报漂移**（且无参数运行会把清单覆盖成残缺版）→ 改用**仓库内相对临时目录**；② 循环内逐文件 `rm`（最多 108 次）在带"安全删除"wrapper 的 shell 封装下每次耗时数十秒 → 脚本从**秒级劣化到小时级** → 改为由 `trap` 一次性清理。修复后本机 `--check` 21 秒完成。
+- **apidump 基线滚动（P0-1）**：归档 `docs/API_INVENTORY_v2.5.md`（433 项），默认基线切至 v2.5；v2.0~v2.4 归档只读保留。
+- 数字回刷：README（特性总览/结构树/测试与质量门/检出边界）、`architecture.md`（"五例"、"docsync 293 断言"、"连续十六版"）、`API_GUIDE` 8.1/8.4/5.8、`bench.md`、`port/*/README` 体积表、docsync 自指计数（291 → **293**）。
+
+### Fixed
+- **v2.5 遗留的清单残缺风险**：`docs/API_INVENTORY.md` 在受限 shell 环境下被无参数 `apidump` 覆盖为残缺版的路径已被消除（见上条 TMPD 修复）；本版重新生成并与入库版比对，**差异仅版本宏一行**（`ET_VERSION_MINOR 5→6`），其余逐字节一致。
+
+### 挂账（如实声明）
+- **板侧项未执行（`CO-1(v2.5)` 未消）**：本机仍无 ST-Link / CH343 USB-TTL（`Get-PnpDevice -PresentOnly` 无匹配项）→ v2.5 的板上逐字节走单、v2.6 的 `CO-6` 板上注入验证、`selftest` 20→21（`CO-10`）**均未执行**；`tag v2.5` 亦未打（HC-9 要求走单证据取自不含 v2.6 代码的提交）。**不伪造任何板上结论**。
+- **`CO-11` 再次暂缓**（USART2 独立口 / 共享口地址不符静默的板侧验证，硬件阻塞同前；触发 = 第二路 USB-TTL 或双板对连）。
+- **本机 ASan 执行路径未启用**（P3-3：无 WSL/MSYS2，触发条件未满足）；`make test-asan` / `test-asan-1k` 于 Linux CI 执行，**未声称本机已跑**。
+
 ## [2.5.0] — 2026-09-19 · **v2.5 — Modbus 主站补齐与日志规格解析加固**
 
 冻结契约下纯增量 MINOR（`apidump --diff` 对 v2.4 基线: 新增 16 项 / 修改删除 0 项）。

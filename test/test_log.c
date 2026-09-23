@@ -7,6 +7,8 @@
 #include "port_host.h"
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>     /* intmax_t (v2.6 CO-8 用例) */
+#include <stddef.h>     /* ptrdiff_t */
 
 static char     g_buf[1024];
 static uint32_t g_len;
@@ -383,7 +385,9 @@ static void log_unsupported_others(void)
     ET_CHECK(g_fail == 0);
 }
 
-/* ---- 未知转换字符: 占位且**不消费实参** (HC-3 例外, 头注明示) ---- */
+/* ---- 未知转换字符: 占位且**不消费实参** (HC-3 例外, 头注明示) ----
+ * v2.6 CO-8 起: j/t/L 长度修饰**已移出**本例外(改为"消费 + 完整占位"),
+ * 见下方 log_len_mod_* 用例; 本用例只保留**真正未知**的转换字符。 */
 static void log_unknown_conv(void)
 {
     et_log_set_level(ET_LOG_LEVEL_TRACE);
@@ -393,9 +397,6 @@ static void log_unknown_conv(void)
     CHECK_LIT("unknown.y_no_consume", "<?y>|7" SENT_TAIL, "%y|%u S=%u",
               7u, (unsigned)SENT);
     CHECK_LIT("unknown.Q", "<?Q>" SENT_TAIL, "%Q S=%u", (unsigned)SENT);
-    CHECK_LIT("unknown.j_mod", "<?j>d" SENT_TAIL, "%jd S=%u", (unsigned)SENT);
-    CHECK_LIT("unknown.t_mod", "<?t>u" SENT_TAIL, "%tu S=%u", (unsigned)SENT);
-    CHECK_LIT("unknown.L_mod", "<?L>f" SENT_TAIL, "%Lf S=%u", (unsigned)SENT);
     CHECK_LIT("unknown.trailing_pct", "abc%" SENT_TAIL, "abc%% S=%u", (unsigned)SENT);
     ET_CHECK(g_fail == 0);
 }
@@ -462,6 +463,87 @@ static void log_field_cap(void)
     cap_stop();
     ET_CHECK(g_len == 401u);                        /* 200 + 1 + 200 */
     ET_CHECK(g_fail == 0);
+}
+
+/* =====================================================================
+ * v2.6 CO-7 / CO-8 用例
+ * ===================================================================== */
+
+/* ---- %c 的域宽/左对齐生效 (CO-7; 精度按 C 语义对 'c' 不起作用) ---- */
+static void log_char_field_width(void)
+{
+    et_log_set_level(ET_LOG_LEVEL_TRACE);
+    g_fail = 0;
+
+    CHECK_FMT("char.width",        "[%5c]|", 'A');
+    CHECK_FMT("char.left",         "[%-3c]|", 'B');
+    CHECK_FMT("char.prec_ignored", "[%3.1c]|", 'C');    /* C: 'c' 的精度无作用 */
+    CHECK_FMT("char.width_one",    "[%1c]|", 'D');
+    ET_CHECK(g_fail == 0);
+}
+
+static void log_char_field_matrix(void)
+{
+    et_log_set_level(ET_LOG_LEVEL_TRACE);
+    g_fail = 0;
+
+    CHECK_FMT("char.matrix", "[%1c][%4c][%-4c][%5c][%2c]",
+              'x', 'y', 'z', 'w', 'v');
+    CHECK_FMT("char.star_width", "[%*c][%-*c]", 6, 'p', 6, 'q');
+    ET_CHECK(g_fail == 0);
+}
+
+/* ---- %j / %t / %L: 消费对应实参 + 完整占位(不再错位, CO-8) ---- */
+static void log_len_mod_jt(void)
+{
+    et_log_set_level(ET_LOG_LEVEL_TRACE);
+    g_fail = 0;
+
+    CHECK_LIT("len.jd_ju_jx", "[<?jd>][<?ju>][<?jx>]" SENT_TAIL,
+              "[%jd][%ju][%jx] S=%u",
+              (intmax_t)7, (uintmax_t)8u, (uintmax_t)255u, (unsigned)SENT);
+    CHECK_LIT("len.td_tu", "[<?td>][<?tu>]" SENT_TAIL,
+              "[%td][%tu] S=%u",
+              (ptrdiff_t)11, (ptrdiff_t)12, (unsigned)SENT);
+    ET_CHECK(g_fail == 0);
+}
+
+static void log_len_mod_big_float(void)
+{
+    et_log_set_level(ET_LOG_LEVEL_TRACE);
+    g_fail = 0;
+
+    CHECK_LIT("len.Lf_Lg", "[<?Lf>][<?Lg>]" SENT_TAIL,
+              "[%Lf][%Lg] S=%u",
+              (long double)1.5L, (long double)2.5L, (unsigned)SENT);
+    ET_CHECK(g_fail == 0);
+}
+
+/* 混合: j/t/L 与受支持规格交错 —— 哨兵值正确即证明消费顺序与类型均对 */
+static void log_len_mod_mix(void)
+{
+    et_log_set_level(ET_LOG_LEVEL_TRACE);
+    g_fail = 0;
+
+    CHECK_LIT("len.mix", "a=<?jd> b=7 c=<?Lf> d=ff" SENT_TAIL,
+              "a=%jd b=%u c=%Lf d=%x S=%u",
+              (intmax_t)100, 7u, (long double)0.5L, 255u, (unsigned)SENT);
+    ET_CHECK(g_fail == 0);
+}
+
+/* 负向: 输出中不得残留字面 %j / %t / %L(旧实现在此原样回显) */
+static void log_len_mod_no_literal(void)
+{
+    et_log_set_level(ET_LOG_LEVEL_TRACE);
+
+    cap_start();
+    (void)et_log_raw("[%jd][%tu][%Lf] S=%u",
+                     (intmax_t)1, (ptrdiff_t)2, (long double)3.0L, (unsigned)SENT);
+    cap_stop();
+    ET_CHECK(strstr(g_buf, "%j") == NULL);
+    ET_CHECK(strstr(g_buf, "%t") == NULL);
+    ET_CHECK(strstr(g_buf, "%L") == NULL);
+    ET_CHECK(strstr(g_buf, "[<?jd>][<?tu>][<?Lf>]" SENT_TAIL) != NULL);
 }
 
 /* ---- 历史缺陷复现(CO-9 三处受害点): 必须不再错位 ---- */
@@ -548,6 +630,12 @@ const et_test_case_t *test_log_cases(size_t *count)
         {"log.unknown_conv",    log_unknown_conv},
         {"log.no_arg_specs",    log_no_arg_specs},
         {"log.field_cap",       log_field_cap},
+        {"log.char_field_width",  log_char_field_width},
+        {"log.char_field_matrix", log_char_field_matrix},
+        {"log.len_mod_jt",       log_len_mod_jt},
+        {"log.len_mod_big_float", log_len_mod_big_float},
+        {"log.len_mod_mix",      log_len_mod_mix},
+        {"log.len_mod_no_literal", log_len_mod_no_literal},
         {"log.misalign_regress", log_misalign_regression},
         {"log.legacy_unchanged", log_legacy_unchanged},
         {"log.mixed_matrix",    log_mixed_matrix},

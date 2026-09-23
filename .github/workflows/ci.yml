@@ -17,13 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run unit tests (make)
+      - name: Run unit tests (make WERROR=1, host zero-warning gate, v2.6 P2-1)
         if: runner.os == 'Linux'
-        run: make test
+        run: make WERROR=1 test
+
+      - name: Run unit tests (1K block variant, make test-1k, v2.6 P1-6)
+        if: runner.os == 'Linux'
+        run: make test-1k
 
       - name: Run self-checking recipe examples (make ex, v2.3)
         if: runner.os == 'Linux'
-        run: make ex
+        run: make WERROR=1 ex
       - name: Run unit tests (shell Tab variant, v2.0)
         if: runner.os == 'Linux'
         run: make test-tab
@@ -31,6 +35,10 @@ jobs:
       - name: Run unit tests under AddressSanitizer (make test-asan, v2.5 AC-8)
         if: runner.os == 'Linux'
         run: make test-asan
+
+      - name: Run 1K variant under AddressSanitizer (make test-asan-1k, v2.6 P1-6)
+        if: runner.os == 'Linux'
+        run: make test-asan-1k
 
       - name: API inventory consistency (tools/apidump.sh --check, v2.0)
         if: runner.os == 'Linux'
@@ -47,12 +55,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sh tools/docsync.sh
 
-      - name: Run unit tests (pure gcc, no make)
+      - name: Run unit tests (pure gcc, no make, WERROR host gate v2.6 P2-1)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           mkdir -p build
-          gcc -std=c99 -Wall -Wextra -pedantic -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
+          gcc -std=c99 -Wall -Wextra -pedantic -Werror -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host \
               -o build/et_tests.exe core/*.c algorithm/*.c sys/*.c protocol/*.c drivers/*.c debug/*.c storage/*.c \
               port/host/port_host.c test/*.c
           ./build/et_tests.exe

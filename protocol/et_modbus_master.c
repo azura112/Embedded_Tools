@@ -33,6 +33,24 @@ static bool fc_is_write(uint8_t fc)
     return (fc == ET_MODBUS_FC_WRITE_SINGLE) || (fc == ET_MODBUS_FC_WRITE_MULTIPLE);
 }
 
+/* 缓冲首部是否与在途事务"严格同形"(v2.6 P1-1 / HC-2 的 crc_err 计数门槛):
+ * 帧首 = 本站地址, 且功能码与长度域均与在途期望一致 —— 只有这种序列才可能是
+ * "本来发往本站的应答", 其 CRC 失败才计入 crc_err 并按帧长丢弃整帧;
+ * 其余字节序列属"从未成帧", 一律逐字节重同步(不污染 crc_err)。 */
+static bool is_expected_shape(const et_modbus_master_t *m, uint8_t fc)
+{
+    if (m->rx[0] != (uint8_t)m->cfg.addr) {
+        return false;
+    }
+    if ((fc != (uint8_t)m->exp_fc) && (fc != (uint8_t)(m->exp_fc | 0x80u))) {
+        return false;
+    }
+    if (fc_is_read(fc)) {               /* 读应答: 长度域须等于 2*exp_qty */
+        return ((uint32_t)m->rx[2] == (2u * (uint32_t)m->exp_qty));
+    }
+    return true;                        /* 写应答定长 8 / 异常应答定长 5: fc 一致即同形 */
+}
+
 /* 丢弃接收缓冲首字节(逐字节重同步: 长度不可判定时的兜底) */
 static void drop_head(et_modbus_master_t *m)
 {
@@ -336,6 +354,16 @@ uint32_t et_modbus_master_feed(et_modbus_master_t *m, const uint8_t *data, uint3
             if (m->rxlen < 3u) {
                 break;                      /* 等字节数域 */
             }
+            /* 单事务语义下主站已知本事务的期望寄存器数: 应答字节数域必须与之
+             * **严格相符**, 否则该序列不可能是本事务的有效应答 —— 逐字节重同步
+             * (HC-2, v2.6 P1-1)。判据取"== 2*exp_qty"而非"≤ 2*RD_QTY_MAX 的合法域":
+             * 后者会把"恰为偶数的垃圾字节"(如噪声 04 46 ..)当成合法帧长, 解析器
+             * 停等一个永不到齐的长度, 真应答随后到达也只能超时(本机实测的残留口子)。 */
+            if ((uint32_t)m->rx[2] != (2u * (uint32_t)m->exp_qty)) {
+                m->stats.discarded++;
+                drop_head(m);
+                continue;
+            }
             need = 3u + (uint32_t)m->rx[2] + 2u;
         } else if (fc_is_write(fc)) {
             need = 8u;                      /* 写应答定长(回显) */
@@ -351,8 +379,13 @@ uint32_t et_modbus_master_feed(et_modbus_master_t *m, const uint8_t *data, uint3
                               (uint16_t)m->rx[need - 2u]);
         crc_calc = et_crc16_modbus(m->rx, need - 2u);
         if (crc_wire != crc_calc) {
-            m->stats.crc_err++;
-            drop_n(m, need);
+            if (is_expected_shape(m, fc)) {
+                m->stats.crc_err++;         /* 与在途事务严格同形的候选帧 CRC 坏 */
+                drop_n(m, need);
+            } else {
+                m->stats.discarded++;       /* 未成帧的字节序列: 逐字节重同步(HC-2, P1-1) */
+                drop_head(m);
+            }
             continue;
         }
         if (m->rx[0] != (uint8_t)m->cfg.addr) {

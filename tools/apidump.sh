@@ -12,7 +12,7 @@
 #   sh tools/apidump.sh --check                # 与已入库清单比对, 漂移退出非零
 #   sh tools/apidump.sh --snapshot <清单文件>  # 固化冻结基线 (v2.1 P0-1)
 #   sh tools/apidump.sh --diff [基线清单]      # 与基线比对: 纯新增=绿 (默认
-#                                              #   docs/API_INVENTORY_v2.4.md)
+#                                              #   docs/API_INVENTORY_v2.5.md)
 # 基线滚动规则 (v2.2 P0-1): 默认基线 = 最近已发布 MINOR 的快照; 发版时用
 #   --snapshot 归档新基线后把此处默认值前滚; 旧基线文件只读保留(历史审计)。
 # 提取口径(见计划 §7 风险对策): 公开签名面 —— (et_|port_) 前缀函数/
@@ -34,6 +34,17 @@ cd "$(dirname "$0")/.."
 HDRS="et_config.h port/port.h $(ls core/*.h algorithm/*.h sys/*.h protocol/*.h drivers/*.h debug/*.h storage/*.h 2>/dev/null)"
 OUT=docs/API_INVENTORY.md
 TMPD=$(mktemp -d)
+# Windows/MSYS 下 TEMP 常为 "C:\...\Temp" 形式: gawk 内部的 `>> PFX ".fn"` 会把
+# 路径里的反斜杠当转义序列 → 提取文件写到别处 → 清单比对**误报漂移**(v2.6 本机
+# 实测)。Windows 分支改用**仓库内相对路径**(build/ 已在 .gitignore): 无盘符、
+# 无反斜杠, gawk 与 rm/diff 两侧语义一致。Linux 无 cygpath → 保持 mktemp -d,
+# CI 行为完全不变。
+if command -v cygpath >/dev/null 2>&1; then
+    TMPD_REL="build/.apidump.$$"
+    if mkdir -p "$TMPD_REL" 2>/dev/null; then
+        TMPD="$TMPD_REL"
+    fi
+fi
 trap 'rm -rf "$TMPD"' EXIT
 
 AWK_PROG='
@@ -154,7 +165,9 @@ gen_body() {
             echo "### $title ($cnt)"
             echo
             sort -u "$f" | awk '{ print "- `" $0 "`" }'
-            rm -f "$f"
+            # 临时产物不在此处逐个删除: 统一由 trap 清理 TMPD(v2.6 本机实测:
+            # 逐文件 rm 在某些 shell 封装(安全删除 wrapper)下每次耗时数十秒,
+            # 108 次调用使脚本从秒级劣化到小时级; 一次 rm -rf 即可)
         done
     done
 }
@@ -166,16 +179,14 @@ item_lines() {
 }
 
 if [ "${1:-}" = "--check" ]; then
-    TMPF=$(mktemp)
+    TMPF="$TMPD/gen_check.md"       # 放 TMPD 内, 由 trap 统一清理(见上 rm 说明)
     gen_body > "$TMPF"
     if diff -q "$TMPF" "$OUT" >/dev/null 2>&1; then
         echo "apidump: 清单与头文件一致 ($OUT)"
-        rm -f "$TMPF"
         exit 0
     fi
     echo "apidump: FAIL —— 公开面漂移, 清单未重新生成 (新增/变更 API 未登记即红):"
     diff -u "$OUT" "$TMPF" | head -40
-    rm -f "$TMPF"
     exit 1
 fi
 
@@ -190,11 +201,11 @@ if [ "${1:-}" = "--snapshot" ]; then
 fi
 
 if [ "${1:-}" = "--diff" ]; then
-    BASE="${2:-docs/API_INVENTORY_v2.4.md}"    # 滚动规则: 默认 = 最近已发布 MINOR 快照
+    BASE="${2:-docs/API_INVENTORY_v2.5.md}"    # 滚动规则: 默认 = 最近已发布 MINOR 快照
     if [ ! -f "$BASE" ]; then
         echo "apidump: FAIL —— 冻结基线不存在: $BASE (先 --snapshot 归档)"; exit 1
     fi
-    TMPN=$(mktemp)
+    TMPN="$TMPD/gen_new.md"         # 同上: 由 trap 统一清理
     gen_body > "$TMPN"
     item_lines "$BASE" | sort > "$TMPD/base.items"
     item_lines "$TMPN" | sort > "$TMPD/new.items"
@@ -212,7 +223,6 @@ if [ "${1:-}" = "--diff" ]; then
         printf '%s\n' "$GONE" | grep -v '^$' | head -40 | sed 's/^/    ! /'
     fi
     echo "  注: 结构体字段追加 apidump 不可见, 须在交付文档 diff 说明区登记。"
-    rm -f "$TMPN"
     if [ "$NG" -gt 0 ]; then
         echo "apidump: FAIL —— 存在删改项, 违反 MINOR 只追加契约"; exit 1
     fi

@@ -89,6 +89,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.4 | 21236 | 24 | 740 | 默认裁剪构建（终值）；+et_modbus（demo 未调用） |
 | v2.5 | 23480 | 24 | 740 | 默认裁剪构建（终值）；+et_modbus_master 入 glob；**et_log 规格解析加固**（域宽/精度/占位解析器 + ET_LOG_FIELD_MAX）+ demo 改域宽格式串（删 24 行逐位拼字符绕行） |
 | v2.5 | 33032 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；同默认行增量来源 |
+| v2.6 | 23724 | 24 | 740 | 默认裁剪构建；**et_log 修饰面收口**（`%c` 域宽生效 + `j/t/L` 消费与占位）+ **et_modbus_master 读应答定长合理性校验**（噪声逐字节重同步）；两者均经 demo/测试调用链入（v2.6 为纯内部修复，无新模块/新开关） |
+| v2.6 | 33272 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；同默认行增量来源 |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）

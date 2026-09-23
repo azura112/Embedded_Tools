@@ -630,6 +630,191 @@ static void mbm_write_echo_mismatch(void)
     ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
 }
 
+/* =====================================================================
+ * v2.6 P1-2 (CO-6 / HC-2 / AC-10): 噪声不得伪造帧长
+ * 噪声形态: ① 半双工单线上主站自身请求的回显(CO-6 的主形态)
+ *           ② 只有 [addr][读 fc] 的裸前缀; ③ 字节数域为奇数/超上限的假前缀。
+ * 断言要点: 真应答仍被正确解析(不退化到"只能靠超时收场"),
+ *           且从未成帧的噪声字节 **不得** 计入 crc_err(HC-2)。
+ * ===================================================================== */
+
+/* ① 自身请求回显: [addr][0x03][reg_hi=00] —— 第三字节被旧实现当作字节数域 */
+static void mbm_noise_self_echo(void)
+{
+    uint8_t  resp[32];
+    uint32_t resplen;
+    uint16_t vals[4] = { 1u, 2u, 3u, 4u };
+    uint16_t qty = 0u;
+    et_modbus_master_stats_t st;
+
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_read(&g_m, ET_MODBUS_FC_READ_HOLDING, 0u, 4u));
+    ET_CHECK_U32_EQ(8u, push_tx());         /* 请求 [11 03 00 00 00 04 crc] 在 g_mtx */
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, g_mtx, 8u));
+    resplen = mk_read_resp(resp, ADDR, ET_MODBUS_FC_READ_HOLDING, vals, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_result(&g_m, &qty));
+    ET_CHECK_U32_EQ(4u, qty);
+
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);        /* 噪声从未成帧 → 不得污染 crc_err */
+    ET_CHECK(st.discarded > 0u);
+    ET_CHECK_U32_EQ(0u, st.timeouts);
+}
+
+/* ② 裸前缀 [addr][0x03]: 字节数域尚未到达, 随后真应答的地址字节会被误当字节数域 */
+static void mbm_noise_bare_head(void)
+{
+    uint8_t  resp[32];
+    uint32_t resplen;
+    uint16_t vals[4] = { 9u, 8u, 7u, 6u };
+    static const uint8_t head[2] = { ADDR, ET_MODBUS_FC_READ_HOLDING };
+    et_modbus_master_stats_t st;
+
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_read(&g_m, ET_MODBUS_FC_READ_HOLDING, 0u, 4u));
+    ET_CHECK_U32_EQ(8u, push_tx());
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, head, sizeof(head)));
+    resplen = mk_read_resp(resp, ADDR, ET_MODBUS_FC_READ_HOLDING, vals, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+    ET_CHECK_U32_EQ(9u, et_modbus_master_result(&g_m, NULL));
+
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+}
+
+/* ③ 字节数域为奇数(非法): 逐字节重同步, 不按噪声定长 */
+static void mbm_noise_odd_bc(void)
+{
+    uint8_t  resp[32];
+    uint32_t resplen;
+    uint16_t vals[4] = { 3u, 1u, 4u, 1u };
+    static const uint8_t junk[4] = { ADDR, ET_MODBUS_FC_READ_HOLDING, 0x07u, 0xAAu };
+    et_modbus_master_stats_t st;
+
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_read(&g_m, ET_MODBUS_FC_READ_HOLDING, 0u, 4u));
+    ET_CHECK_U32_EQ(8u, push_tx());
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, junk, sizeof(junk)));
+    resplen = mk_read_resp(resp, ADDR, ET_MODBUS_FC_READ_HOLDING, vals, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+    ET_CHECK_U32_EQ(3u, et_modbus_master_result(&g_m, NULL));
+
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+}
+
+/* ④ 字节数域超上限(0xFF > 2*RD_QTY_MAX): 同样逐字节重同步 */
+static void mbm_noise_oversize_bc(void)
+{
+    uint8_t  resp[32];
+    uint32_t resplen;
+    uint16_t vals[2] = { 0x1234u, 0x5678u };
+    static const uint8_t junk[4] = { ADDR, ET_MODBUS_FC_READ_HOLDING, 0xFFu, 0x01u };
+    et_modbus_master_stats_t st;
+
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_read(&g_m, ET_MODBUS_FC_READ_HOLDING, 0u, 2u));
+    ET_CHECK_U32_EQ(8u, push_tx());
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, junk, sizeof(junk)));
+    resplen = mk_read_resp(resp, ADDR, ET_MODBUS_FC_READ_HOLDING, vals, 2u);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+    ET_CHECK_U32_EQ(0x1234u, et_modbus_master_result(&g_m, NULL));
+
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+}
+
+/* ⑤ 与在途事务"严格同形"的坏帧(地址/fc/字节数域全对, 内容是垃圾):
+ *    只有这种序列的 CRC 失败才计入 crc_err(HC-2 的计数门槛) */
+static void mbm_noise_expected_shape(void)
+{
+    uint8_t  resp[32];
+    uint32_t resplen;
+    uint16_t vals[4] = { 5u, 6u, 7u, 8u };
+    static const uint8_t fake[13] = {
+        ADDR, ET_MODBUS_FC_READ_HOLDING, 0x08u,
+        0xDEu, 0xADu, 0xBEu, 0xEFu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u
+    };
+    et_modbus_master_stats_t st;
+
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_read(&g_m, ET_MODBUS_FC_READ_HOLDING, 0u, 4u));
+    ET_CHECK_U32_EQ(8u, push_tx());
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, fake, sizeof(fake)));
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(1u, st.crc_err);
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_BUSY);
+
+    resplen = mk_read_resp(resp, ADDR, ET_MODBUS_FC_READ_HOLDING, vals, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+    ET_CHECK_U32_EQ(5u, et_modbus_master_result(&g_m, NULL));
+}
+
+/* ⑥ 重同步后 qty 上限(125)边界不回退: 满帧 255B 仍能在噪声后解析 */
+static void mbm_noise_qty_max_resync(void)
+{
+    uint8_t  resp[300];
+    uint32_t resplen;
+    uint16_t vals[ET_MODBUS_RD_QTY_MAX];
+    uint16_t qty = 0u;
+    static const uint8_t junk[1] = { 0xFFu };
+    et_modbus_master_stats_t st;
+
+    memset(vals, 0, sizeof(vals));
+    vals[0] = 0x0ABCu;
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_read(&g_m, ET_MODBUS_FC_READ_HOLDING, 0u,
+                                   ET_MODBUS_RD_QTY_MAX));
+    ET_CHECK_U32_EQ(8u, push_tx());
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, junk, sizeof(junk)));
+    resplen = mk_read_resp(resp, ADDR, ET_MODBUS_FC_READ_HOLDING, vals,
+                           ET_MODBUS_RD_QTY_MAX);
+    ET_CHECK_U32_EQ(255u, resplen);         /* 3 + 2*125 + 2 */
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+    ET_CHECK_U32_EQ(0x0ABCu, et_modbus_master_result(&g_m, &qty));
+    ET_CHECK_U32_EQ(ET_MODBUS_RD_QTY_MAX, qty);
+
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+}
+
+/* ⑦ 写路径不回退: 噪声前缀后写真应答(0x10 回显)仍能终结事务 */
+static void mbm_noise_write_resync(void)
+{
+    uint8_t  resp[16];
+    uint32_t resplen;
+    uint16_t vals[3] = { 0x1111u, 0x2222u, 0x3333u };
+    static const uint8_t junk[2] = { 0xFFu, 0x00u };
+    et_modbus_master_stats_t st;
+
+    setup(0u, ADDR);
+    ET_CHECK(et_modbus_master_write(&g_m, ET_MODBUS_FC_WRITE_MULTIPLE, 4u, vals, 3u));
+    ET_CHECK_U32_EQ(15u, push_tx());
+
+    ET_CHECK_U32_EQ(0u, et_modbus_master_feed(&g_m, junk, sizeof(junk)));
+    resplen = mk_write_resp(resp, ADDR, ET_MODBUS_FC_WRITE_MULTIPLE, 4u, 3u);
+    ET_CHECK_U32_EQ(8u, resplen);
+    ET_CHECK_U32_EQ(1u, et_modbus_master_feed(&g_m, resp, resplen));
+    ET_CHECK(et_modbus_master_poll(&g_m, g_now) == ET_MB_OK);
+
+    et_modbus_master_stats(&g_m, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+    ET_CHECK_U32_EQ(1u, st.responses);
+}
+
 /* qty 边界: 读 0/125/126 */
 static void mbm_qty_bounds_read(void)
 {
@@ -862,6 +1047,13 @@ const et_test_case_t *test_modbus_master_cases(size_t *count)
         { "mbm.garbage_resync",         mbm_garbage_resync },
         { "mbm.read_bc_mismatch",       mbm_read_bc_mismatch },
         { "mbm.write_echo_mismatch",    mbm_write_echo_mismatch },
+        { "mbm.noise_self_echo",        mbm_noise_self_echo },
+        { "mbm.noise_bare_head",        mbm_noise_bare_head },
+        { "mbm.noise_odd_bc",           mbm_noise_odd_bc },
+        { "mbm.noise_oversize_bc",      mbm_noise_oversize_bc },
+        { "mbm.noise_expected_shape",   mbm_noise_expected_shape },
+        { "mbm.noise_qty_max_resync",   mbm_noise_qty_max_resync },
+        { "mbm.noise_write_resync",     mbm_noise_write_resync },
         { "mbm.qty_bounds_read",        mbm_qty_bounds_read },
         { "mbm.qty_bounds_write",       mbm_qty_bounds_write },
         { "mbm.fc_rejected",            mbm_fc_rejected },

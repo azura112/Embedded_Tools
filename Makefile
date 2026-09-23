@@ -29,6 +29,11 @@ CC      := gcc
 # (v2.5 首轮 CI 实测: et_log 的 va_list* 链在 ubuntu 报 -Wincompatible-pointer-types 并跑出
 #  垃圾输出+段错误, windows 侧静默通过)。该 flag 让此类跨 ABI 缺陷在 Linux 侧硬失败。
 CFLAGS  := -std=c99 -Wall -Wextra -pedantic -Werror=incompatible-pointer-types -DET_MODULE_SELFTEST=1 -I. -Icore -Ialgorithm -Isys -Iprotocol -Idrivers -Idebug -Istorage -Iport -Iport/host
+# v2.6 P2-1 (CO-13): host 侧零警告硬门 —— CI 以 `make WERROR=1 <目标>` 调用,
+# 把"只有 ARM 交叉编译有零警告门"扩到 host 侧(Linux 与 Windows 两个 job 共用)。
+ifdef WERROR
+CFLAGS += -Werror
+endif
 OBJDIR  := build
 
 CORE_SRC    := core/et_ringbuf.c core/et_queue.c core/et_mempool.c core/et_list.c core/et_map.c core/et_smap.c
@@ -54,7 +59,10 @@ DEMO_SRC := examples/posix_demo.c
 # G4 flash 几何变体 (v1.6 双几何回归): storage 布局类改动必须 F1/G4 双几何全绿
 G4FLAGS := -DPORT_FLASH_SECTOR_SIZE=2048 -DPORT_FLASH_SECTOR_COUNT=16 -DPORT_FLASH_ERASE_MS_MAX=40
 
-.PHONY: all test demo test-g4 test-tab coverage-build bench bench-table clean
+# XMODEM 1K 块变体 (v2.6): 与默认 128B 块路径互为用例矩阵(用例数不同)
+K1FLAGS := -DET_XM_1K=1
+
+.PHONY: all test test-1k demo test-g4 test-tab coverage-build test-asan test-asan-1k bench bench-table clean
 
 all: test
 
@@ -102,6 +110,25 @@ test-asan: $(OBJDIR)/et_tests_asan.exe
 $(OBJDIR)/et_tests_asan.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 	-mkdir $(OBJDIR)
 	$(CC) $(ASAN_CFLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+
+# v2.6 P1-6 (HC-10): ASan 门**常设化并覆盖 1K 变体** —— v2.5 的 ASan 门抓到了
+# 既有的 stack-buffer-overflow(N-9), 本版把 XMODEM 1K 块路径一并纳入内存检查矩阵。
+# 本机 MinGW 无 libasan, 该目标以 Linux(CI) 为准, 交付文档显式声明"本机不可执行"。
+test-asan-1k: $(OBJDIR)/et_tests_asan_1k.exe
+	./$(OBJDIR)/et_tests_asan_1k.exe
+
+$(OBJDIR)/et_tests_asan_1k.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(ASAN_CFLAGS) $(K1FLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+
+# 1K 块变体 (ET_XM_1K=1) 常设目标 (v2.6): 用例计数与默认几何不同, 此前靠手工 gcc 命令,
+# 纳入 Makefile 后 CI 与本机同一命令(AC-21 的"1K 变体全绿"可一键复现)。
+test-1k: $(OBJDIR)/et_tests_1k.exe
+	./$(OBJDIR)/et_tests_1k.exe
+
+$(OBJDIR)/et_tests_1k.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(CFLAGS) $(K1FLAGS) -o $@ $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 
 # host 基准 (v1.7): 数字入 docs/bench.md 须附环境注记; 查表变体单独构建
 bench: $(OBJDIR)/bench.exe
