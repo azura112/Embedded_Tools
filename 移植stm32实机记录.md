@@ -593,3 +593,60 @@ PC 作主站（`tools/modbus_master.py --port COM12`），板作从站（v2.4 �
 - 事务耗时 `t`：正常读 **32ms**、写 **30ms**、异常 **29ms**、广播 **1ms**、丢包重发 **236ms**
   —— 与 `resp_timeout_ms=100` 一致，说明**板上波特率/中断延迟下的超时换算取值可用**。
 - 板侧新增命令组属**库外私有文件**（`Core/Src/et_demo.c`），不在本仓 git；库内 `examples/` 无对应改动。
+
+---
+
+## 14. v2.6 板侧同步与 `CO-6` 板上验证（2026-09-24）
+
+**固件**：库 `main @ c642418`（v2.5 G0 文本 + 实机记录 §13 + v2.6 库内改动合流后）；
+`Core/et` 全量重拷 + `diff -rq` 七目录 + `et_config.h` + `port.h` **全 OK**；
+`cmake --build --preset Debug` **0 warning**，FLASH **75144 B** / RAM **5960 B**（较 v2.5 的 74488 B **+656 B**，
+来自 `et_log` 修饰面（`emit_char_field` + `j/t/L` 分支）与 `et_modbus_master` 定长校验）；
+`STM32_Programmer_CLI -c port=SWD -w build/Debug/G474VET6_ET_TEST.elf -v -rst` → 校验通过 + 复位。
+
+### 14.1 版本与主站走单对照（v2.5 → v2.6，同一走单脚本 `build/board_walk.py`）
+
+| 项 | v2.5（§13） | v2.6（本节） | 结论 |
+|---|---|---|---|
+| `AT+VER` | `ver=2.5.0 boot=20` | **`ver=2.6.0 boot=3`** | 版本升级生效 |
+| 板上横幅 | `Embedded_Tools v2.5.0 (0x20500)` | **`Embedded_Tools v2.6.0 (0x20600)`** | ✓ |
+| `MBRD 0 4` | `st=2 val=1 n=4 t=32ms` / `req=1 resp=1 crc=0 disc=1` | **逐值相同** | 无回归 |
+| 请求/应答字节 | `11 03 00 00 00 04 46 99` / `11 03 08 00 01 00 02 00 03 00 04 59 D4` | **逐字节相同** | ✓ |
+| `MBWR 0 4660` | `11 06 00 00 12 34 86 2D` 回显，`t=30ms` | 同 | ✓ |
+| 丢包重发 | 3 次上线同字节，`t=236ms retry=2 disc=3 crc=0` | 同 | ✓ |
+| 异常注入 | `11 83 02 C1 34`，`st=3 exc=2 t=29ms` | 同 | ✓ |
+| 广播写 | `00 06 00 02 00 55 E9 E4`，无应答，`t=1ms` | 同 | ✓ |
+| `AT+SELFTEST` | 20/20 | **20/20** | 维持 20（HC-12 显式声明） |
+| `AT+SELFSTOR` | PASS | `kv PASS` / `bootctl PASS` / `STORAGE SELFTEST PASS` | ✓ |
+| `AT+SIMUPGRADE 3` | `slot 1 CONFIRMED` | `STAGED slot B` → 重启 → **`slot 1 CONFIRMED (self-check ok)`** | ✓ |
+| 从站分流复跑（PC 主站） | `1,2,3,4` PASS | `read 0..3 → 1,2,3,4` PASS、`read 1000..1001 → 1234, 0` PASS | ✓ |
+
+### 14.2 `CO-6` 受害形态在板上**不复现**（关键结论）
+
+`CO-6`（v2.5 评审探针发现）的受害前提是：**主站自身请求被自己的接收端读到**（半双工单线的回显），
+噪声形如 `[addr][读功能码]` 使解析器按错误的字节数域定长。
+
+本板 USART1 为 **TX/RX 独立**（USB-TTL 无回环），用"从站**完全不应答**"的对照实验验证：
+
+```
+AT+MBCFG 17 100 2 ; PC 侧 drop=99(不应答)
+AT+MBRD 0 4
+req  11 03 00 00 00 04 46 99     ← 第 1 次
+req  11 03 00 00 00 04 46 99     ← 重发 1
+req  11 03 00 00 00 04 46 99     ← 重发 2
+[at] MBRD reg=0 qty=4 st=4 val=0 n=0 exc=0 t=302ms
+[at] MBSTAT req=3 resp=0 exc_n=0 to=1 retry=2 crc=0 mismatch=0 late=0 disc=0
+```
+**`disc=0 / crc=0`** —— 板**没有**收到自己 TX 的字节（否则 v2.6 的新判据会把回显判为噪声并 `disc++`，
+而 v2.5 的旧判据会 `crc_err++`）。据此：
+
+- **`CO-6` 的修复在本硬件上属防御性修正**：受害形态（自身请求回显）在 G474 板上不成立，
+  因此**无法取得"修复前/后"的板上对照**；其正确性由 host 侧 7 例（`mbm.noise_*`，含回显形态）承担。
+- 真实单线半双工（如 RS-485 收发一体）场景才是 `CO-6` 的适用面 —— 该形态本板不具备，记为**已知边界**。
+
+### 14.3 遗留观察
+
+- 正常读/异常路径的统计里恒有 `disc=1`（v2.5 与 v2.6 **同值**，非 `CO-6` 引入）：来源未在板上定位
+  （无单步跟踪手段），且**不影响任何事务终态**（`st=2/3` 均正确、值正确）。记 v2.7 排查项。
+- 事务耗时与 v2.5 一致（读 32ms / 写 30ms / 异常 29ms / 广播 1ms / 重发 236ms / 超时 302ms），
+  说明 `resp_timeout_ms=100` 的换算在 v2.6 下同样可用。
