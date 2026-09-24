@@ -45,7 +45,9 @@ if command -v cygpath >/dev/null 2>&1; then
         TMPD="$TMPD_REL"
     fi
 fi
-trap 'rm -rf "$TMPD"' EXIT
+# 清理失败不得影响门的结论(受限 shell 封装下 rm 会失败/需确认 —— 见上 rm 说明):
+# 临时目录残留于 build/(已 gitignore), 下次运行会被覆盖, 不影响正确性。
+trap 'rm -rf "$TMPD" 2>/dev/null || true' EXIT
 
 AWK_PROG='
     BEGIN { buf = ""; intd = 0; mf = ""; inblk = 0 }
