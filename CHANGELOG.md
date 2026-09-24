@@ -26,7 +26,7 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 - **`et_log` 修饰面与承诺对齐（P1-3/P1-4，`CO-7`/`CO-8`）**：`%c` 的**域宽与左对齐**真正生效（按 C 语义精度对 `%c` 不起作用）；长度修饰 **`j`/`t`/`L`** 从"未知转换字符（不消费）"移入"已知不支持 → 消费 `intmax_t`/`ptrdiff_t`/`long double` + 完整字形占位"（`%jd` → `<?jd>`、`%Lf` → `<?Lf>`），消灭错位的最后口子。`et_log.h` 头注、API_GUIDE 8.1 规格表、`test/test_log.c` 三者**差集为空**（HC-3）。
 - **`tools/apidump.sh` 环境适配修复（本版新增，工具缺陷）**：① Windows/MSYS 下 `TEMP` 为 `C:\...` 形式时，gawk 的 `>> path` 把反斜杠当转义 → 提取文件写到别处 → 清单**误报漂移**（且无参数运行会把清单覆盖成残缺版）→ 改用**仓库内相对临时目录**；② 循环内逐文件 `rm`（最多 108 次）在带"安全删除"wrapper 的 shell 封装下每次耗时数十秒 → 脚本从**秒级劣化到小时级** → 改为由 `trap` 一次性清理。修复后本机 `--check` 21 秒完成。
 - **apidump 基线滚动（P0-1）**：归档 `docs/API_INVENTORY_v2.5.md`（433 项），默认基线切至 v2.5；v2.0~v2.4 归档只读保留。
-- 数字回刷：README（特性总览/结构树/测试与质量门/检出边界）、`architecture.md`（"五例"、"docsync 293 断言"、"连续十六版"）、`API_GUIDE` 8.1/8.4/5.8、`bench.md`、`port/*/README` 体积表、docsync 自指计数（291 → **293**）。
+- 数字回刷：README（特性总览/结构树/测试与质量门/检出边界）、`architecture.md`（"五例"、"docsync 296 断言"、"连续十六版"）、`API_GUIDE` 8.1/8.4/5.8、`bench.md`、`port/*/README` 体积表、docsync 自指计数（291 → **296**）。
 
 ### Fixed
 - **v2.5 遗留的清单残缺风险**：`docs/API_INVENTORY.md` 在受限 shell 环境下被无参数 `apidump` 覆盖为残缺版的路径已被消除（见上条 TMPD 修复）；本版重新生成并与入库版比对，**差异仅版本宏一行**（`ET_VERSION_MINOR 5→6`），其余逐字节一致。
