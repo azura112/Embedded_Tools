@@ -477,3 +477,119 @@ diff -q  <repo>/port/port.h  Core/et/port.h                                     
    ```
 2. `et_log` 域宽行板面原样比对（`%04u-%02u-%02u %02u:%02u:%02u`）。
 3. selftest 套件 20 → 21（本版因无板复验而**维持 20**，见交付文档 §5）。
+
+---
+
+## 13. v2.5 板侧走单补齐（G0-1 返工轮，2026-09-24）
+
+> 对应 `v2.5开发交付__…-r2.md` 的 AC-1 / HC-10：本节取得**板上逐字节证据**，
+> 挂账的 P2-2/P2-3/P2-4 至此清零。
+
+**环境**：
+
+| 项 | 值 |
+|---|---|
+| 板 | STM32G474VET6（CubeMX 工程 `D:\code\STM32CubeMX\G474VET6_ET_TEST`，**库外私有**） |
+| 调试/下载 | ST-Link SWD；`STM32_Programmer_CLI -c port=SWD -w build/Debug/G474VET6_ET_TEST.elf -v -rst` → `Download verified successfully` + `MCU Reset` |
+| 串口 | COM12 / 115200（同一路即 v2.4 所用，仍**无**第二路 USB-TTL） |
+| 固件来源 | 库 `main @ 82a0ae0`（v2.5 库内成果 + G0 文本修订，**不含 v2.6 代码改动**）；`Core/et` 全量重拷 + `diff -rq` 七目录 + `et_config.h` + `port.h` **全 OK** |
+| 构建 | `cmake --build --preset Debug`，**0 warning**；FLASH **74488 B** / RAM **5960 B**（Debug 构建，与 Release 不可比） |
+
+**板侧私有改动（库外，不在本仓 git）**：`Core/Src/et_demo.c` 增主站命令组
+`AT+MBCFG <addr> [timeout_ms] [retry_max]` / `AT+MBRD <reg> <qty>` / `AT+MBWR <reg> <v0..v3>` / `AT+MBSTAT`；
+事务期置 `g_mbm_busy`：**① 收字节一律喂主站**，② 暂停 v2.4 的从站分流（否则应答首字节 `0x11` 会被判为"发给板上从站的帧"），
+③ shell 不参与（阻塞式，同 `AT+UPGRADE` 风格）。走单驱动 `build/board_walk.py`（**不入库**）：同一串口既做
+PC 从站仿真（复用 `tools/modbus_master.py` 的 `LoopbackSlave` 内核，与 C 库语义对齐）又发 AT 命令并收集板侧日志。
+
+### 13.1 主站正常读（请求/应答逐字节）
+
+```
+板: AT+MBCFG 17 100 2   → [at] MBCFG addr=17 timeout=100ms retry=2
+板: AT+MBRD 0 4
+req  11 03 00 00 00 04 46 99
+resp 11 03 08 00 01 00 02 00 03 00 04 59 D4
+板: [at] MBRD reg=0 qty=4 st=2 val=1 n=4 exc=0 t=32ms
+板: [at] MBSTAT req=1 resp=1 exc_n=0 to=0 retry=0 crc=0 mismatch=0 late=0 disc=1
+```
+`st=2` = `ET_MB_OK`；读回值 1,2,3,4（与从站仿真器初值一致）；**请求字节 `11 03 00 00 00 04 46 99`
+与 §11 的 v2.4 板上记录、与 `ex_modbus_master` 的 host 打印**逐字节一致。
+
+### 13.2 主站写（0x06 回显）
+
+```
+板: AT+MBWR 0 4660          (0x1234)
+req  11 06 00 00 12 34 86 2D
+resp 11 06 00 00 12 34 86 2D
+板: [at] MBWR reg=0 n=1 st=2 exc=0 t=30ms
+```
+
+### 13.3 丢包注入 → 超时重发（同一请求上线 3 次，字节逐次相同）
+
+```
+板: AT+MBRD 0 2            (PC 侧 drop=2: 前两个应答不发)
+req  11 03 00 00 00 02 C6 9B     ← 第 1 次
+req  11 03 00 00 00 02 C6 9B     ← 超时重发 1（超时 100ms）
+req  11 03 00 00 00 02 C6 9B     ← 超时重发 2
+resp 11 03 04 00 01 00 02 3B F3
+板: [at] MBRD reg=0 qty=2 st=2 val=1 n=2 exc=0 t=236ms
+板: [at] MBSTAT req=5 resp=3 exc_n=0 to=0 retry=2 crc=0 mismatch=0 late=0 disc=3
+```
+**重发字节与首帧逐字节相同（含 CRC）** ✓ 与 host 用例 `mbm.timeout_retry_exhaust` 的断言形态一致；
+`retry=2`、`t=236ms`（≈ 2×100ms 超时 + 应答）符合 `resp_timeout_ms=100` 的换算。
+
+### 13.4 异常注入（不重试，异常码上报）
+
+```
+板: AT+MBRD 0 2            (PC 侧 --slave-exc 0x02)
+req  11 03 00 00 00 02 C6 9B
+resp 11 83 02 C1 34
+板: [at] MBRD reg=0 qty=2 st=3 val=0 n=0 exc=2 t=29ms
+板: [at] MBSTAT ... exc_n=1 ...
+```
+`st=3` = `ET_MB_EXC`，`exc=2` = `ET_MODBUS_EXC_ILLEGAL_ADDR`；应答字节 `11 83 02 C1 34`
+与 v2.4/v2.5 的跨实现向量**逐字节一致**；重发计数未增加（异常不重试 ✓）。
+
+### 13.5 广播写（不等应答）
+
+```
+板: AT+MBCFG 0 100 2       → [at] MBCFG addr=0 ...
+板: AT+MBWR 2 85           (0x0055)
+req  00 06 00 02 00 55 E9 E4
+(无应答帧)
+板: [at] MBWR reg=2 n=1 st=2 exc=0 t=1ms     ← 立即终态 OK, 未进入等应答
+```
+
+### 13.6 `et_log` 域宽行板面原样（v2.5 加固的落点）
+
+心跳行（每 2s）：`[2038][I][demo] alive 2038 ms | boot #2 | 2026-01-01 00:00:29 (UTC)`
+—— 日期时间段的 `%04u-%02u-%02u %02u:%02u:%02u` **补零与域宽正确**（`01`、`00:00:29`），
+即 v2.5 的"规格解析加固"在板面输出上成立（此前 v2.4 该段为 24 行手工补零绕行）。
+
+### 13.7 板上既有回归
+
+| 命令 | 结果 |
+|---|---|
+| `AT+SELFTEST` | `[selftest] start (20 suites)` → 18 PASS + kv/bootctl SKIP（存储门控）→ **`SELFTEST: 20/20 PASS`** / `[at] ALL PASS` |
+| `AT+SELFSTOR` | `kv PASS` / `bootctl PASS` / `kv: seq=1 free=1976 rec=4 key=1` → **`STORAGE SELFTEST PASS`** |
+| `AT+SIMUPGRADE 3` | `sim image ver=3 written` → `STAGED slot B, rebooting...` → 重启 → `boot slot 1 attempt 1` → **`slot 1 CONFIRMED (self-check ok)`**；横幅 `Embedded_Tools v2.5.0 (0x20500)` |
+| 主站初始化 | `[demo] modbus rtu master peer=0x11 to=100ms retry=2` |
+
+### 13.8 v2.4 从站分流路径复跑（证明板侧主站改动未破坏已验证路径）
+
+PC 作主站（`tools/modbus_master.py --port COM12`），板作从站（v2.4 的分流规则不变）：
+
+```
+--read 0 --qty 4        tx 11 03 00 00 00 04 46 99  rx 11 03 08 00 01 00 02 00 03 00 04 59 D4  → 1,2,3,4 PASS
+--write 0=4660          tx 11 06 00 00 12 34 86 2D  rx 11 06 00 00 12 34 86 2D                 → PASS
+--read 0 --qty 2        rx 11 03 04 12 34 00 02 2E 85                                          → 4660, 2 PASS（写入生效）
+--write 1000=1234       kv 参数通路                                                             → PASS
+--read 1000 --qty 2     → 1234, 0                                                               → PASS
+```
+
+### 13.9 观察与遗留
+
+- 统计里的 `disc`（丢弃计数）在正常读时为 **1**、累计到 3/4；其来源未在本次会话中定位
+  （板上无单步跟踪手段，且不影响事务终态）—— **v2.6 的 `CO-6` 修复后复跑同一序列做对照**（见 §14）。
+- 事务耗时 `t`：正常读 **32ms**、写 **30ms**、异常 **29ms**、广播 **1ms**、丢包重发 **236ms**
+  —— 与 `resp_timeout_ms=100` 一致，说明**板上波特率/中断延迟下的超时换算取值可用**。
+- 板侧新增命令组属**库外私有文件**（`Core/Src/et_demo.c`），不在本仓 git；库内 `examples/` 无对应改动。
