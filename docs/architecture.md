@@ -107,15 +107,15 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 ```
         板上自测 (et_selftest 20 套件, AT+SELFTEST)
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 20/20)
-      host 单测  (474 用例 × 2 几何 + 1K 变体 + Tab 形态)
-     配方载体    (make ex: 四例自检式示例, CI 常设)
-    机制门       (docsync 210 断言 / apidump --diff 纯增 / sizecheck / docbuild)
+      host 单测  (487 用例 × 2 几何 + 1K 变体 + Tab 形态)
+     配方载体    (make ex: 五例自检式示例, CI 常设)
+    机制门       (docsync 293 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
 ```
 
 层级关系：**下层红，上层必红**；示例（配方载体）用公开 API 编写——API 升级即编译错，
 "可运行证据"不会静默腐化。
 
-## 5. 设计边界（连续十一版的 Non-goals）
+## 5. 设计边界（连续十六版的 Non-goals）
 
 RTOS、动态内存、浮点格式化/浮点算法、i2c/spi 抽象、安全启动、多行编辑/通配、FOC/自动整定。
 完整清单见各版计划的 Non-goals 章节与 [v3-candidates.md](v3-candidates.md)（破坏性候选唯一去向）。
