@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.6.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.7.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -914,7 +914,20 @@ if (!et_bytes_be32_get(frame, sizeof(frame), 6u, &got)) { /* 越界: 拒绝且�
 
 **数量边界**：读 `ET_MODBUS_RD_QTY_MAX`=125（250 数据字节）、写 `ET_MODBUS_WR_QTY_MAX`=123（246 数据字节）、ADU 上限 `ET_MODBUS_ADU_MAX`=256B；越界回异常 `0x03`。
 
-**帧判定（双路径）**：① **快路径**——已知功能码由长度域驱动（`0x03/0x04/0x06` 定长 8；`0x10 = 9 + bytecount`），收齐即处理（低延迟）；② **静默路径**——未知功能码与畸形帧由帧间静默界定：调用方按波特率换算 **3.5 字符**时间写入 `cfg.silence_ms`，周期调用 `et_modbus_tick(now)`，缓冲在两次 tick 间无变化且累计静默满阈值即按完整帧做 CRC 兜底。**不内部取时基**（库惯例）。
+**帧判定（双路径）**：① **快路径**——已知功能码由长度域驱动（`0x03/0x04/0x06` 定长 8；`0x10 = 9 + bytecount`），收齐即处理（低延迟）；**v2.7（`CO-5`）起 `0x10` 的字节数域须先通过合理性校验**（`b[6] == 2*((b[4]<<8)|b[5])`）才被采信为帧长，不符即视为噪声头部（**不得据此长度前进** —— 旧实现"字节数域先于 CRC 被信任"，噪声只需伪造一个 `b[6]` 就能让解析器整段前进、吞掉紧随的真请求）；② **静默路径**——未知功能码与畸形帧由帧间静默界定：调用方按波特率换算 **3.5 字符**时间写入 `cfg.silence_ms`，周期调用 `et_modbus_tick(now)`，缓冲在两次 tick 间无变化且累计静默满阈值即按完整帧做 CRC 兜底。**不内部取时基**（库惯例）。
+
+**逐字节重同步（v2.7，HC-2，与主站 v2.6 判据同一语义）**：当缓冲首部**已不可能**是本站请求的起点时（帧首既非本站地址也非广播地址，或 `0x10` 的长度域不自洽），当场丢弃 1 字节并重新判定 —— **不得停等**：否则一个噪声字节会永久占据缓冲头部，使其后紧跟的真请求再也无法成帧（评审探针 E10 的受害形态：11 字节伪写入帧 `11 10 00 00 00 01 04 DE AD BE EF` 后接真读请求，旧实现返回 0 无应答、真请求被吞前 2 字节）。字节不足 2 个、或功能码未知时**不**重同步 —— 前者可能是真帧前缀，后者须交静默路径界定（"未知功能码回 `0x01`"依赖该路径）。
+
+**统计口径**（`et_modbus_stats_t`，与实现**差集为空**，逐条由 `test/test_modbus.c` 固定；v2.7 HC-3）：
+
+| 字段 | 口径（何时加一） |
+|---|---|
+| `frames` | CRC 通过 且（地址匹配 或 广播）的请求帧（含未知功能码帧，经静默路径到达） |
+| `responses` | 已生成应答帧数（异常应答**计入**） |
+| `exceptions` | 其中异常应答数 |
+| `crc_err` | **仅**当"与本站期望同形"的候选帧 CRC 失败：帧首 == 本站从站地址 且 功能码属已支持集合 且 长度域与功能码自洽（`0x03/0x04/0x06` = 8 字节；`0x10` = `9 + b[6]` 且 `b[6] == 2*qty`）。**广播帧不计**（无需应答）、**"从未成帧"的噪声字节不计** —— v2.7 起口径收紧（旧实现把任何 CRC 失败帧都计入，含噪声碎片） |
+| `addr_mismatch` | CRC 通过但帧首既非本站地址也非广播地址（别的从站的帧，静默丢弃） |
+| `discarded` | ① **"从未成帧"的字节序列（逐字节重同步，每丢 1 字节计 1）**；② 缓冲溢出丢整批；③ 过短残帧（`len < 4`）；④ 帧长超出 `rxcap` |
 
 **缓冲与粘包**：`rxbuf` 组装请求、`txbuf` 承载应答（**独立 TX 缓冲**是粘包安全前提：应答构建不覆盖缓冲中后续帧）；`feed` 产生一个应答即停，后续帧留待 `feed(NULL,0)`。缓冲溢出 → 丢整批 + `discarded++` 重新同步。RTU ADU 上限 256B（`ET_MODBUS_ADU_MAX`）。
 
@@ -967,7 +980,7 @@ for (;;) {
 
 **静默阈值换算**：`silence_ms ≈ 3.5 × 10 × 1000 / 波特率`（11 位/字符：1 起始+8 数据+1 校验+1 停止）。115200 → ≈0.30ms（实取 ≥1ms 整数，如 4ms）；9600 → ≈3.6ms（取 5ms）。**寄存器值域语义由应用钩子决定**（保持/输入、32 位组合、浮点寄存器均不在库级封装）；kv 直通配方见 [11.13](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)。
 
-单测 23 例（0x03/04/06/10 正常流、异常 0x01/0x02/0x03、CRC 坏/地址不符静默、广播写不应答、广播读忽略、分片、粘包两帧、静默丢弃重同步、qty 边界 125/123、txcap 不足、统计、多实例，`test/test_modbus.c`）；自检示例 [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`，v2.5 起含 **tick 静默路径应答**的两个 flush 点断言）；主站工具 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 回环自测 / `--slave` 从站仿真 / 串口模式）。
+单测 **33 例**（0x03/04/06/10 正常流、异常 0x01/0x02/0x03、CRC 坏/地址不符静默、广播写不应答、广播读忽略、分片、粘包两帧、静默丢弃重同步、qty 边界 125/123、txcap 不足、统计、多实例，`test/test_modbus.c`；**v2.7 `CO-5` 增 10 例解析边界矩阵**：长度域不自洽帧不伪造帧长（`mb.bc_qty_mismatch_resync`）、**伪写入帧噪声后接真读/真写请求仍被正确应答**（`mb.noise_fake_len_then_read` / `_write`，评审 E10 形态）、异站地址噪声头重同步、广播+未知功能码噪声头可重同步、纯噪声全丢弃且 `crc_err` 不增长、单次 feed 内"坏帧+真帧"粘包、CRC 坏且帧首非本站不计 `crc_err`、**单播未知功能码仍保留给静默路径**（异常 `0x01` 能力不回退）、长度域自洽但帧未齐时等待而非误判噪声）；自检示例 [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`，v2.5 起含 **tick 静默路径应答**的两个 flush 点断言）；主站工具 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 回环自测 / `--slave` 从站仿真 / 串口模式）。
 
 ### 5.8 et_modbus_master Modbus RTU 主站 (v2.5)
 
@@ -1311,6 +1324,15 @@ while (1) {
 
 **浮点仍不格式化**：`%f/%e/%g` 只保证"可见占位 + 实参不错位"；需要打印浮点请先在应用侧定点化（如 `%d` 打 Q10 值）。
 
+**`L` + 整数转换 = 未定义行为，库按 `long double` 消费（v2.7 `CO-10` 文档限定）**：
+长度修饰 `L` 在 C 标准中**只对浮点转换有定义**（`long double`）；`%Lu` / `%Ld` / `%Lx` 等
+"`L` + 整数转换"属**未定义行为** —— 库不为其定义输出，一律走"已知不支持 → 消费 + 占位"路径
+（按 `long double` 消费**一个**实参，输出 `<?Lu>` 形态占位）。
+**本机（Windows x64，整型/浮点实参同槽宽）实测不错位**（哨兵实参取值正确；v2.6 评审探针 E13），
+但在 **x86-64 SysV ABI**（Linux）下 `long double` 属 **memory-class**、`va_arg` 可能**不推进整数实参槽**，
+后继实参仍可能错位 —— 该组合**本库不保证可移植语义**，CI 亦不覆盖（本机无 Linux 执行路径）。
+**结论：不要在日志里使用 `L` + 整数转换**；需要 64 位整数请用 `%lld` / `%llu` / `%llx`。
+
 ```c
 et_log_set_level(ET_LOG_LEVEL_INFO);       /* 发布可改 ERROR */
 
@@ -1408,7 +1430,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 ### 8.4 et_selftest 板上自测组件 (v1.7)
 
-验证金字塔封顶：PC 单测(487) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
+验证金字塔封顶：PC 单测(497) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
 
 | 函数 | 上下文 | 说明 |
 |---|---|---|
@@ -1420,8 +1442,8 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `uint16_t et_selftest_suite_count(void)` | 读 | 内建 + 动态套件总数 |
 
 - **报告**：结构化事件回调 `et_selftest_report_fn(user, evt, suite, num)`——BEGIN/SUITE_PASS/SUITE_FAIL/SUITE_SKIP/CHECK_FAIL(带行号)/DONE；组件内不做格式化，接 et_log 或 shell 由应用决定；
-- **20 内建套件**（v2.2 起 +pid/stats/bytes）：ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
-- **覆盖边界**：冒烟非对等 host 487 用例，掉电注入类 host-only 用例不移植；
+- **22 内建套件**（v2.2 起 +pid/stats/bytes，v2.7 起 +modbus/log）：ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
+- **覆盖边界**：冒烟非对等 host 497 用例，掉电注入类 host-only 用例不移植；
 - **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
 - **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
 
@@ -1429,7 +1451,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 326 用例（1K 变体 327） | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 497 用例（1K 变体 498） | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
 | STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 

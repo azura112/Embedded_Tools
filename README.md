@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.6.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.6开发交付__解析边界清偿与检出能力补强.md](v2.6开发交付__解析边界清偿与检出能力补强.md)**（主站解析边界清偿 + et_log 修饰面收口 + 检出能力补强）
+> 当前版本：**v2.7.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.7开发交付__从站解析对称化与板上自测收口.md](v2.7开发交付__从站解析对称化与板上自测收口.md)**（从站解析边界对称化 + 板上自测 22 套件 + 代码卫生）
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**
 
@@ -43,7 +43,7 @@
 | debug/ | `et_shell` | 行式交互壳（atcmd 之上）：回显/退格擦写/提示符/help 自动生成 |
 |  | `et_log` | 分级日志：运行时过滤 + 编译期裁剪 + 自带格式化器（v2.5 起支持域宽/补零/左对齐/精度/长度修饰，不支持的规格给可见占位且实参不错位）+ hexdump |
 |  | `et_assert` | 断言：失败钩子可插拔（记录/停机/复位） |
-|  | `et_selftest` | 板上自测组件（v1.7，v2.2 扩至 20 内建套件）+ 结构化报告回调 + 存储门控，默认裁剪 |
+|  | `et_selftest` | 板上自测组件（v1.7，v2.2 扩至 20，**v2.7 扩至 22 内建套件**）+ 结构化报告回调 + 存储门控，默认裁剪 |
 
 ## 目录结构
 
@@ -55,7 +55,7 @@
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
-├── test/              # 迷你框架 + 487 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 23 + modbus_master 32 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
+├── test/              # 迷你框架 + 497 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 33 + modbus_master 32 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -167,7 +167,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | `port_putc()` | 阻塞式字符输出（日志底层） |
 | `port_flash_read/write/erase_sector` | 仅 `ET_MODULE_KV=1` 时必选：4B 对齐擦写、只允许 1→0 写、短写如实上报（掉电/故障截断） |
 
-已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已完成 **v1.6~v1.9 板面收口 + v2.1/v2.2 控制链路上板**（升级链真机走单 5 条 / 库化 selftest 20 套件 / PID 闭环真机走单，记录见仓库根 `移植stm32实机记录.md`），F103 真机维持常设挂账（编译+Renode 仿真门）。
+已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已完成 **v1.6~v1.9 板面收口 + v2.1/v2.2 控制链路上板**（升级链真机走单 5 条 / 库化 selftest 22 套件 / PID 闭环真机走单，记录见仓库根 `移植stm32实机记录.md`），F103 真机维持常设挂账（编译+Renode 仿真门）。
 
 裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关（支持 `-D` 覆盖），未启用的模块不参与编译（对应 `.c` 亦移出构建列表）。
 
@@ -177,20 +177,20 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，487 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步）。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，497 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步）。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（487 例，另 1K 变体 488 例、shell Tab 开启形态同套件数）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（497 例，另 1K 变体 498 例、shell Tab 开启形态 504 例）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **host 零警告门**（v2.6 P2-1）：`make WERROR=1 test` / `make WERROR=1 ex`（CI 的 Linux 与 Windows 两个 job 同用 `-Werror`）——把"只有 ARM 交叉编译有零警告门"扩到 host 侧；
 - **内存检查门**（v2.5 起，v2.6 扩变体）：`make test-asan` + `make test-asan-1k`（ASan 覆盖默认几何与 1K 块变体），CI 常设；
-- **板上自测**（v1.7）：`debug/et_selftest` 库组件，20 套件一条命令冒烟（host/板上结果可比对；v2.2 起 pid/stats/bytes 进板上冒烟）；
+- **板上自测**（v1.7）：`debug/et_selftest` 库组件，**22** 套件一条命令冒烟（host/板上结果可比对；v2.2 起 pid/stats/bytes、v2.7 起 modbus/log 进板上冒烟）；
 - **配方可执行载体**（v2.3，v2.5 扩至五例）：`make ex` 一键跑五个自检式示例（闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对 v2.0 基线必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
-- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85% × ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 20/20）**；
+- **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85% × ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 22/22）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
 ### 质量门与检出边界（v2.6 P2-1/P2-2）

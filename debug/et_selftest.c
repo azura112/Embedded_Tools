@@ -3,10 +3,12 @@
  * @brief   板上自测组件实现 (v1.7)
  *
  * 套件来源: G474 工程 AT+SELFTEST 已验证实现移植(13) + v1.4~v1.6 新模块补齐(4)
- *   + v2.1 pid/stats/bytes 纯逻辑冒烟(3, v2.2 P1 合入):
- *   ringbuf/queue/mempool/list/filter/fsm/sched/event/stimer/crc/frame/softclock/wdt
+ *   + v2.1 pid/stats/bytes 纯逻辑冒烟(3, v2.2 P1 合入)
+ *   + v2.7 modbus/log 解析面与修饰面冒烟(2, CO-14(v2.6) 关闭 CO-10(v2.5)) = **22**:
+ *   ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt
  *   + atcmd+shell 行解析 / xmodem 短传输(RAM 环回) / kv 冒烟(存储门控) /
- *   bootctl 状态机(存储门控) / pid 阶跃+钳位 / stats 对拍 / bytes 往返+越界。
+ *   bootctl 状态机(存储门控) / pid 阶跃+钳位 / stats 对拍 / bytes 往返+越界 /
+ *   modbus 从站+主站解析边界(CO-5/CO-6) / et_log 修饰面(v2.6 CO-7/CO-8)。
  *
  * 与 G474 工程私有版差异:
  *   - 输出经结构化事件回调(不在组件内格式化), 接 et_log 或 shell 由应用决定;
@@ -88,6 +90,13 @@
 #endif
 #if ET_MODULE_BOOTCTL
 #include "et_bootctl.h"
+#endif
+#if ET_MODULE_MODBUS && ET_MODULE_CRC      /* v2.7 P1-1: 从站+主站纯逻辑冒烟 */
+#include "et_modbus.h"
+#include "et_modbus_master.h"
+#endif
+#if ET_MODULE_LOG                          /* v2.7 P1-2: 修饰面冒烟 */
+#include "et_log.h"
 #endif
 
 /* ===================== 框架: 上下文与断言 ===================== */
@@ -994,6 +1003,301 @@ static bool st_bootctl(st_ctx_t *ctx)
 }
 #endif /* ET_MODULE_BOOTCTL */
 
+/* ===================== 18. modbus (v2.7 P1-1: 从站+主站纯逻辑冒烟) =====================
+ * 覆盖 v2.6 的主站解析边界判据与 v2.7 的从站对称化(CO-5) —— 这些判据此前在板上
+ * **零冒烟覆盖**(`CO-10(v2.5)` 未关闭)。全部确定性: 不碰串口、不取时基(超时不测)。
+ * 缓冲一律**文件级静态**(HC-6: 禁用 malloc); 主站双缓冲合计 2×ET_MODBUS_ADU_MAX
+ * = 512B, 是本套件的 RAM 增项主体(见交付文档体积/ RAM 记档)。 */
+#if ET_MODULE_MODBUS && ET_MODULE_CRC
+static et_modbus_t        g_st_mb;
+static uint8_t            g_st_mb_rx[32];
+static uint8_t            g_st_mb_tx[64];
+static uint16_t           g_st_mb_reg[4];
+static et_modbus_master_t g_st_mbm;
+static uint8_t            g_st_mbm_rx[ET_MODBUS_ADU_MAX];
+static uint8_t            g_st_mbm_tx[ET_MODBUS_ADU_MAX];
+
+static void st_put16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)(v & 0xFFu);
+}
+
+/* 从站读钩子: 仅 4 个寄存器, 越界回 0x02 */
+static uint8_t st_mb_rd(void *user, uint8_t func, uint16_t addr, uint16_t qty,
+                        uint8_t *dst)
+{
+    uint16_t i;
+
+    (void)user;
+    (void)func;
+    if (((uint32_t)addr + qty) > 4u) {
+        return ET_MODBUS_EXC_ILLEGAL_ADDR;
+    }
+    for (i = 0u; i < qty; i++) {
+        st_put16(dst + (2u * i), g_st_mb_reg[addr + i]);
+    }
+    return 0u;
+}
+
+/* 从站写钩子 */
+static uint8_t st_mb_wr(void *user, uint8_t func, uint16_t addr, uint16_t qty,
+                        const uint8_t *src)
+{
+    uint16_t i;
+
+    (void)user;
+    (void)func;
+    if (((uint32_t)addr + qty) > 4u) {
+        return ET_MODBUS_EXC_ILLEGAL_ADDR;
+    }
+    for (i = 0u; i < qty; i++) {
+        g_st_mb_reg[addr + i] = (uint16_t)(((uint16_t)src[2u * i] << 8) |
+                                           (uint16_t)src[2u * i + 1u]);
+    }
+    return 0u;
+}
+
+/* 组读应答: [addr, fc, 2*qty, data.., crc_lo, crc_hi]; 返回帧长 */
+static uint32_t st_mb_mk_read(uint8_t *f, uint8_t addr, uint8_t fc,
+                              const uint8_t *d, uint32_t qty)
+{
+    uint16_t crc;
+    uint32_t n = 2u * qty;
+
+    f[0] = addr;
+    f[1] = fc;
+    f[2] = (uint8_t)n;
+    if (n > 0u) {
+        memcpy(f + 3u, d, n);
+    }
+    crc = et_crc16_modbus(f, 3u + n);
+    f[3u + n] = (uint8_t)(crc & 0xFFu);
+    f[4u + n] = (uint8_t)(crc >> 8);
+    return 5u + n;
+}
+
+/* 组一帧: [addr, fc, payload.., crc_lo, crc_hi]; 返回帧长 */
+static uint32_t st_mb_mk(uint8_t *f, uint8_t addr, uint8_t fc,
+                         const uint8_t *pay, uint32_t plen)
+{
+    uint16_t crc;
+
+    f[0] = addr;
+    f[1] = fc;
+    if (plen > 0u) {
+        memcpy(f + 2u, pay, plen);
+    }
+    crc = et_crc16_modbus(f, 2u + plen);
+    f[2u + plen]      = (uint8_t)(crc & 0xFFu);
+    f[3u + plen]      = (uint8_t)(crc >> 8);
+    return 4u + plen;
+}
+
+static bool st_modbus(st_ctx_t *ctx)
+{
+    /* 11 字节"伪写入帧"噪声: FC=0x10 且 b[6](=4) 与 qty(=1) 不符 —— 旧从站据此
+     * 伪造帧长 13, 吞掉紧随的真请求(v2.7 CO-5 / 评审 E10 形态) */
+    static const uint8_t noise[11] = {
+        0x11u, 0x10u, 0x00u, 0x00u, 0x00u, 0x01u, 0x04u,
+        0xDEu, 0xADu, 0xBEu, 0xEFu
+    };
+    et_modbus_cfg_t         cfg;
+    et_modbus_master_cfg_t  mcfg;
+    et_modbus_stats_t       st;
+    et_modbus_master_stats_t mst;
+    uint8_t  req[16];
+    uint8_t  pay[8];
+    uint8_t  resp[16];
+    uint32_t len = 0u;
+    const uint8_t *r;
+
+    /* ---------- 从站段 ---------- */
+    g_st_mb_reg[0] = 0x1234u;
+    g_st_mb_reg[1] = 0x5678u;
+    g_st_mb_reg[2] = 0u;
+    g_st_mb_reg[3] = 0u;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.slave_addr = 0x11u;
+    cfg.silence_ms = 4u;
+    cfg.rd = st_mb_rd;
+    cfg.wr = st_mb_wr;
+    memset(&g_st_mb, 0, sizeof(g_st_mb));
+    ST_CHECK(et_modbus_init(&g_st_mb, &cfg, g_st_mb_rx, sizeof(g_st_mb_rx),
+                            g_st_mb_tx, sizeof(g_st_mb_tx)));
+
+    /* ① 快路径: 0x03 读 reg0..1 → 应答 [11 03 04 12 34 56 78 crc] */
+    st_put16(pay, 0u);
+    st_put16(pay + 2u, 2u);
+    ST_CHECK((8u) == (st_mb_mk(req, 0x11u, ET_MODBUS_FC_READ_HOLDING, pay, 4u)));
+    ST_CHECK((1u) == (et_modbus_feed(&g_st_mb, req, 8u)));
+    r = et_modbus_response(&g_st_mb, &len);
+    ST_CHECK(r != NULL);
+    if (r != NULL) {
+        ST_CHECK((9u) == (len));
+        ST_CHECK((r[0] == 0x11u) && (r[1] == ET_MODBUS_FC_READ_HOLDING) &&
+                 (r[2] == 4u));
+        ST_CHECK((r[3] == 0x12u) && (r[4] == 0x34u) &&
+                 (r[5] == 0x56u) && (r[6] == 0x78u));
+    }
+
+    /* ② 0x10 写 reg2 = 0xABCD → 回显应答 8 字节且寄存器被写 */
+    st_put16(pay, 2u);
+    st_put16(pay + 2u, 1u);
+    pay[4] = 2u;
+    st_put16(pay + 5u, 0xABCDu);
+    ST_CHECK((11u) == (st_mb_mk(req, 0x11u, ET_MODBUS_FC_WRITE_MULTIPLE, pay, 7u)));
+    ST_CHECK((1u) == (et_modbus_feed(&g_st_mb, req, 11u)));
+    ST_CHECK((0xABCDu) == (g_st_mb_reg[2]));
+    ST_CHECK(et_modbus_response(&g_st_mb, &len) != NULL);
+    ST_CHECK((8u) == (len));
+
+    /* ③ qty=0 非法值 → 异常 0x03 */
+    st_put16(pay, 0u);
+    st_put16(pay + 2u, 0u);
+    (void)st_mb_mk(req, 0x11u, ET_MODBUS_FC_READ_HOLDING, pay, 4u);
+    (void)et_modbus_feed(&g_st_mb, req, 8u);
+    r = et_modbus_response(&g_st_mb, &len);
+    ST_CHECK((r != NULL) && (len == 5u) &&
+             (r[2] == ET_MODBUS_EXC_ILLEGAL_VALUE));
+
+    /* ④ 未知功能码(单播) → 快路径不定长, 由**静默路径**界定 → 异常 0x01 */
+    req[0] = 0x11u; req[1] = 0x63u;
+    {
+        uint16_t crc = et_crc16_modbus(req, 2u);
+
+        req[2] = (uint8_t)(crc & 0xFFu);
+        req[3] = (uint8_t)(crc >> 8);
+    }
+    ST_CHECK((0u) == (et_modbus_feed(&g_st_mb, req, 4u)));
+    et_modbus_tick(&g_st_mb, 0u);
+    et_modbus_tick(&g_st_mb, 100u);
+    r = et_modbus_response(&g_st_mb, &len);
+    ST_CHECK((r != NULL) && (len == 5u) &&
+             (r[2] == ET_MODBUS_EXC_ILLEGAL_FUNC));
+
+    /* ⑤ ★ CO-5 核心: 伪长度噪声 + 真读请求 → 真请求仍被正确应答, crc_err 不增长 */
+    et_modbus_stats(&g_st_mb, &st);
+    {
+        uint32_t crc_before = st.crc_err;
+
+        ST_CHECK((0u) == (et_modbus_feed(&g_st_mb, noise, 11u)));
+        st_put16(pay, 0u);
+        st_put16(pay + 2u, 2u);
+        (void)st_mb_mk(req, 0x11u, ET_MODBUS_FC_READ_HOLDING, pay, 4u);
+        ST_CHECK((1u) == (et_modbus_feed(&g_st_mb, req, 8u)));
+        r = et_modbus_response(&g_st_mb, &len);
+        ST_CHECK((r != NULL) && (len == 9u) && (r[2] == 4u));
+        et_modbus_stats(&g_st_mb, &st);
+        ST_CHECK((crc_before) == (st.crc_err));
+    }
+
+    /* ---------- 主站段(复用同一协议常量) ---------- */
+    memset(&mcfg, 0, sizeof(mcfg));
+    mcfg.addr = 0x11u;
+    mcfg.resp_timeout_ms = 100u;
+    mcfg.retry_max = 2u;
+    memset(&g_st_mbm, 0, sizeof(g_st_mbm));
+    ST_CHECK(et_modbus_master_init(&g_st_mbm, &mcfg, g_st_mbm_rx,
+                                   sizeof(g_st_mbm_rx),
+                                   g_st_mbm_tx, sizeof(g_st_mbm_tx)));
+
+    /* ⑥ 读请求组帧 + 应答解析 → ET_MB_OK */
+    ST_CHECK(et_modbus_master_read(&g_st_mbm, ET_MODBUS_FC_READ_HOLDING, 0u, 2u));
+    r = et_modbus_master_tx(&g_st_mbm, &len);
+    ST_CHECK((r != NULL) && (len == 8u));
+    ST_CHECK((r != NULL) && (r[0] == 0x11u) &&
+             (r[1] == ET_MODBUS_FC_READ_HOLDING) &&
+             (r[2] == 0u) && (r[3] == 0u) &&          /* start = 0 */
+             (r[4] == 0u) && (r[5] == 2u));           /* qty   = 2 */
+    /* CRC 自洽: 帧内 CRC(低字节在前) == 对前 6 字节重算 —— 不写死魔数 */
+    if (r != NULL) {
+        uint16_t crc = et_crc16_modbus(r, 6u);
+
+        ST_CHECK((r[6] == (uint8_t)(crc & 0xFFu)) &&
+                 (r[7] == (uint8_t)(crc >> 8)));
+    }
+    et_modbus_master_sent(&g_st_mbm, 0u);
+    st_put16(pay, 0x1234u);
+    st_put16(pay + 2u, 0x5678u);
+    {
+        uint32_t rlen = st_mb_mk_read(resp, 0x11u, ET_MODBUS_FC_READ_HOLDING, pay, 2u);
+
+        ST_CHECK((1u) == (et_modbus_master_feed(&g_st_mbm, resp, rlen)));
+    }
+    ST_CHECK(et_modbus_master_poll(&g_st_mbm, 0u) == ET_MB_OK);
+    ST_CHECK((0x1234u) == (et_modbus_master_result(&g_st_mbm, NULL)));
+
+    /* ⑦ 噪声逐字节重同步(主站 v2.6 判据): 裸前缀 [addr][读 fc] + 字节数域非法 */
+    {
+        static const uint8_t junk[4] = { 0x11u, 0x03u, 0xFFu, 0x01u };
+
+        ST_CHECK(et_modbus_master_read(&g_st_mbm, ET_MODBUS_FC_READ_HOLDING, 0u, 2u));
+        (void)et_modbus_master_tx(&g_st_mbm, &len);
+        et_modbus_master_sent(&g_st_mbm, 0u);
+        ST_CHECK(0u == et_modbus_master_feed(&g_st_mbm, junk, sizeof(junk)));
+        {
+            uint32_t rlen = st_mb_mk_read(resp, 0x11u, ET_MODBUS_FC_READ_HOLDING, pay, 2u);
+
+            ST_CHECK((1u) == (et_modbus_master_feed(&g_st_mbm, resp, rlen)));
+        }
+        ST_CHECK(et_modbus_master_poll(&g_st_mbm, 0u) == ET_MB_OK);
+        et_modbus_master_stats(&g_st_mbm, &mst);
+        ST_CHECK((0u) == (mst.crc_err));          /* 噪声未成帧 → 不污染 crc_err */
+    }
+
+    /* ⑧ crc_err 门槛: 与在途事务同形(addr+fc+bc 全对)但 CRC 坏的候选帧才算 */
+    {
+        uint32_t rlen;
+
+        ST_CHECK(et_modbus_master_read(&g_st_mbm, ET_MODBUS_FC_READ_HOLDING, 0u, 2u));
+        (void)et_modbus_master_tx(&g_st_mbm, &len);
+        et_modbus_master_sent(&g_st_mbm, 0u);
+        rlen = st_mb_mk_read(resp, 0x11u, ET_MODBUS_FC_READ_HOLDING, pay, 2u);
+        resp[rlen - 1u] ^= 0xFFu;                  /* 破坏 CRC, 形状不变 */
+        ST_CHECK((0u) == (et_modbus_master_feed(&g_st_mbm, resp, rlen)));
+        et_modbus_master_stats(&g_st_mbm, &mst);
+        ST_CHECK((1u) == (mst.crc_err));
+    }
+
+    return (ctx->fails == 0);
+}
+#endif /* ET_MODULE_MODBUS && ET_MODULE_CRC */
+
+/* ===================== 19. log (v2.7 P1-2: 修饰面冒烟) =====================
+ * 以 **`et_log_raw()` 的返回字符数**断言修饰面是否生效(v2.6 CO-7/CO-8 的落点)。
+ * 为什么不用输出捕获: 捕获点 `port_host_capture_*` 是 **host 专有**(port/host/),
+ * 板上不存在; 而在 port.h 增设捕获钩子会触碰公开契约(HC-1 禁止破坏)。字符数对
+ * host 与板上**确定性一致**, 且不依赖 libc 格式化(HC: 不得依赖 snprintf)。 */
+#if ET_MODULE_LOG
+static bool st_log(st_ctx_t *ctx)
+{
+    ST_CHECK(et_log_raw("%d", 12345) == 5);
+    ST_CHECK(et_log_raw("%u", 0u) == 1);
+    ST_CHECK(et_log_raw("%x", 0xABu) == 2);
+    ST_CHECK(et_log_raw("%X", 0xABu) == 2);
+    ST_CHECK(et_log_raw("%08x", 0xABu) == 8);          /* '0' 标志补零 */
+    ST_CHECK(et_log_raw("%8d", 12345) == 8);           /* 域宽 */
+    ST_CHECK(et_log_raw("%-8d|", 12345) == 9);         /* 左对齐 */
+    ST_CHECK(et_log_raw("%.3d", 7) == 3);              /* 精度 = 最少位数 */
+    ST_CHECK(et_log_raw("%.0d", 0) == 0);              /* 精度 0 + 值 0 → 无数字(C 语义) */
+    ST_CHECK(et_log_raw("%.2s", "abcdef") == 2);       /* 字符串精度截断 */
+    ST_CHECK(et_log_raw("%4s", "ab") == 4);
+    ST_CHECK(et_log_raw("%c", 'A') == 1);
+    ST_CHECK(et_log_raw("%5c", 'A') == 5);             /* v2.6 CO-7: %c 域宽生效 */
+    ST_CHECK(et_log_raw("%-3c|", 'A') == 4);           /* %c 左对齐 */
+    ST_CHECK(et_log_raw("%jd", (intmax_t)7) == 5);     /* v2.6 CO-8: 占位 <?jd> 共 5 字符 */
+    ST_CHECK(et_log_raw("%tu", (ptrdiff_t)7) == 5);    /* 占位 <?tu> 共 5 字符 */
+    ST_CHECK(et_log_raw("%Lf", (long double)0.5) == 5);/* 占位 <?Lf> 共 5 字符 */
+    ST_CHECK(et_log_raw("%f", 1.5) == 4);              /* 已知不支持: <?f> 共 4 字符 */
+    ST_CHECK(et_log_raw("%y", 1) == 4);                /* 未知转换字符: <?y> 共 4 字符(不消费实参) */
+    ST_CHECK(et_log_raw("%%") == 1);
+    ST_CHECK(et_log_raw("ab") == 2);
+
+    return (ctx->fails == 0);
+}
+#endif /* ET_MODULE_LOG */
+
 /* ===================== 框架: 套件表 / 门控 / 运行器 ===================== */
 
 typedef struct {
@@ -1062,6 +1366,12 @@ static const st_entry_t g_suites[] = {
 #endif
 #if defined(ET_MODULE_BOOTCTL) && ET_MODULE_BOOTCTL
     { "bootctl",   st_bootctl,   2u },
+#endif
+#if defined(ET_MODULE_MODBUS) && ET_MODULE_MODBUS && defined(ET_MODULE_CRC) && ET_MODULE_CRC
+    { "modbus",    st_modbus,    0u },      /* v2.7 P1-1: 从站+主站解析边界冒烟 */
+#endif
+#if defined(ET_MODULE_LOG) && ET_MODULE_LOG
+    { "log",       st_log,       0u },      /* v2.7 P1-2: 修饰面冒烟 */
 #endif
 };
 

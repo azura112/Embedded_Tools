@@ -91,6 +91,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.5 | 33032 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；同默认行增量来源 |
 | v2.6 | 23724 | 24 | 740 | 默认裁剪构建；**et_log 修饰面收口**（`%c` 域宽生效 + `j/t/L` 消费与占位）+ **et_modbus_master 读应答定长合理性校验**（噪声逐字节重同步）；两者均经 demo/测试调用链入（v2.6 为纯内部修复，无新模块/新开关） |
 | v2.6 | 33272 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；同默认行增量来源 |
+| v2.7 | 23884 | 24 | 740 | 默认裁剪构建；**从站解析边界对称化**（v2.7 P0-1/P0-2，`CO-5`：0x10 长度域前置校验 + 逐字节重同步 + `crc_err` 口径收紧）+ 主站读路径死代码清理（P2-1，行为零变化） |
+| v2.7 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；**+selftest 22 套件**（新增 `modbus`/`log` 冒烟）—— **bss +784 B** = 新套件的文件级静态缓冲（主站双缓冲 2×`ET_MODBUS_ADU_MAX`=512B + 从站 rx32/tx64 + 标量），text +3068 B 为两套件代码 |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
@@ -124,7 +126,7 @@ CI：`.github/workflows/ci.yml` 的 `renode-smoke` job（Renode 固定 1.16.1，
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟 flash+时基单测） | ✅ 291 用例 | v1.0 起 |
+| host (MinGW gcc 16.1 / CI ubuntu+windows) | ✅ | ✅（虚拟 flash+时基单测） | ✅ **497** 用例 × 双几何（1K 498 / Tab 504） | v1.0 起 |
 | STM32F103C8T6 (arm-none-eabi-gcc 13.3) | ✅ 零警告 | ✅ Renode smoke（本机+CI 门） | 待硬件（常设挂账，**不阻塞发布**） | v1.1 编译 / v1.3 仿真闭环 |
 
 > **v1.3 政策**：Renode CI 门作为 F103 的功能验收线（断言 kv/重启计数等日志）；真机记录转常设挂账，硬件到位后按 checklist 补录（重启计数 `boot #n` 递增即为最直观验收），不再随版本顺延阻塞。

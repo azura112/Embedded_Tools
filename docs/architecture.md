@@ -10,7 +10,7 @@
 │  应用层 (examples/、用户固件)                                       │
 ├────────────────────────────────────────────────────────────────────┤
 │  debug/   et_shell(交互壳)  et_log(日志)  et_assert(断言钩子)        │
-│           et_selftest(板上自测, 20 套件)                            │
+│           et_selftest(板上自测, 22 套件)                            │
 ├────────────────────────────────────────────────────────────────────┤
 │  drivers/ et_key(按键)  et_led(LED)  et_spwm(软 PWM)                │
 │  storage/ et_kv(掉电参数)  et_bootctl(安全升级 A/B)                  │
@@ -100,22 +100,22 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 | **Modbus RTU 主站** | `et_modbus_master` | 单事务 + 超时重发 + 异常上报；复用从站常量与开关；**不含调度器**（多从站轮询见 11.14） |
 | CRC 校验 | `et_crc` | `ET_CRC_TABLE=1` 查表加速 |
 | 日志/断言 | `et_log` / `et_assert` | 失败钩子可落 kv |
-| 一条命令全模块冒烟 | `et_selftest` | 20 套件，板上可跑 |
+| 一条命令全模块冒烟 | `et_selftest` | 22 套件，板上可跑 |
 
 ## 4. 验证金字塔（质量门怎么咬合）
 
 ```
-        板上自测 (et_selftest 20 套件, AT+SELFTEST)
-       仿真回归  (Renode F103 smoke: kv/重启计数/selftest 20/20)
-      host 单测  (487 用例 × 2 几何 + 1K 变体 + Tab 形态)
+        板上自测 (et_selftest 22 套件, AT+SELFTEST)
+       仿真回归  (Renode F103 smoke: kv/重启计数/selftest 22/22)
+      host 单测  (497 用例 × 2 几何 + 1K 变体 + Tab 形态)
      配方载体    (make ex: 五例自检式示例, CI 常设)
-    机制门       (docsync 301 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
+    机制门       (docsync 304 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
 ```
 
 层级关系：**下层红，上层必红**；示例（配方载体）用公开 API 编写——API 升级即编译错，
 "可运行证据"不会静默腐化。
 
-## 5. 设计边界（连续十六版的 Non-goals）
+## 5. 设计边界（连续十七版的 Non-goals）
 
 RTOS、动态内存、浮点格式化/浮点算法、i2c/spi 抽象、安全启动、多行编辑/通配、FOC/自动整定。
 完整清单见各版计划的 Non-goals 章节与 [v3-candidates.md](v3-candidates.md)（破坏性候选唯一去向）。

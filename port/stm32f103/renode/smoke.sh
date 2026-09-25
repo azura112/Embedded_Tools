@@ -93,8 +93,8 @@ grep -qE "alive [0-9]+ ms \| boot #[0-9]+ \| [0-9]{4}-[0-9]{2}-[0-9]{2}" \
 grep -E "kv: seq=" "$LOG" | grep -qE "key=[2-9]" \
                              || fail "断言2b 失败: kv 有效 key 数异常"
 
-# v1.8 断言 6: 库级板上自测 (demo 开机自跑; v2.2 起 20 套件: 18 PASS + 2 SKIP)
-grep -q "SELFTEST: 20/20 PASS" "$LOG"     || fail "断言6 失败: 库级 selftest 结果行缺失/未全过"
+# v1.8 断言 6: 库级板上自测 (demo 开机自跑; v2.7 起 22 套件: 20 PASS + 2 SKIP)
+grep -q "SELFTEST: 22/22 PASS" "$LOG"     || fail "断言6 失败: 库级 selftest 结果行缺失/未全过"
 
 echo "[smoke] PASS: 全部断言通过"
 exit 0

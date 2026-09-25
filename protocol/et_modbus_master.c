@@ -34,21 +34,19 @@ static bool fc_is_write(uint8_t fc)
 }
 
 /* 缓冲首部是否与在途事务"严格同形"(v2.6 P1-1 / HC-2 的 crc_err 计数门槛):
- * 帧首 = 本站地址, 且功能码与长度域均与在途期望一致 —— 只有这种序列才可能是
- * "本来发往本站的应答", 其 CRC 失败才计入 crc_err 并按帧长丢弃整帧;
- * 其余字节序列属"从未成帧", 一律逐字节重同步(不污染 crc_err)。 */
+ * 帧首 = 本站地址, 且功能码与在途期望一致(正常应答 fc, 或异常应答 fc|0x80) ——
+ * 只有这种序列才可能是"本来发往本站的应答", 其 CRC 失败才计入 crc_err 并按帧长
+ * 丢弃整帧; 其余字节序列属"从未成帧", 一律逐字节重同步(不污染 crc_err)。
+ *
+ * v2.7 P2-1(`CO-9(v2.6)`)清理: 原实现另有一条读分支子句
+ * `fc_is_read(fc) → (rx[2] == 2*exp_qty)` —— 该子句在**到达点恒真**
+ * (feed 的读分支已用该等式定长后才走到这里), 属死代码, 已删。
+ * 本条判据的**有效判别力 = 地址 + 功能码**(评审探针 E12 已验证原分支命中 0 次)。 */
 static bool is_expected_shape(const et_modbus_master_t *m, uint8_t fc)
 {
-    if (m->rx[0] != (uint8_t)m->cfg.addr) {
-        return false;
-    }
-    if ((fc != (uint8_t)m->exp_fc) && (fc != (uint8_t)(m->exp_fc | 0x80u))) {
-        return false;
-    }
-    if (fc_is_read(fc)) {               /* 读应答: 长度域须等于 2*exp_qty */
-        return ((uint32_t)m->rx[2] == (2u * (uint32_t)m->exp_qty));
-    }
-    return true;                        /* 写应答定长 8 / 异常应答定长 5: fc 一致即同形 */
+    return (m->rx[0] == (uint8_t)m->cfg.addr) &&
+           ((fc == (uint8_t)m->exp_fc) ||
+            (fc == (uint8_t)(m->exp_fc | 0x80u)));
 }
 
 /* 丢弃接收缓冲首字节(逐字节重同步: 长度不可判定时的兜底) */
@@ -170,14 +168,14 @@ static uint32_t handle_frame(et_modbus_master_t *m, uint32_t need)
         return 0u;
     }
     if (fc_is_read(m->exp_fc)) {
-        uint32_t bc = (uint32_t)m->rx[2];
-
-        if (bc != (2u * (uint32_t)m->exp_qty)) {            /* 字节数不符 */
-            m->stats.discarded++;
-            drop_n(m, need);
-            return 0u;
-        }
-        m->reslen = bc;                                     /* 数据在 rx[3 .. 3+bc) */
+        /* 读应答: 字节数域与期望寄存器数**严格相等**是到达此处的前置条件 ——
+         * feed() 的读分支已用 `rx[2] == 2*exp_qty` 定长(v2.6 P1-1 / HC-2):
+         * 不满足者在进入本函数之前就被判为"从未成帧"并逐字节重同步。故此处只做
+         * **不变式断言**, 不再保留 v2.5 那条"字节数不符 → discarded"分支
+         * (v2.7 P2-1 / `CO-9(v2.6)`: 探针 E12 实测该分支在全量用例中命中 0 次)。
+         * ET_ASSERT 默认展开为 `((void)0)`(见 et_config.h), 发布配置零开销。 */
+        ET_ASSERT((uint32_t)m->rx[2] == (2u * (uint32_t)m->exp_qty));
+        m->reslen = (uint32_t)m->rx[2];                     /* 数据在 rx[3 .. 3+bc) */
         m->stats.responses++;
         to_final(m, ET_MB_OK);
         return 1u;

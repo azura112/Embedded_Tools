@@ -82,6 +82,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v2.4 | 21608 | 28 | 740 | 默认裁剪（终值）；+et_modbus（demo 未调用，板侧 CubeMX demo 已挂从站另记 37428B） |
 | v2.5 | 23860 | 28 | 740 | 默认裁剪（终值）；+et_modbus_master 入 glob；**et_log 规格解析加固** + demo 改域宽格式串（删 24 行逐位拼字符绕行）。板侧 CubeMX 工程本版**已同步 Core/et 并交叉编译（0 warning，FLASH 38712 B / RAM 5312 B）**；板上走单于 v2.6-r2 补齐（主站读/写/重发/异常/广播逐字节 + 从站分流复跑，见实机记录 §13） |
 | v2.6 | 24100 | 28 | 740 | 默认裁剪；**et_log 修饰面收口**（`%c` 域宽生效 + `j/t/L` 消费与占位）+ **et_modbus_master 读应答定长合理性校验**（噪声逐字节重同步）。板侧工程本版**已同步**（`Core/et` 全量重拷 + `diff -rq` 全 OK，0 warning，板侧 FLASH 75144 B / RAM 5960 B，见实机记录 §14） |
+| v2.7 | 24260 | 28 | 740 | 默认裁剪；**从站解析边界对称化**（P0-1/P0-2，`CO-5`）+ **selftest 20→22**（不在此构建）+ 主站读路径死代码清理（P2-1）。板侧工程本版**已同步并上板**（`diff -rq` 全 OK、0 warning；板侧 Debug FLASH **81244 B** / RAM **6768 B**，`AT+SELFTEST` → `SELFTEST: 22/22 PASS`，见实机记录 §15） |
 
 ## 烧录与运行
 
@@ -95,9 +96,9 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 
 | 项 | 状态 |
 |---|---|
-| host 回归 | ✅ 291 例 ALL PASS（含 kv/bootctl 8B 槽适配后的掉电矩阵） |
+| host 回归 | ✅ **497** 例 ALL PASS × 双几何（1K 498 / Tab 504；含 kv/bootctl 8B 槽适配后的掉电矩阵） |
 | ARM 编译 | ✅ 零警告（GNU Tools for STM32 13.3.rel1） |
-| 板上自测 | ✅ 工程私有版 13/13（v1.6 记录）；v1.7 库化版（17 套件, AT+SELFTEST/SELFSTOR）待上板回填 |
+| 板上自测 | ✅ 库化版 **22 套件**：`AT+SELFTEST` → **`SELFTEST: 22/22 PASS`**、`AT+SELFSTOR` → `STORAGE SELFTEST PASS`（2026-09-25，实机记录 §15）；工程私有版 13/13 为 v1.6 历史记录 |
 | **真机实测** | ✅ **G474VET6 上板通过**（boot #n 跨上电递增、AT 交互、AT+SELFTEST 13/13）——经 CubeMX/HAL 集成版 port（同 port.h 契约,HAL_GetTick/HAL_FLASH 实现）完成,记录见 `D:\code\STM32CubeMX\G474VET6_ET_TEST\移植stm32实机记录.md`;**本目录裸机 port 本体未单独上板** |
 | Renode 仿真 | **不排期**（v1.7 政策关闭：G474 真机已承担 G4 平台验证职责,见 `AT+SELFTEST` 记录;模式参照仍可循 `port/stm32f103/renode/`） |
 

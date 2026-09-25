@@ -655,3 +655,119 @@ req  11 03 00 00 00 04 46 99     ← 重发 2
   （无单步跟踪手段），且**不影响任何事务终态**（`st=2/3` 均正确、值正确）。记 v2.7 排查项。
 - 事务耗时与 v2.5 一致（读 32ms / 写 30ms / 异常 29ms / 广播 1ms / 重发 236ms / 超时 302ms），
   说明 `resp_timeout_ms=100` 的换算在 v2.6 下同样可用。
+
+---
+
+## 15. v2.7 板侧同批会话（从站解析对称化上板 + selftest 22 + `CO-8` 定位）—— 2026-09-25
+
+> 对应 `v2.7开发计划__从站解析对称化与板上自测收口.md` §3.2 的 **P1-4 / P1-5** 与 AC-14/AC-15/AC-16（HC-9）。
+> 环境：G474VET6 / **COM12**（CH343 USB-TTL）/ ST-Link，`STM32_Programmer_CLI -c port=SWD` 烧录校验通过 + 复位；
+> 库 `HEAD = 724d089`（= `snap-2.7-start`，v2.6-r2 终态）与 v2.7 工作树分别出两个固件做 A/B。
+> **落点声明（HC-8）**：本节全部改动在**板侧工程私有文件**（库外，不在本仓 git）——
+> `D:/code/STM32CubeMX/G474VET6_ET_TEST/Core/Src/et_demo.c`（新增 `AT+MBSLAVE`/`AT+MBRAW` 两条诊断命令）、
+> 同步目录 `...\Core\et\`；走单脚本 `build/board_c05_probe.py`、`build/board_disc_probe.py`（**不入库**，`build/` 已 gitignore）。
+
+### 15.1 同步与构建（A = v2.6 库 / B = v2.7 库）
+
+| 项 | A（`Core/et` ← `snap-2.7-start` = 724d089，**v2.6 库**） | B₁（`Core/et` ← v2.7 工作树） | B₂（B₁ + `AT+MBRAW` 探针） |
+|---|---|---|---|
+| 同步校验 | `diff -rq` 七目录 + `et_config.h` + `port.h` **全 OK** | 同 **全 OK** | 同 **全 OK** |
+| 版本宏（板侧） | `2/6/0` | `2/7/0` | `2/7/0` |
+| `et_modbus.c` 形态 | `expected_len` **旧形态**（`et_modbus.c:40` `return (n < 7u) ? 0u : (b[6]+9u)`；无 `head_may_be_frame`） | v2.7 形态（含 `head_may_be_frame` ×2 处） | 同 B₁ |
+| `et_selftest.c` | v2.6（20 套件） | v2.7（含 `st_modbus`/`st_log`，22 套件） | 同 B₁ |
+| `et_modbus_master.c` | v2.6 | v2.7（含 `ET_ASSERT((uint32_t)m->rx[2] == …)`，死代码已清） | 同 B₁ |
+| `cmake --build --preset Debug` | **0 warning** | **0 warning** | **0 warning** |
+| FLASH / RAM（Debug） | **75440 B / 5960 B** | **80852 B / 6744 B** | **81244 B / 6768 B** |
+| `arm-none-eabi-size`（text/data/bss） | 75368 / 72 / 5888 | 80780 / 72 / 6672 | 81172 / 72 / 6696 |
+| 用途 | `CO-5` 注入对照的**修复前**侧 | `CO-5` 修复后侧 + 完整走单（15.2） | `CO-8` 定位实验（15.4） |
+
+> **体积增项归因（B₁ − A = +5412 B FLASH / +784 B RAM）**：① **RAM +784 B** = `et_selftest` 新增
+> `modbus` 套件的**文件级静态缓冲**（主站双缓冲 2×`ET_MODBUS_ADU_MAX` = 512B + 从站 rx 32B/tx 64B +
+> 少量标量）—— 与计划 P1-1 的"RAM 增项 ≥512B"预估一致；② FLASH 增项来自新增两个套件的代码
+> （`st_modbus` 从站+主站段 + `st_log` 21 条断言）+ 从站解析边界改造 + demo 两条诊断命令。
+> **发布配置 `ET_MODULE_SELFTEST=0` 不受影响**（自测代码整体裁剪）。
+
+### 15.2 B₁ 板侧走单（P1-4：`AT+SELFTEST` 22 + 既有回归）
+
+```text
+### ver         → [I][at] ver=2.7.0 boot=7
+### mbrd        → MBSTAT req=1 resp=1 exc_n=0 to=0 retry=0 crc=0 mismatch=0 late=0 disc=1 last_st=2
+### mbwr        → MBWR 0 4660 → 回显 11 06 00 00 12 34 86 2D
+### drop (丢 2 应答) → MBSTAT req=5 resp=3 … retry=2 … disc=3     (重发机制保持)
+### exc  (强制 0x02) → MBSTAT req=6 resp=3 exc_n=1 …             (异常不重试)
+### broadcast  → 广播写 00 06 00 02 00 55 E9 E4 无应答            (协议语义保持)
+### selftest   → [I][selftest] SELFTEST: 22/22 PASS               ★ AC-14 关键证据
+### selfstor   → [I][at] STORAGE SELFTEST PASS
+### simupgrade → sim image ver=3 written → 重启 → [I][boot] slot 1 CONFIRMED (self-check ok)
+```
+
+**v2.4 从站分流路径复跑（PC 主站 → 板侧从站，`tools/modbus_master.py`）**：
+
+```text
+tx: 11 03 00 00 00 04 46 99 → rx: 11 03 08 00 01 00 02 00 03 00 04 59 D4   [modbus] read 0..3      : 1, 2, 3, 4  PASS
+tx: 11 03 03 E8 00 02 46 EB → rx: 11 03 04 00 00 00 00 EB F2                [modbus] read 1000..1001: 0, 0        PASS
+事后 AT+MBSLAVE → frames=2 resp=2 exc_n=0 crc=0 mismatch=0 disc=0 pend=0   （注：kv 已被 SELFSTOR 重置 → 1000..1001 读 0 属预期）
+```
+
+### 15.3 `CO-5` 板上注入对照（AC-15，同一注入形态 × 两版固件）
+
+**注入形态**（评审探针 E10）：先 11 字节"伪写入帧"噪声（`FC=0x10` 且 `b[6]=4` 与 `qty=1` 不符 → 旧实现伪造帧长 13），
+紧随真读请求；两种发送方式（`build/board_c05_probe.py`）：
+
+- **form1** = 两笔写（11B ＋ 20 ms 间隔 ＋ 8B）—— 与评审探针的"两次 feed"同形
+- **form2** = 一笔写（19B 全序列，单次 feed）
+- 噪声 = `11 10 00 00 00 01 04 DE AD BE EF`；真请求 = `11 03 00 00 00 04 46 99`
+
+| 项 | A（**v2.6 库**，修复前） | B₁（**v2.7 库**，修复后） |
+|---|---|---|
+| **form1**（两笔写） | 应答 `11 03 08 00 01 00 02 00 03 00 04 59 D4` ；`MBSLAVE frames=1 resp=1 crc=1 disc=0` | 应答 **同字节**；`MBSLAVE frames=1 resp=1 crc=0 disc=6` |
+| **form2**（一笔写 19B） | **无 Modbus 应答**（只收到周期心跳日志行）；`MBSLAVE frames=1 resp=1 **crc=3** disc=0 pend=0` → **真请求被噪声吞掉**（frames 未增） | 应答 **`11 03 08 00 01 00 02 00 03 00 04 59 D4`** ✔；`MBSLAVE frames=**2** resp=2 **crc=0** disc=**17** pend=0` → 噪声逐字节重同步、真请求被正确解析 |
+| `AT+RXSTAT`（全程） | `ore=0` | `ore=0` |
+
+**结论（逐条）**：
+
+1. **缺陷在板上可复现（A / form2）**：v2.6 从站对"`b[6]` 先于 CRC 被信任"的写入帧噪声整段前进 13 字节，
+   把紧随的真读请求前 2 字节一并吞掉 → **无应答**、`crc_err` +2、`frames` 不增 ✔ 与评审 E10 逐项吻合。
+2. **修复在板上生效（B / form2）**：同一注入形态下真请求**被正确应答**，`crc_err` 保持 **0**，
+   噪声计入 `discarded`（`disc 0→17`，逐字节重同步）✔ 满足 AC-8/AC-15 的"应答有无 + `crc_err`/`discarded` 终值"对照。
+3. **form1 在两版都"成功"——原因已定位且不影响结论**：板侧 `cfg.silence_ms = 4 ms`，两笔写之间的 20 ms 间隔
+   足以让**静默路径**先处理掉 11 字节残帧（A：`crc_err +1`；B：`discarded`），于是真请求随后单独成帧。
+   即"分两次发送到板上的形态"本就被静默路径兜住，**只有单次突发（form2）才暴露缺陷** —— 这正是
+   `CO-5` 危害的实际触发条件（噪声与真请求落在**同一次突发**内），与 §14.2"主站侧受害形态在本板不复现"
+   是同一类边界（该板的静默路径/独立 TX-RX 都在削弱半双工噪声场景），**不构成修复无效**。
+
+### 15.4 `CO-8`：板上"正常读恒有 `disc=1`"的**物理来源已定位**（AC-16，B₂ 固件）
+
+**机械证据（`AT+MBRAW`：打印**上次主站事务**收到的原始字节，事务开始时清零）**：
+
+| 实验 | `MBRAW`（前 8 字节） | `MBSTAT` |
+|---|---|---|
+| A) 命令行 `AT+MBRD 0 4` **CRLF** 结束 | `n=14 first=`**`a`**` 11 3 8 0 1 0 2` | `req=1 resp=1 crc=0 … **disc=1** st=2` |
+| B) 命令行 `AT+MBRD 0 4` **仅 CR**（无 LF 残留） | `n=13 first=11 3 8 0 1 0 2 0` | `req=1 resp=1 crc=0 … **disc=0** st=2` |
+| C) 命令行 `AT+MBRD 0 4` **仅 LF** 结束 | `n=13 first=11 3 8 0 1 0 2 0` | `req=1 resp=1 crc=0 … **disc=0** st=2` |
+| D) CRLF 命令行 ×3（复现性） | 3/3 均为 `n=14 first=`**`a`**` 11 3 8 0 1 0 2` | 3/3 均为 `disc=1` |
+| E) `AT+RXSTAT` | `rx=372 ore=0`；`last=41 54 d a 52 58 53 54`（= `AT\r\nRXST`） | — |
+
+**结论**：`disc=1` 的来源 = **命令行的 `\n`（0x0A）残留**：
+
+- `AT+MBRD …\r\n` 中 shell 在 **`\r`** 处完成行分发，残余的 **`\n` 留在 USART1 RX 环缓冲**（实验 E 的 `last` 字节现场直接显示 `\r\n` 成对进入 RX）；
+- `cmd_mbrd()` 随即启动**阻塞式主站事务**（`et_demo.c` 的 `mbm_run`），该循环把环内字节**逐字节**喂给主站 ⇒
+  该 `\n` 成为本次事务收到的第 1 个字节（`MBRAW first=a`），与在途事务不同形 ⇒ `discarded++`、`crc=0`，终态 `st=2`（事务本身成功）；
+- 用**仅 CR** 或**仅 LF** 结束命令行时（实验 B/C）无残留字节 ⇒ **`disc=0`** 恒成立；实验 D 的 3/3 复现排除随机性。
+
+**已排除的假设（每条都有读数）**：
+
+1. **UART 溢出/帧错误/噪声错误**：RX 中断里 ORE/FE/NE 计数器**全程 0**（`rx=372 ore=0`），且无 FE/NE 记录 ⇒ 不是 UART 层错误；
+2. **板自身 TX 回环（半双工回显）**：`MBRAW` 首字节恒为 **0x0A** 而非本站请求/应答的任何前缀；§14.2 的"从站完全不应答"对照实验（`disc=0 / crc=0`）已独立证明本板无回环；
+3. **物理层线路噪声**：若为线路噪声，取值应随机；实测**恒为 0x0A**（3/3）且与命令行结束符强相关 ⇒ 非物理层。
+
+**性质与处置**：该字节来自**板侧 demo 的"shell 行解析 ↔ 阻塞式主站事务"接口残留**（`Core/Src/et_demo.c`，**库外私有代码**），
+**不是库缺陷** —— 库在该形态下行为正确（与在途事务不同形的首字节 → `discarded`，不污染 `crc_err`，不影响终态）。
+**修法（板侧一行级，本次不做以保留证据原样）**：进入 `mbm_run` 前先清空 `g_rx_rb` 中命令行残余（或让 shell 一并消费 `\r\n`）⇒ `disc` 归 0。
+**记 v2.8 板侧待办**（库外，不影响库内门与发布）—— 已在交付文档 §5.2/§6 正式登记（`CO-8` 关闭）。
+
+### 15.5 本节遗留
+
+- `CO-11(v2.5)`（USART2 独立口 / 共享口地址不符静默的板侧验证）**再次暂缓**：bench 仅一路 USB-TTL，触发条件未变。
+- `form1` 的"静默路径先兜住"现象提示：**单次突发**才是从站解析边界的真实压力形态 —— 已由 `test/test_modbus.c`
+  的 `mb.sticky_bad_then_good`（单次 feed 内"坏帧+真帧"）固定为回归用例。

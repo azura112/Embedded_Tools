@@ -363,25 +363,15 @@ static void mb_exc_illegal_value_qty(void)
 
 static void mb_exc_illegal_value_wr_multiple(void)
 {
-    uint8_t req[16];
-    uint8_t pay[9];
-
-    /* 字节数与 qty 不符 (bc=4 但 qty=3) */
-    setup();
-    put16(pay, 0u); put16(pay + 2u, 3u); pay[4] = 4u;
-    put16(pay + 5u, 1u); put16(pay + 7u, 2u);
-    (void)mk(req, SLAVE, ET_MODBUS_FC_WRITE_MULTIPLE, pay, 9u);
-    (void)et_modbus_feed(&g_mb, req, 13u);
-    {
-        uint32_t len = 0u;
-        const uint8_t *r = et_modbus_response(&g_mb, &len);
-
-        ET_CHECK_U32_EQ(5u, len);
-        ET_CHECK_U32_EQ(ET_MODBUS_EXC_ILLEGAL_VALUE, r[2]);
-    }
-
-    /* qty > 123: 该帧长 257B 已超 RTU 上限(256), 属防御性分支 ——
-     * 用 300B 容量实例直接把帧喂全, 验证框架 qty 界限判定 */
+    /* v2.7 (CO-5) **行为修正**: 旧实现在此构造"bc=4 但 qty=3"的帧并期望异常 0x03 ——
+     * 该断言的前提是**字节数域先于 CRC 被信任**(旧 `expected_len` 直接 return b[6]+9)。
+     * v2.7 按 HC-2 在切片前校验长度域自洽性, 不符即逐字节重同步 ⇒ 该形态不再产生
+     * 应答(旧能力经静默路径亦不可达: 字节已在 feed 内被重同步清掉)。新语义由
+     * `mb.bc_qty_mismatch_resync` 固定; 本用例只保留**可达的**异常路径 = qty 上限。
+     *
+     * qty > 123: 该帧长 257B 已超 RTU 上限(256), 属防御性分支 ——
+     * 用 300B 容量实例直接把帧喂全, 验证框架 qty 界限判定
+     * (bc=248 与 qty=124 自洽, 故能过 v2.7 的长度域校验)。 */
     {
         static uint8_t   rxb[300];
         static uint8_t   txb[300];
@@ -409,6 +399,239 @@ static void mb_exc_illegal_value_wr_multiple(void)
             ET_CHECK_U32_EQ(ET_MODBUS_EXC_ILLEGAL_VALUE, r[2]);
         }
     }
+}
+
+/* ---------- v2.7 P0: 从站侧解析边界对称化 (CO-5) ---------- */
+
+/* 造 11 字节"伪写入帧"噪声: FC=0x10 且 b[6](=4) 与 qty(=1) 不符 —— 旧实现据此
+ * 伪造帧长 13, 从而吞掉紧随其后的真请求(评审 E10 形态)。 */
+static const uint8_t NOISE_FAKE_WR[11] = {
+    0x11u, 0x10u, 0x00u, 0x00u, 0x00u, 0x01u, 0x04u, 0xDEu, 0xADu, 0xBEu, 0xEFu
+};
+
+/* mb.bc_qty_mismatch_resync: 长度域不自洽 ⇒ 不伪造帧长、不产生应答、不进 crc_err */
+static void mb_bc_qty_mismatch_resync(void)
+{
+    uint8_t req[16];
+    uint8_t pay[9];
+    et_modbus_stats_t st;
+
+    setup();
+    put16(pay, 0u); put16(pay + 2u, 3u); pay[4] = 4u;      /* qty=3 但 bc=4 */
+    put16(pay + 5u, 1u); put16(pay + 7u, 2u);
+    ET_CHECK_U32_EQ(13u, mk(req, SLAVE, ET_MODBUS_FC_WRITE_MULTIPLE, pay, 9u));
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, req, 13u));   /* 不再产生异常应答 */
+    expect_resp(NULL, 0u);
+    et_modbus_stats(&g_mb, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);        /* HC-2: "从未成帧"不计 crc_err */
+    ET_CHECK_U32_EQ(0u, st.frames);
+    ET_CHECK_U32_EQ(12u, st.discarded);     /* 逐字节重同步: 13 字节中 12 个被丢弃 */
+    ET_CHECK_U32_EQ(1u, et_modbus_rx_pending(&g_mb));   /* 末字节无法判定: 保留 */
+}
+
+/* mb.noise_fake_len_then_read ★: E10 形态 —— 噪声 + 真读请求 ⇒ 真请求被正确应答 */
+static void mb_noise_fake_len_then_read(void)
+{
+    uint8_t req[8];
+    uint8_t pay[4];
+    uint8_t exp[13];
+    et_modbus_stats_t st;
+
+    setup();
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, NOISE_FAKE_WR, 11u));
+    expect_resp(NULL, 0u);
+    put16(pay, 0u); put16(pay + 2u, 4u);                    /* hold0..3 */
+    (void)mk(req, SLAVE, ET_MODBUS_FC_READ_HOLDING, pay, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_feed(&g_mb, req, 8u));     /* 修复前 = 0(真请求被吞) */
+    exp[0] = SLAVE; exp[1] = ET_MODBUS_FC_READ_HOLDING; exp[2] = 8u;
+    put16(exp + 3u, 1u); put16(exp + 5u, 2u);
+    put16(exp + 7u, 3u); put16(exp + 9u, 4u);
+    {
+        uint16_t crc = et_crc16_modbus(exp, 11u);
+
+        exp[11] = (uint8_t)(crc & 0xFFu); exp[12] = (uint8_t)(crc >> 8);
+    }
+    expect_resp(exp, 13u);
+    et_modbus_stats(&g_mb, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);        /* 噪声不污染 crc_err */
+    ET_CHECK_U32_EQ(1u, st.frames);
+}
+
+/* mb.noise_fake_len_then_write: 同形态噪声后接真 0x10 写请求 ⇒ 写生效 + 回显应答 */
+static void mb_noise_fake_len_then_write(void)
+{
+    uint8_t req[16];
+    uint8_t pay[9];
+    et_modbus_stats_t st;
+
+    setup();
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, NOISE_FAKE_WR, 11u));
+    put16(pay, 0u); put16(pay + 2u, 2u); pay[4] = 4u;       /* qty=2, bc=4 自洽 */
+    put16(pay + 5u, 0x000Au); put16(pay + 7u, 0x0014u);
+    ET_CHECK_U32_EQ(13u, mk(req, SLAVE, ET_MODBUS_FC_WRITE_MULTIPLE, pay, 9u));
+    ET_CHECK_U32_EQ(1u, et_modbus_feed(&g_mb, req, 13u));
+    ET_CHECK_U32_EQ(0x000Au, g_hold[0]);
+    ET_CHECK_U32_EQ(0x0014u, g_hold[1]);
+    {
+        uint32_t len = 0u;
+        const uint8_t *r = et_modbus_response(&g_mb, &len);
+
+        ET_CHECK_U32_EQ(8u, len);           /* 0x10 应答 = 回显 [addr,fc,reg,qty,crc] */
+        ET_CHECK_U32_EQ(SLAVE, r[0]);
+        ET_CHECK_U32_EQ(ET_MODBUS_FC_WRITE_MULTIPLE, r[1]);
+    }
+    et_modbus_stats(&g_mb, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+}
+
+/* mb.noise_foreign_head_resync: 异站地址开头的噪声后接真读请求 */
+static void mb_noise_foreign_head_resync(void)
+{
+    uint8_t req[8];
+    uint8_t pay[4];
+    static const uint8_t noise[6] = { 0x22u, 0x03u, 0xDEu, 0xADu, 0xBEu, 0xEFu };
+
+    setup();
+    (void)et_modbus_feed(&g_mb, noise, sizeof(noise));
+    put16(pay, 0u); put16(pay + 2u, 1u);
+    (void)mk(req, SLAVE, ET_MODBUS_FC_READ_HOLDING, pay, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_feed(&g_mb, req, 8u));
+    {
+        uint32_t len = 0u;
+
+        ET_CHECK(et_modbus_response(&g_mb, &len) != NULL);
+        ET_CHECK_U32_EQ(7u, len);           /* qty=1 → 5+2 */
+    }
+}
+
+/* mb.noise_broadcast_unknown_resync: 广播地址 + 未知功能码的噪声头部 ⇒ 可丢弃
+ * (广播未知功能码按库文档为"静默", 无可观测后果) */
+static void mb_noise_broadcast_unknown_resync(void)
+{
+    uint8_t req[8];
+    uint8_t pay[4];
+    static const uint8_t noise[9] = {
+        0x00u, 0x00u, 0x00u, 0x01u, 0x04u, 0xDEu, 0xADu, 0xBEu, 0xEFu
+    };
+
+    setup();
+    (void)et_modbus_feed(&g_mb, noise, sizeof(noise));
+    put16(pay, 0u); put16(pay + 2u, 1u);
+    (void)mk(req, SLAVE, ET_MODBUS_FC_READ_HOLDING, pay, 4u);
+    ET_CHECK_U32_EQ(1u, et_modbus_feed(&g_mb, req, 8u));
+    {
+        uint32_t len = 0u;
+
+        ET_CHECK(et_modbus_response(&g_mb, &len) != NULL);
+        ET_CHECK_U32_EQ(7u, len);
+    }
+}
+
+/* mb.noise_never_frames: 纯噪声(无任何可成帧序列) ⇒ 全部 discarded, crc_err 不增长 */
+static void mb_noise_never_frames(void)
+{
+    static const uint8_t noise[8] = {
+        0xDEu, 0xADu, 0xBEu, 0xEFu, 0xDEu, 0xADu, 0xBEu, 0xEFu
+    };
+    et_modbus_stats_t st;
+
+    setup();
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, noise, sizeof(noise)));
+    expect_resp(NULL, 0u);
+    et_modbus_stats(&g_mb, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+    ET_CHECK_U32_EQ(0u, st.frames);
+    ET_CHECK_U32_EQ(0u, st.responses);
+    ET_CHECK_U32_EQ(7u, st.discarded);      /* 逐字节重同步: 8 字节中 7 个被丢弃 */
+    ET_CHECK_U32_EQ(1u, et_modbus_rx_pending(&g_mb));   /* 末字节无法判定: 保留 */
+}
+
+/* mb.sticky_bad_then_good: 一次 feed 内"不自洽帧 + 真读请求" ⇒ 真请求仍被应答 */
+static void mb_sticky_bad_then_good(void)
+{
+    uint8_t  buf[32];
+    uint8_t  pay[9];
+    uint8_t  rq[8];
+    uint8_t  rpay[4];
+    et_modbus_stats_t st;
+
+    setup();
+    put16(pay, 0u); put16(pay + 2u, 3u); pay[4] = 4u;       /* 不自洽 */
+    put16(pay + 5u, 1u); put16(pay + 7u, 2u);
+    ET_CHECK_U32_EQ(13u, mk(buf, SLAVE, ET_MODBUS_FC_WRITE_MULTIPLE, pay, 9u));
+    put16(rpay, 0u); put16(rpay + 2u, 1u);
+    (void)mk(rq, SLAVE, ET_MODBUS_FC_READ_HOLDING, rpay, 4u);
+    memcpy(buf + 13u, rq, 8u);
+    ET_CHECK_U32_EQ(1u, et_modbus_feed(&g_mb, buf, 21u));
+    {
+        uint32_t len = 0u;
+
+        ET_CHECK(et_modbus_response(&g_mb, &len) != NULL);
+        ET_CHECK_U32_EQ(7u, len);
+    }
+    et_modbus_stats(&g_mb, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);
+}
+
+/* mb.crc_bad_foreign_not_crc_err: CRC 坏且帧首非本站 ⇒ 不算 crc_err 也不算 addr_mismatch */
+static void mb_crc_bad_foreign_not_crc_err(void)
+{
+    uint8_t req[8];
+    uint8_t pay[4];
+    et_modbus_stats_t st;
+
+    setup();
+    put16(pay, 0u); put16(pay + 2u, 1u);
+    (void)mk(req, 0x22u, ET_MODBUS_FC_READ_HOLDING, pay, 4u);
+    req[6] ^= 0xFFu;                        /* 破坏 CRC */
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, req, 8u));
+    et_modbus_stats(&g_mb, &st);
+    ET_CHECK_U32_EQ(0u, st.crc_err);        /* "从未成帧"(帧首非本站) */
+    ET_CHECK_U32_EQ(0u, st.addr_mismatch);  /* CRC 未过, 不进地址统计 */
+    ET_CHECK_U32_EQ(7u, st.discarded);
+}
+
+/* mb.unknown_fc_unicast_retained: 单播未知功能码仍保留给静默路径(异常 0x01 能力不回退) */
+static void mb_unknown_fc_unicast_retained(void)
+{
+    uint8_t req[4];
+    uint8_t exp[5];
+
+    setup();
+    req[0] = SLAVE; req[1] = 0x63u;
+    {
+        uint16_t crc = et_crc16_modbus(req, 2u);
+
+        req[2] = (uint8_t)(crc & 0xFFu); req[3] = (uint8_t)(crc >> 8);
+    }
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, req, 4u));
+    ET_CHECK_U32_EQ(4u, et_modbus_rx_pending(&g_mb));       /* 未被重同步清掉 */
+    et_modbus_tick(&g_mb, 0u);
+    et_modbus_tick(&g_mb, SILENCE_MS + 1u);
+    exp[0] = SLAVE; exp[1] = 0x63u | 0x80u; exp[2] = ET_MODBUS_EXC_ILLEGAL_FUNC;
+    {
+        uint16_t crc = et_crc16_modbus(exp, 3u);
+
+        exp[3] = (uint8_t)(crc & 0xFFu); exp[4] = (uint8_t)(crc >> 8);
+    }
+    expect_resp(exp, 5u);
+}
+
+/* mb.wr_truncated_then_completed: 长度域自洽但帧未齐 ⇒ 等待(不清缓冲), 补齐后应答 */
+static void mb_wr_truncated_then_completed(void)
+{
+    uint8_t req[16];
+    uint8_t pay[9];
+
+    setup();
+    put16(pay, 0u); put16(pay + 2u, 2u); pay[4] = 4u;       /* 自洽 */
+    put16(pay + 5u, 0x1111u); put16(pay + 7u, 0x2222u);
+    ET_CHECK_U32_EQ(13u, mk(req, SLAVE, ET_MODBUS_FC_WRITE_MULTIPLE, pay, 9u));
+    ET_CHECK_U32_EQ(0u, et_modbus_feed(&g_mb, req, 12u));    /* 差 1 字节 */
+    ET_CHECK_U32_EQ(12u, et_modbus_rx_pending(&g_mb));       /* 未被误判为噪声 */
+    ET_CHECK_U32_EQ(1u, et_modbus_feed(&g_mb, req + 12u, 1u));
+    ET_CHECK_U32_EQ(0x1111u, g_hold[0]);
+    ET_CHECK_U32_EQ(0x2222u, g_hold[1]);
 }
 
 static void mb_exc_null_hooks(void)
@@ -783,6 +1006,17 @@ const et_test_case_t *test_modbus_cases(size_t *count)
         {"mb.stats_accumulate",       mb_stats_accumulate},
         {"mb.multi_instance",         mb_multi_instance},
         {"mb.rx_pending",             mb_rx_pending},
+        /* v2.7 P0 (CO-5): 从站侧解析边界对称化矩阵 */
+        {"mb.bc_qty_mismatch_resync",        mb_bc_qty_mismatch_resync},
+        {"mb.noise_fake_len_then_read",      mb_noise_fake_len_then_read},
+        {"mb.noise_fake_len_then_write",     mb_noise_fake_len_then_write},
+        {"mb.noise_foreign_head_resync",     mb_noise_foreign_head_resync},
+        {"mb.noise_broadcast_unknown_resync", mb_noise_broadcast_unknown_resync},
+        {"mb.noise_never_frames",            mb_noise_never_frames},
+        {"mb.sticky_bad_then_good",          mb_sticky_bad_then_good},
+        {"mb.crc_bad_foreign_not_crc_err",   mb_crc_bad_foreign_not_crc_err},
+        {"mb.unknown_fc_unicast_retained",   mb_unknown_fc_unicast_retained},
+        {"mb.wr_truncated_then_completed",   mb_wr_truncated_then_completed},
     };
     *count = sizeof(tbl) / sizeof(tbl[0]);
     return tbl;

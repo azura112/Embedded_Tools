@@ -198,7 +198,8 @@ assert_grep "tools/pack_image.py" "ETBI"                      "ETBI 打包工具
 assert_grep "port/stm32f103/README.md" "v1.9"                 "体积表含 v1.9 行(f103)"
 assert_grep "port/stm32g474/README.md"  "18088"               "体积表 v1.9 行(g474)"
 assert_grep "port/stm32f103/README.md"  "25352"               "体积表 v1.9 行(f103, selftest)"
-assert_grep "移植stm32实机记录.md" "SELFTEST: 20/20"          "实机记录含 v2.2 selftest 20 套件板上记录(P1)"
+assert_grep "移植stm32实机记录.md" "SELFTEST: 20/20"          "实机记录含 v2.2 selftest 20 套件板上记录(P1, 历史节)"
+assert_grep "移植stm32实机记录.md" "SELFTEST: 22/22"          "实机记录含 v2.7 selftest 22 套件板上记录(P1-4/HC-9)"
 assert_grep "移植stm32实机记录.md" "reset cause: IWDG"        "实机记录含 IWDG 真超时证据(P0-1 走单4)"
 assert_no_grep "移植stm32实机记录.md" "待上板执行"            "实机记录走单占位符已全部回填(P0-1)"
 
@@ -280,9 +281,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "474"             "getting-started 用例数与实测一致(v2.5 回刷)"
+assert_grep "docs/getting-started.md" "497"             "getting-started 用例数与实测一致(v2.7 回刷)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "474"                 "README 用例数终值回刷(v2.5)"
+assert_grep "README.md"           "497"                 "README 用例数终值回刷(v2.7)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
@@ -316,7 +317,7 @@ assert_grep "test/test_sched.c"   "sc_stats_measures_duration" "sched 耗时计�
 assert_grep "debug/et_selftest.c" "st_pid"              "selftest 含 pid 套件(P1)"
 assert_grep "debug/et_selftest.c" "st_stats"            "selftest 含 stats 套件(P1)"
 assert_grep "debug/et_selftest.c" "st_bytes"            "selftest 含 bytes 套件(P1)"
-assert_grep "port/stm32f103/renode/smoke.sh" "SELFTEST: 20/20" "smoke 断言同步 20 套件(P1)"
+assert_grep "port/stm32f103/renode/smoke.sh" "SELFTEST: 22/22" "smoke 断言同步 22 套件(v2.7 P1-3)"
 assert_grep "protocol/et_crc.c"   "s_modbus_tbl"        "CRC16-MODBUS 查表路径(P5-3)"
 assert_grep "docs/bench.md"       "medfilt push"        "bench 含 medfilt 行(P5-2)"
 assert_grep "docs/bench.md"       "v2.2.0"              "bench 文档含 v2.2 版本行"
