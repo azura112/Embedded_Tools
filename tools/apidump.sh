@@ -9,10 +9,18 @@
 #
 # 用法:
 #   sh tools/apidump.sh                        # 重新生成 docs/API_INVENTORY.md
-#   sh tools/apidump.sh --check                # 与已入库清单比对, 漂移退出非零
+#   sh tools/apidump.sh --check                # 与已入库清单比对(**行尾归一后**), 漂移非零
 #   sh tools/apidump.sh --snapshot <清单文件>  # 固化冻结基线 (v2.1 P0-1)
 #   sh tools/apidump.sh --diff [基线清单]      # 与基线比对: 纯新增=绿 (默认
 #                                              #   docs/API_INVENTORY_v2.5.md)
+#
+# --check 的行尾口径 (v2.6-r2 G0′-1, `CO-1(v2.6)`):
+#   本仓 `core.autocrlf=true` 且无 `.gitattributes` → 入库清单在工作树被检出为 **CRLF**,
+#   而 gen_body 产出 **LF** ⇒ 旧实现的字节级 `diff -q` **恒报"公开面漂移"**(与 API 面
+#   无关), 并级联把 docsync 打成 fail=2。修法 = 比对前把两侧行尾统一为 LF 后比对
+#   **完整内容**(分节表头/计数一并比对, 判别力与字节比对等价); 不依赖工作树行尾,
+#   故 Windows(CRLF 检出) 与 Linux(LF 检出) 行为一致。`--diff`/`--snapshot` 走
+#   `item_lines`(仅提取条目行), 对行尾天然免疫 —— 根因: GNU sed 读入时剥离行尾 CR。
 # 基线滚动规则 (v2.2 P0-1): 默认基线 = 最近已发布 MINOR 的快照; 发版时用
 #   --snapshot 归档新基线后把此处默认值前滚; 旧基线文件只读保留(历史审计)。
 # 提取口径(见计划 §7 风险对策): 公开签名面 —— (et_|port_) 前缀函数/
@@ -183,12 +191,16 @@ item_lines() {
 if [ "${1:-}" = "--check" ]; then
     TMPF="$TMPD/gen_check.md"       # 放 TMPD 内, 由 trap 统一清理(见上 rm 说明)
     gen_body > "$TMPF"
-    if diff -q "$TMPF" "$OUT" >/dev/null 2>&1; then
+    # 行尾归一化后比对完整内容(G0′-1 / CO-1(v2.6)): 归一只作用于比对副本,
+    # 不触碰工作树文件 —— `sed 's/\r$//'` 在 LF 侧为恒等变换, 故跨环境一致。
+    sed 's/\r$//' "$TMPF" > "$TMPD/chk_gen.txt"
+    sed 's/\r$//' "$OUT"  > "$TMPD/chk_cur.txt"
+    if diff -q "$TMPD/chk_gen.txt" "$TMPD/chk_cur.txt" >/dev/null 2>&1; then
         echo "apidump: 清单与头文件一致 ($OUT)"
         exit 0
     fi
     echo "apidump: FAIL —— 公开面漂移, 清单未重新生成 (新增/变更 API 未登记即红):"
-    diff -u "$OUT" "$TMPF" | head -40
+    diff -u "$TMPD/chk_cur.txt" "$TMPD/chk_gen.txt" | head -40
     exit 1
 fi
 

@@ -80,8 +80,8 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v2.2 | 20264 | 28 | 740 | 默认裁剪（终值）；+et_medfilt +et_sched 耗时统计字段 |
 | v2.3 | 20736 | 28 | 740 | 默认裁剪（终值）；+et_hist |
 | v2.4 | 21608 | 28 | 740 | 默认裁剪（终值）；+et_modbus（demo 未调用，板侧 CubeMX demo 已挂从站另记 37428B） |
-| v2.5 | 23860 | 28 | 740 | 默认裁剪（终值）；+et_modbus_master 入 glob；**et_log 规格解析加固** + demo 改域宽格式串（删 24 行逐位拼字符绕行）。板侧 CubeMX 工程本版**仅同步 Core/et 并交叉编译（0 warning）**，**未上板**（执行期板未接入），故无 CubeMX 侧体积读数 |
-| v2.6 | 24100 | 28 | 740 | 默认裁剪；**et_log 修饰面收口**（`%c` 域宽生效 + `j/t/L` 消费与占位）+ **et_modbus_master 读应答定长合理性校验**（噪声逐字节重同步）。板侧工程本版**未同步**（板未接入，随交付文档 §5.1 挂账），故本行为库内 host 侧构建读数 |
+| v2.5 | 23860 | 28 | 740 | 默认裁剪（终值）；+et_modbus_master 入 glob；**et_log 规格解析加固** + demo 改域宽格式串（删 24 行逐位拼字符绕行）。板侧 CubeMX 工程本版**已同步 Core/et 并交叉编译（0 warning，FLASH 38712 B / RAM 5312 B）**；板上走单于 v2.6-r2 补齐（主站读/写/重发/异常/广播逐字节 + 从站分流复跑，见实机记录 §13） |
+| v2.6 | 24100 | 28 | 740 | 默认裁剪；**et_log 修饰面收口**（`%c` 域宽生效 + `j/t/L` 消费与占位）+ **et_modbus_master 读应答定长合理性校验**（噪声逐字节重同步）。板侧工程本版**已同步**（`Core/et` 全量重拷 + `diff -rq` 全 OK，0 warning，板侧 FLASH 75144 B / RAM 5960 B，见实机记录 §14） |
 
 ## 烧录与运行
 
