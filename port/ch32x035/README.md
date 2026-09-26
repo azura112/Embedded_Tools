@@ -59,10 +59,13 @@ python build.py    # 产物: build/CH32X035G8U.elf/.hex/.bin(文件名与源工�
 
 ## port.h 契约要点
 
-- **时基**:SysTick(核内 0xE000F000)HCLK 直驱,CMP=48000 自动重装 → 精确 1ms
-  (初始化序列与 WCH EVT FreeRTOS 移植一致);中断里同时替 PD 协议栈累加 8 位
-  旧制计数器 `Tim_Ms_Cnt`(EVT `USBPD_SNK` 以 8 位回绕增量计时,应用每轮主循环
-  做单读快照取 `Tmr_Ms_Dlt`)。
+- **时基**:TIM1 更新中断,48MHz/48/1000 → 精确 1ms(与 V1.7 逐配置相同,
+  含 NVIC 优先级 0/3);中断里同时替 PD 协议栈累加 8 位旧制计数器
+  `Tim_Ms_Cnt`(EVT `USBPD_SNK` 以 8 位回绕增量计时,应用每轮主循环做单读
+  快照取 `Tmr_Ms_Dlt`)。
+  ⚠ **时基不可放 SysTick**(实机教训):WCH `debug.c` 的 `Delay_Us/Delay_Ms`
+  以轮询方式独占 SysTick(每次调用重写 CMP/CTLR),时基放 SysTick 会被延时
+  改频/互踩 → 定时器全乱 → PD 状态机跑飞复位。SysTick 完整留给延时函数。
 - **临界区**:`csrr/csrw mstatus` + MIE/MPIE 屏蔽 + 嵌套计数(与 F103 port 的
   PRIMASK 方案同构)。
 - **putc**:USART1 阻塞发送(波特率由应用 `USART_Printf_Init(115200)` 配置)。

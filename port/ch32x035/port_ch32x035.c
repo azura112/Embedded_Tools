@@ -3,8 +3,14 @@
  * @brief   CH32X035 平台适配实现 (port.h 契约)
  *
  * 时钟假设: HSI 48MHz(SystemCoreClock = 48000000, PD BMC 时序要求)。
- *   - SysTick = HCLK 直驱, CMP = 48000 → 精确 1ms, STRE 自动重装
- *     (初始化序列与 WCH EVT FreeRTOS 移植一致);
+ *   - 时基 = TIM1 更新中断, 48MHz/48/1000 → 精确 1ms(与 V1.7 逐配置相同);
+ *
+ * ⚠ 时基不可放 SysTick(实机教训 2026-09-26): WCH debug.c 的 Delay_Us/
+ *   Delay_Ms 以轮询方式独占 SysTick —— 每次调用重写 CMP、清 CNT、启停 STE,
+ *   且以 |= 保留其余位。若时基放 SysTick: 延时把 CMP 改成延时值 → tick 只在
+ *   延时期间以错误频率触发, 毫秒时基失真(PD 定时器/调度周期全乱); 延时轮询
+ *   的标志还会被 tick ISR 抢清, 相互干扰。SysTick 必须完整留给延时函数,
+ *   周期时基用 TIM1(V1.7 的既有架构)。
  *
  * 临界区语义: mstatus 保存恢复 + 嵌套计数。
  *   - ENTER: 首次进入时保存 mstatus 并清 MIE/MPIE(与 core_riscv.h
@@ -17,7 +23,7 @@
  * 看门狗 (CH32X035 RM IWDG): LSI 典型 ~47kHz, 超时 = (RLDR+1)*div/LSI。
  *  - PSCR/RLDR 在 LSI 时钟域, 写入需 ~2 LSI 周期(~85us)同步:
  *    必须依次等 PVU 清零(改分频后)、RVU 清零(改重装后)再 Enable ——
- *    不等待则计数器从错误暂态值起跑, 本板实测造成 ~6ms 复位风暴
+ *    不等待则计数器从错误暂态值起跑, 本板实测造成秒级复位风暴
  *    (V1.7 实机教训, 时序与本文件保持一致);
  *  - IWDG 启动后不可停且跨软复位仍运行 → port_wdt_disable 恒 false
  *    (契约明示); 应用须在 main() 首行无条件 port_wdt_feed() 兜底
@@ -28,33 +34,48 @@
 #include "et_config.h"
 #include "ch32x035.h"
 
-/* ============ 时基: SysTick 1ms 中断 ============ */
+/* ============ 时基: TIM1 1ms 更新中断 ============ */
 
 static volatile uint32_t g_tick_ms = 0u;    /* port.h 32 位毫秒时基   */
 
 /* PD 协议栈兼容计数器(EVT USBPD_SNK 惯例): 8 位自由回绕 */
 volatile uint8_t Tim_Ms_Cnt = 0u;
 
-void SysTick_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
-void SysTick_Handler(void)
+void TIM1_UP_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+void TIM1_UP_IRQHandler(void)
 {
-    g_tick_ms++;
-    Tim_Ms_Cnt++;
-    SysTick->SR = 0;                        /* 清 CNTIF(core 寄存器写 0 清) */
+    if( TIM_GetITStatus( TIM1, TIM_IT_Update ) != RESET )
+    {
+        g_tick_ms++;
+        Tim_Ms_Cnt++;
+        TIM_ClearITPendingBit( TIM1, TIM_IT_Update );
+    }
 }
 
 void port_ch32x035_tick_init(void)
 {
-    NVIC_SetPriority(SysTick_IRQn, 0xf0);   /* 低优先级: 不与 USBFS/PD ISR 争抢 */
-    SysTick->CTLR = 0u;
-    SysTick->SR   = 0u;
-    SysTick->CNT  = 0u;
-    SysTick->CMP  = SystemCoreClock / 1000u;    /* 48000 @48MHz → 1ms */
-    SysTick->CTLR = 0xfu;                   /* STE|STIE|STCLK(HCLK)|STRE */
-    /* PFIC 门控必须显式打开: STIE 只是外设侧使能, 缺本行则中断永不触发,
-     * 时基冻结在 0 → 调度器永不到期 → 无人喂狗 → IWDG 周期复位
-     * (WCH EVT SYSTICK_Interrupt 例程与 FreeRTOS 移植同款) */
-    NVIC_EnableIRQ(SysTick_IRQn);
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+    NVIC_InitTypeDef NVIC_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd( RCC_APB2Periph_TIM1, ENABLE );
+
+    /* 48MHz / 48 = 1MHz, /1000 = 1ms(与 V1.7 的 TIM1_Init(999, 48-1) 相同) */
+    TIM_TimeBaseInitStructure.TIM_Period = 999;
+    TIM_TimeBaseInitStructure.TIM_Prescaler = 48 - 1;
+    TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+    TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0x00;
+    TIM_TimeBaseInit( TIM1, &TIM_TimeBaseInitStructure );
+    TIM_ClearITPendingBit( TIM1, TIM_IT_Update );
+
+    NVIC_InitStructure.NVIC_IRQChannel = TIM1_UP_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 3;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init( &NVIC_InitStructure );
+
+    TIM_ITConfig( TIM1, TIM_IT_Update, ENABLE );
+    TIM_Cmd( TIM1, ENABLE );
 }
 
 port_tick_ms_t port_tick_get_ms(void)
