@@ -51,6 +51,10 @@ void port_ch32x035_tick_init(void)
     SysTick->CNT  = 0u;
     SysTick->CMP  = SystemCoreClock / 1000u;    /* 48000 @48MHz → 1ms */
     SysTick->CTLR = 0xfu;                   /* STE|STIE|STCLK(HCLK)|STRE */
+    /* PFIC 门控必须显式打开: STIE 只是外设侧使能, 缺本行则中断永不触发,
+     * 时基冻结在 0 → 调度器永不到期 → 无人喂狗 → IWDG 周期复位
+     * (WCH EVT SYSTICK_Interrupt 例程与 FreeRTOS 移植同款) */
+    NVIC_EnableIRQ(SysTick_IRQn);
 }
 
 port_tick_ms_t port_tick_get_ms(void)
