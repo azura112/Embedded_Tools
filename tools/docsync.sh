@@ -298,7 +298,8 @@ for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 
 done
 
 # ---- v2.2 P0 基线滚动 + P1 selftest 20 套件 + P3 medfilt + P4 sched stats ----
-assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.6.md"     "apidump 默认基线滚动至 v2.6(v2.8 P0-2 滚动规则, 清偿 CO-2(v2.7) 滞留)"
+# (v2.8 P3-4/D-9) 逐版本字面量基线断言已并入下方"基线单一来源"动态断言 —— 基线名
+# 只写在 tools/apidump.sh 一处, 本脚本不再随版本改字面量。
 assert_grep "docs/API_INVENTORY_v2.1.md" "自动生成"                  "v2.1 冻结基线已归档(只读保留)"
 assert_grep "docs/API_INVENTORY_v2.2.md" "自动生成"                  "v2.2 冻结基线已归档(只读保留)"
 assert_grep "docs/API_INVENTORY_v2.3.md" "自动生成"                  "v2.3 冻结基线已归档(P0-1 滚动)"
@@ -371,8 +372,27 @@ assert_grep "docs/v3-candidates.md" "维持排队"            "biquad 判定决�
 assert_grep "移植stm32实机记录.md" "modbus"               "实机记录含 Modbus 走单章节(P2)"
 
 # ---- v2.5 P0 基线滚动/评审记录载体 + P1 et_log 加固 + P2 et_modbus_master ----
-assert_grep "tools/apidump.sh"           "API_INVENTORY_v2.6.md"     "apidump 默认基线滚动至 v2.6(v2.8 P0-2 滚动规则)"
-assert_grep "docs/API_INVENTORY_v2.6.md" "自动生成"                  "v2.6 冻结基线已归档(v2.8 P0-1 滚动, 清偿 CO-2(v2.7))"
+# ---- v2.8 P3-4 (D-9): 基线单一来源取值 —— 滚动规则断言替代逐版本字面量 ----
+# 基线名只写在 tools/apidump.sh 的 BASE 默认值一处; 本断言校验"滚动规则"本身:
+#   ① 默认基线归档存在且为自动生成; ② 它 = 版本号最大的归档(防"归档了没切"/"切了没归档")。
+# 门自证可红: 把 apidump 的 BASE 默认值改回旧归档(或清空) → 本节 FAIL。
+ad_base=$(sed -n 's/.*BASE="${2:-\([^}]*\)}".*/\1/p' tools/apidump.sh | head -1)
+if [ -z "${ad_base:-}" ] || [ ! -f "$ad_base" ]; then
+    echo "FAIL [基线单一来源] apidump 默认基线未解析或归档不存在: [${ad_base:-未解析}] (D-9/P0-2)"
+    FAIL=$((FAIL + 1))
+elif ! grep -q "自动生成" "$ad_base"; then
+    echo "FAIL [基线单一来源] 默认基线 $ad_base 非自动生成归档"
+    FAIL=$((FAIL + 1))
+else
+    latest_base=$(ls docs/API_INVENTORY_v*.md 2>/dev/null | sort -V | tail -1)
+    if [ "$ad_base" != "$latest_base" ]; then
+        echo "FAIL [基线单一来源] apidump 默认基线 $ad_base ≠ 最新归档 $latest_base (基线滚动规则未执行, CO-2(v2.7))"
+        FAIL=$((FAIL + 1))
+    else
+        echo "ok   基线单一来源: apidump 默认基线 = 最新归档 $ad_base (滚动规则在位, P3-4/D-9)"
+        PASS=$((PASS + 1))
+    fi
+fi
 assert_grep "docs/v3-candidates.md"      "v2.5 复评记录"             "候选池 v2.5 复评记录落档(P0-2)"
 assert_grep "docs/v3-candidates.md"      "单事务"                    "主站边界: 单事务不含调度器(P0-2/HC-4)"
 assert_grep "docs/v3-candidates.md"      "CO-5"                      "32 位组合封装拒绝理由落档(P0-2)"
