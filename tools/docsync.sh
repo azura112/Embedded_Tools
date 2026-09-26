@@ -460,14 +460,25 @@ fi
 # ---- v2.6-r2 G0′-4 同族漏刷三处装门 (CO-6/CO-7/CO-11(v2.6)) ----
 # 背景: v2.6 的"装门"只盖住了被点名的三处, 同族的另外三处(README 冻结基线名 /
 # port README 板侧叙述 / 计划模板项数)无门 → 漏刷第四例。本节把它们也变成硬门。
-# 门自证可红: 改 README 的基线文件名 / 在 port README 写回"未同步" → 本节 FAIL。
-rd_base=$(sed -n 's/.*当前 `\(docs\/API_INVENTORY_v[0-9][0-9.]*\.md\)`.*/\1/p' README.md | head -1)
+# 门自证可红: 改 README 任一基线文件名 / 在 port README 写回"未同步" → 本节 FAIL。
 ad_base=$(sed -n 's/.*BASE="${2:-\([^}]*\)}".*/\1/p' tools/apidump.sh | head -1)
-if [ -n "${rd_base:-}" ] && [ -n "${ad_base:-}" ] && [ "$rd_base" = "$ad_base" ]; then
-    echo "ok   README 冻结基线名与 apidump 默认基线一致 ($rd_base)"
+# v2.8 P0-3 (CO-5(v2.7)): README 基线名**全量**交叉核对 —— 三重判定:
+#   ① 逐行: 所有携带 `当前 \`docs/API_INVENTORY_v*.md\`` 形态的行(现 2 行: checklist
+#      第 8 条 + "测试与质量门"小节 API 冻结机检行)逐一与 apidump 默认基线比对;
+#   ② 专守 CO-5 回归形态: "API 冻结机检"行若被改写成**不带提取形态**的旧式基线表述
+#      (v2.7 时即此形态: "对 v2.0 基线"), ①会因该行从提取集消失而漏过 —— 故单独断言
+#      该行存在且其基线名与 apidump 默认基线一致;
+#   ③ 提取行数下限 2: 防任一已知基线名行整体失去形态(任一行消失即 ①的样本数掉底)。
+rd_all=$(sed -n 's/.*当前 `\(docs\/API_INVENTORY_v[0-9][0-9.]*\.md\)`.*/\1/p' README.md)
+rd_n=$(printf '%s\n' "$rd_all" | grep -c .)
+rd_bad=$(printf '%s\n' "$rd_all" | grep -Fcv -- "$ad_base")
+rd_freeze_name=$(grep "API 冻结机检" README.md | sed -n 's/.*当前 `\(docs\/API_INVENTORY_v[0-9][0-9.]*\.md\)`.*/\1/p' | head -1)
+if [ -n "${ad_base:-}" ] && [ "${rd_n:-0}" -ge 2 ] && [ "${rd_bad:-0}" -eq 0 ] \
+   && [ "${rd_freeze_name:-}" = "$ad_base" ]; then
+    echo "ok   README 基线名逐行核对一致 ($rd_n 行 ↔ apidump 默认 $ad_base; API 冻结机检行在位)"
     PASS=$((PASS + 1))
 else
-    echo "FAIL README 冻结基线名 [${rd_base:-未解析}] ≠ apidump 默认基线 [${ad_base:-未解析}] (CO-6(v2.6) 同族漏刷)"
+    echo "FAIL README 基线名与 apidump 默认基线不一致: 提取行 $rd_n 行(下限 2), 不符 $rd_bad 行, API 冻结机检行基线名 [${rd_freeze_name:-缺失/无当前基线形态}], apidump 默认 = [${ad_base:-未解析}] (CO-6(v2.6)/CO-5(v2.7) 同族漏刷)"
     FAIL=$((FAIL + 1))
 fi
 assert_no_grep "port/stm32g474/README.md" "未同步" "g474 README 无'未同步'残留(板侧叙述与实际一致, CO-7(v2.6))"
