@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.7.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.7开发交付__从站解析对称化与板上自测收口.md](v2.7开发交付__从站解析对称化与板上自测收口.md)**（从站解析边界对称化 + 板上自测 22 套件 + 代码卫生）
+> 当前版本：**v2.8.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.8开发交付__冻结面基线滚动与门空隙收口.md](v2.8开发交付__冻结面基线滚动与门空隙收口.md)**（冻结面基线滚动 + 门空隙收口 + 解析边界裁决落档）
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**
 
@@ -189,7 +189,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **配方可执行载体**（v2.3，v2.5 扩至五例）：`make ex` 一键跑五个自检式示例（闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
-- **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.6.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
+- **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.7.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85% × ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 22/22）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
@@ -234,6 +234,6 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 5. **交付文档命名**：`v<版本号>开发交付__<重点概况>.md` 或 `v<版本号>开发交付：<重点概况>.md`（全角冒号或 `__` 分隔符均可，v2.0 起实际惯例），里程碑对照提交哈希逐条可回溯；
 6. **量化声明附复现命令 + 环境注记**（v1.3 验收教训）：任何体积/覆盖率/用例数声明必须注明测量工具链精确版本与 shell，并给出可复现命令（例：`arm-none-eabi-size` + GNU Tools for STM32 13.3.rel1；`gcovr --print-summary` 于 MinGW gcc 16.1）——无环境注记的裸数字视为无效。
 7. **数字回刷纪律（v1.9 P1-4）**：交付定稿后凡改变可观测数字的提交（体积表/用例数/docsync 断言数/smoke 计数），**同一提交内回刷所有引用处**（README / port README / 实机记录 / 交付文档）并在 commit message 注明"数字回刷"；文档命令由 CI `docbuild` job 以 ```docbuild 定界块原样执行守护（v1.8 三处滞后数字的制度化根治）。
-8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.6.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。该行的基线文件名与 `tools/apidump.sh` 的默认基线由 docsync 断言交叉核对（v2.6-r2 起，防同族漏刷第四例）。
+8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.7.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。该行的基线文件名与 `tools/apidump.sh` 的默认基线由 docsync 断言交叉核对（v2.6-r2 起，防同族漏刷第四例）。
 9. **每版交付后产出评审记录（v2.5 P0-4）**：按 [`docs/评审记录模板.md`](docs/评审记录模板.md) 产出 `vX.Y评审记录__<slug>.md`（HC/AC 逐条核验 + CO 编号 + 新发现问题），交付文档须引用该记录或显式声明其缺失；下一版计划 §1.1 的 CO 处置表以它为唯一输入——**没有评审记录，下一版计划就无输入可依**（v1.x~v2.4 十五版无评审记录，遗留项靠人工回收，v2.5 起根治）。
 10. **计划起草按模板自检（v2.6 P0-4，v2.6-r2 增第 5 项，v2.8 增第 6 项）**：每版计划按 [`docs/开发计划模板.md`](docs/开发计划模板.md) 的六节骨架起草，并在交付前完成其 **§7 起草期核验清单六项**（① 内部 tag 一律 `snap-*` 且触发面实测 / ② "无副作用"类断言必须实测 / ③ 板侧落点写库外私有全路径 / ④ AC ↔ 冻结 API 形状互洽 / ⑤ 证据落点章节号 + 占位节承接标注 / ⑥ 基线滚动三件事显式列任务），文末附"起草期合规声明"——六项未过的计划不得进入开发（`CO-12(v2.5)` 的机制化根治；第 5 项来源 `CO-11(v2.6)`，第 6 项来源 `CO-2(v2.7)`）。

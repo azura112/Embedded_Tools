@@ -109,7 +109,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 22/22)
       host 单测  (497 用例 × 2 几何 + 1K 变体 + Tab 形态)
      配方载体    (make ex: 五例自检式示例, CI 常设)
-    机制门       (docsync 305 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
+    机制门       (docsync 306 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
 ```
 
 层级关系：**下层红，上层必红**；示例（配方载体）用公开 API 编写——API 升级即编译错，
