@@ -483,7 +483,9 @@ else
 fi
 assert_no_grep "port/stm32g474/README.md" "未同步" "g474 README 无'未同步'残留(板侧叙述与实际一致, CO-7(v2.6))"
 assert_grep    "docs/开发计划模板.md"     "证据落点章节号" "计划模板含第 5 项(证据落点章节号 + 占位节清理, CO-11(v2.6))"
-assert_grep    "README.md"                "核验清单五项"   "README checklist 第 10 条与模板项数一致(五项)"
+assert_grep    "docs/开发计划模板.md"     "基线滚动"       "计划模板含第 6 项(基线滚动三件事, CO-2(v2.7) 根因根治, v2.8 P0-4)"
+assert_grep    "docs/评审记录模板.md"     "基线滚动复核项" "评审记录模板含基线滚动复核节(v2.8 P0-4)"
+assert_grep    "README.md"                "核验清单六项"   "README checklist 第 10 条与模板项数一致(六项)"
 
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格
