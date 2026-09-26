@@ -51,6 +51,12 @@ if command -v cygpath >/dev/null 2>&1; then
     TMPD_REL="build/.apidump.$$"
     if mkdir -p "$TMPD_REL" 2>/dev/null; then
         TMPD="$TMPD_REL"
+    else
+        # v2.8 P1-4 (CO-9(v2.7)): 回退不得静默 —— 旧版"路径转义 → gawk 提取为空"陷阱
+        # 的前提就是 Windows 分支失效而无任何提示(v2.5 时代工具在 worktree 内生成
+        # 0 条目, 交付 N-3 实测)。告警不改变退出码, 只提示排查 mkdir 失败原因。
+        echo "apidump: WARN —— 仓库内临时目录 $TMPD_REL 创建失败, 回退 mktemp -d;" \
+             "若随后提取为空/比对全漂移, 先排查 build/ 可写性与路径转义 (CO-9(v2.7))" >&2
     fi
 fi
 # 清理失败不得影响门的结论(受限 shell 封装下 rm 会失败/需确认 —— 见上 rm 说明):
@@ -247,5 +253,26 @@ if [ "${1:-}" = "--diff" ]; then
     exit 0
 fi
 
-gen_body > "$OUT"
-echo "apidump: 已生成 $OUT"
+# ---- v2.8 P1-4 (CO-9(v2.7)): 生成条目数守卫 —— 防残缺生成静默覆盖清单 ----
+# 参照 = 现有工作清单与最近归档中的较大者(阈值 ½, 可裁量项 6: 沿交付 N-3 建议);
+# 生成条目数不足参照一半 → 拒绝写入 + exit 1 + 诊断。首次生成(无任何参照)不拦。
+GEN="$TMPD/gen_default.md"
+gen_body > "$GEN"
+new_n=$(item_lines "$GEN" | grep -c .)
+ref_n=0; ref_src="(无参照, 守卫跳过)"
+if [ -f "$OUT" ]; then
+    ref_n=$(item_lines "$OUT" | grep -c .); ref_src="$OUT"
+fi
+latest=$(ls docs/API_INVENTORY_v*.md 2>/dev/null | sort -V | tail -1)
+if [ -n "${latest:-}" ] && [ -f "$latest" ]; then
+    a_n=$(item_lines "$latest" | grep -c .)
+    if [ "$a_n" -gt "$ref_n" ]; then ref_n=$a_n; ref_src="$latest"; fi
+fi
+if [ "$ref_n" -gt 0 ] && [ "$new_n" -lt $((ref_n / 2)) ]; then
+    echo "apidump: FAIL —— 生成条目数 $new_n < 参照清单($ref_src) $ref_n 项的一半, 拒绝写入 $OUT (CO-9(v2.7))"
+    echo "       典型根因: Windows 路径转义使 gawk 提取为空 / 头文件集合异常。"
+    echo "       本运行未触碰现有清单; 排查生成环境后重跑, 或用 --snapshot 显式归档。"
+    exit 1
+fi
+mv -f "$GEN" "$OUT"
+echo "apidump: 已生成 $OUT ($new_n 项)"
