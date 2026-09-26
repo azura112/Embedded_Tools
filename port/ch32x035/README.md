@@ -11,6 +11,11 @@ V1.7 基线逐行为对齐,骨架层(调度/缓冲/按键/LED/日志/看门狗)�
 
 ## 来源与基线
 
+> **应用规范源**:自 2026-09-26 起,该板固件工程本体
+> (`D:\code\mounriver-studio-projects\CH32X035G8U`,V1.8)已就地切换为 et 版
+> (et 模块 vendor 进工程 `et/` 目录)。本目录保留为**库侧参考移植**,应用文件
+> 与工程本体同源同版;后续改动以工程本体为准,此处随版本同步。
+
 - 应用基线:`D:\code\mounriver-studio-projects\CH32X035G8U` V1.7
   (git 仓库已建,重构前提交为基线;PD/LCD/背光/CDC/IWDG/自动扫档均板上验证通过)。
 - `PD_Process.c`(PD 协议栈)、`lcd.c`、USB 设备栈(EVT 移植)原样复制,未改动
