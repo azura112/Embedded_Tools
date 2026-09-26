@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.7.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.8.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
@@ -980,6 +980,11 @@ for (;;) {
 
 **静默阈值换算**：`silence_ms ≈ 3.5 × 10 × 1000 / 波特率`（11 位/字符：1 起始+8 数据+1 校验+1 停止）。115200 → ≈0.30ms（实取 ≥1ms 整数，如 4ms）；9600 → ≈3.6ms（取 5ms）。**寄存器值域语义由应用钩子决定**（保持/输入、32 位组合、浮点寄存器均不在库级封装）；kv 直通配方见 [11.13](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)。
 
+**解析边界裁决（v2.8 P2-1/P2-2，`CO-7(v2.7)`/`CO-10(v2.7)`，落档防下版重复评估）**：
+
+- **`0x10` 帧异常 0x03 能力（双假设定长）—— 维持 v2.7 行为（分支 B，论证在案）**。现状：`bc != 2*qty` 的 `0x10` 帧不产生任何应答（`expected_len` 返回"不可判定"→ 逐字节重同步，见 `protocol/et_modbus.c` `mb.bc_qty_mismatch_resync` 用例）。恢复路径（"CRC 通过才接受 `9+b[6]`"的双假设定长）的三要素论证：**收益** = 畸形主站（字节数域计算错误）可即时收到异常 0x03 而非静默超时（应答机制在 `do_write_multiple` 内本就存在，纯成帧层放行问题）；**风险** = ① 重开 v2.7 刚以板上 A/B 对照（实机记录 §15.3）认证的成帧路径，而本版无板级复验任务，属仅 host 验证的降级交付；② 双假设引入新角例——大 `b[6]` 噪声的投机等长（`9+b[6]` 可能超出 `rxcap` 触发"丢整批"分支，吞掉紧随真请求，劣于现行逐字节重同步）、投机等待的延迟面、以及该候选类的 `crc_err` 口径须重新裁决（HC-5②）；③ 收益对象仅为**不合规范的主站**（规范上 `bc != 2*qty` 即畸形请求），现状失败形态为"静默 + 主站超时重发"，**无错误写入、无状态损坏**（fail-safe）。**判据** = 任何恢复实现必须同时满足：HC-5 四项前提（CRC 失败不按不可信长度整帧前进 / 同形判据以帧首地址+功能码为主 / 噪声自洽+CRC 坏不吞真请求 / 与主站严判定长不矛盾）、既有 33 例矩阵与 E10 形态用例零回退、**板上 A/B 复验**（v2.7 的 host 先验即漏判了 form1 静默路径兜底这一形态）。该门槛 v2.8 内不可达 → **记 v3 候选**（见 `docs/v3-candidates.md`「v2.8 复评记录」）。
+- **从站"读帧无长度域"的 8 字节窗口 —— 维持现状（代价矩阵裁决）**。`0x03/0x04/0x06` 帧长固定 8 字节、**不受任何域控制**；CRC 失败且与本站同形时按帧长整帧丢弃（计 `crc_err`）。两种取舍：**现状**（整帧 8B 丢弃）——受害形态 = 噪声前导 2 字节 `[本站地址][读 fc]` 伪造帧头，最坏吞掉紧随真请求的前缀，**主站超时重发可恢复，无静默错误**；**替代**（读帧 CRC 失败改逐字节重同步）——坏帧残字节获得重组机会，可能重组出 CRC 碰巧自洽的假帧 → **从站误执行写**（重开 `CO-5(v2.6)` 的危害类），风险更高。**裁决：维持现状**（危害有界、可恢复、fail-safe；替代方案把"丢一帧"升级为"误写"）。除非出现翻转性分析，此后不再重复评估。
+
 单测 **33 例**（0x03/04/06/10 正常流、异常 0x01/0x02/0x03、CRC 坏/地址不符静默、广播写不应答、广播读忽略、分片、粘包两帧、静默丢弃重同步、qty 边界 125/123、txcap 不足、统计、多实例，`test/test_modbus.c`；**v2.7 `CO-5` 增 10 例解析边界矩阵**：长度域不自洽帧不伪造帧长（`mb.bc_qty_mismatch_resync`）、**伪写入帧噪声后接真读/真写请求仍被正确应答**（`mb.noise_fake_len_then_read` / `_write`，评审 E10 形态）、异站地址噪声头重同步、广播+未知功能码噪声头可重同步、纯噪声全丢弃且 `crc_err` 不增长、单次 feed 内"坏帧+真帧"粘包、CRC 坏且帧首非本站不计 `crc_err`、**单播未知功能码仍保留给静默路径**（异常 `0x01` 能力不回退）、长度域自洽但帧未齐时等待而非误判噪声）；自检示例 [`examples/ex_modbus_slave.c`](../examples/ex_modbus_slave.c)（`make ex`，v2.5 起含 **tick 静默路径应答**的两个 flush 点断言）；主站工具 [`tools/modbus_master.py`](../tools/modbus_master.py)（`--selftest` 回环自测 / `--slave` 从站仿真 / 串口模式）。
 
 ### 5.8 et_modbus_master Modbus RTU 主站 (v2.5)
@@ -1443,7 +1448,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 - **报告**：结构化事件回调 `et_selftest_report_fn(user, evt, suite, num)`——BEGIN/SUITE_PASS/SUITE_FAIL/SUITE_SKIP/CHECK_FAIL(带行号)/DONE；组件内不做格式化，接 et_log 或 shell 由应用决定；
 - **22 内建套件**（v2.2 起 +pid/stats/bytes，v2.7 起 +modbus/log）：ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
-- **覆盖边界**：冒烟非对等 host 497 用例，掉电注入类 host-only 用例不移植；
+- **覆盖边界**：冒烟非对等 host 497 用例，掉电注入类 host-only 用例不移植；**板上 `log` 套件只验修饰面"生效性"（输出字符数符合预期），不校字符内容**——内容级断言（格式化字节逐值比对）由 host 30 例承担（`test/test_log.c`），板上不做（v2.8 P3-1，`CO-11(v2.7)` 边界明示；内容级板上断言需 `port.h` 捕获钩子属公开契约变更，评估结论见 `docs/v3-candidates.md`「v2.8 复评记录」，本版不实现）；
 - **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
 - **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
 
