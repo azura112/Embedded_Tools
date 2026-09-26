@@ -27,8 +27,10 @@
  *                        - Keys: KEY0 cycle target voltage, KEY1 backlight,
  *                          KEY2 dump status.
  *                        - LCD (ST7735S 160x80): banner + live VBUS/PD status.
- *                        - USB CDC virtual COM: status stream + commands
- *                          (n/1-8/b/s/a/o/c/,.<>?, same actions as the keys).
+ *                        - USB CDC virtual COM (COM19): status stream only.
+ *                          Commands are on the debug UART COM16 (V1.8):
+ *                          n/1-8/b/s/a/o/c/,.<>? over USART1 RX (H1.4),
+ *                          same actions as the keys.
  *******************************************************************************/
 
 #include "debug.h"
@@ -36,6 +38,7 @@
 #include "PD_Process.h"
 #include "lcd.h"
 #include "usb_cdc.h"
+#include "uart_cmd.h"
 #include "port_ch32x035.h"
 #include "port.h"               /* port_wdt_feed() 兜底喂狗 */
 #include "et_sched.h"
@@ -334,7 +337,7 @@ static void task_pd_det_fn( void *arg )
     PD_Det_Proc( );
 }
 
-/* 10ms: 看门狗 + 按键 + CDC + LED */
+/* 10ms: 看门狗 + 按键 + CDC(上报) + UART 命令 + LED */
 static void task_app_fn( void *arg )
 {
     uint8_t cmd;
@@ -347,8 +350,9 @@ static void task_app_fn( void *arg )
     {
         et_key_scan( &app_key[ i ], now );
     }
-    CDC_Task( );
-    while( ( cmd = CDC_Read_Cmd() ) != 0 )
+    CDC_Task( );                    /* 数据上报 + CDC RX 排空(命令已移走) */
+    UART_Cmd_Task( );               /* UART RX 环 → 命令队列 */
+    while( ( cmd = UART_Cmd_Read() ) != 0 )
     {
         App_Command( cmd );
     }
@@ -544,6 +548,7 @@ int main(void)
     SystemCoreClockUpdate();
     Delay_Init();
     USART_Printf_Init(115200);
+    UART_Cmd_Init( );       /* 打开 USART1 接收: 命令通道在 COM16(V1.8 起) */
 
     ET_LOGI( "app", "SystemClk:%u", (unsigned)SystemCoreClock );
     ET_LOGI( "app", "ChipID:%08x", (unsigned)DBGMCU_GetCHIPID() );

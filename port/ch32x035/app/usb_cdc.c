@@ -1,25 +1,18 @@
 /********************************** (C) COPYRIGHT *******************************
  * File Name          : usb_cdc.c
- * Description        : Board CDC-ACM application layer. TX/RX rings between
+ * Description        : Board CDC-ACM application layer. TX ring between
  *                      the USB ISR and the main loop; single-producer /
  *                      single-consumer.
  *
- *                      (et 重构版): RX/TX 环 = et_ringbuf(SPSC 无锁, 自由
- *                      递增索引抗回绕), 命令队列 = et_queue。并发拓扑与
- *                      V1.7 一致:
- *                        RX: ISR 写(et_ringbuf_write) / 主循环读(read)
- *                        TX: 主循环写(CDC_Write)      / 主循环读(flush)
- *                        命令: 主循环生产 / 主循环消费
- *                      et_ringbuf_reset/et_queue_reset 在 USB 总线复位(ISR)
- *                      中调用: 与 V1.7 的"直接清零索引"同构, 复位瞬间主循环
- *                      若正访问环, 最坏丢几个字节, 由命令解析层自然过滤。
+ *                      (V1.8: 命令通道已移至调试串口 COM16 —— 见 uart_cmd.c;
+ *                       本层为纯数据上报: TX 环 = et_ringbuf(SPSC 无锁,
+ *                       零拷贝段上送), RX 环仅排空丢弃, 不再解析命令。)
  *******************************************************************************/
 
 #include "usb_cdc.h"
 #include "ch32x035_usbfs_device.h"
 #include "ch32x035_pwr.h"
 #include "et_ringbuf.h"
-#include "et_queue.h"
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -28,16 +21,12 @@ volatile uint8_t CDC_Line_Coding[7] = { 0x00, 0xC2, 0x01, 0x00,   /* 115200 */
 
 #define CDC_TX_RING_SIZE    512     /* 2 的幂: ET_RINGBUF_POW2=1 构建 */
 #define CDC_RX_RING_SIZE    256
-#define CDC_CMD_QUEUE_SIZE  8
 
 static et_ringbuf_t cdc_tx_rb;
 static uint8_t      cdc_tx_mem[CDC_TX_RING_SIZE];
 
 static et_ringbuf_t cdc_rx_rb;
 static uint8_t      cdc_rx_mem[CDC_RX_RING_SIZE];
-
-static et_queue_t   cdc_cmd_q;
-static uint8_t      cdc_cmd_mem[CDC_CMD_QUEUE_SIZE];    /* 每槽 1 字节命令字符 */
 
 static volatile uint32_t cdc_rx_total;   /* bytes received since boot (diagnostics) */
 
@@ -53,7 +42,6 @@ void CDC_Init( void )
 {
     et_ringbuf_init( &cdc_tx_rb, cdc_tx_mem, sizeof( cdc_tx_mem ) );
     et_ringbuf_init( &cdc_rx_rb, cdc_rx_mem, sizeof( cdc_rx_mem ) );
-    et_queue_init( &cdc_cmd_q, cdc_cmd_mem, sizeof( cdc_cmd_mem ), 1 );
 
     USBFS_RCC_Init( );
     USBFS_Device_Init( ENABLE, PWR_VDD_SupplyVoltage( ) );
@@ -75,6 +63,7 @@ uint8_t CDC_Connected( void )
  * @fn      CDC_Rx_Write
  *
  * @brief   ISR context: move one received EP2 packet into the RX ring.
+ *          (RX 字节不再解析命令, 由 CDC_Task 排空丢弃)
  *
  * @return  none
  */
@@ -95,7 +84,6 @@ void CDC_On_Reset( void )
 {
     et_ringbuf_reset( &cdc_tx_rb );
     et_ringbuf_reset( &cdc_rx_rb );
-    et_queue_reset( &cdc_cmd_q );
 }
 
 /*********************************************************************
@@ -143,30 +131,22 @@ void CDC_Printf( const char *fmt, ... )
 }
 
 /*********************************************************************
- * @fn      CDC_RxTotal / CDC_Read_Cmd
+ * @fn      CDC_RxTotal
  *
- * @brief   Diagnostics counter and command dequeue (0 = empty).
+ * @brief   Diagnostics counter (bytes received since boot).
  *
- * @return  see brief
+ * @return  uint32_t
  */
 uint32_t CDC_RxTotal( void )
 {
     return cdc_rx_total;
 }
 
-uint8_t CDC_Read_Cmd( void )
-{
-    uint8_t c = 0;
-
-    (void)et_queue_pop( &cdc_cmd_q, &c );
-    return c;
-}
-
 /*********************************************************************
  * @fn      CDC_Task
  *
- * @brief   Parse received bytes into the command queue and flush the
- *          TX ring to the host. Call from the main loop (~10ms).
+ * @brief   Discard received bytes (commands moved to COM16/uart_cmd) and
+ *          flush the TX ring to the host. Call from the main loop (~10ms).
  *
  * @return  none
  */
@@ -177,18 +157,9 @@ void CDC_Task( void )
     uint32_t used;
     uint8_t c;
 
-    /* parse command bytes: RX 环消费者(ISR 是生产者) */
+    /* RX 环排空丢弃: CDC 不再承担命令输入(ISR 是生产者) */
     while( et_ringbuf_read( &cdc_rx_rb, &c, 1 ) == 1 )
     {
-        if( ( c == '\r' ) || ( c == '\n' ) || ( c == ' ' ) )
-        {
-            continue;
-        }
-        if( ( c >= 'A' ) && ( c <= 'Z' ) )
-        {
-            c = (uint8_t)( c + 32 );
-        }
-        (void)et_queue_push( &cdc_cmd_q, &c );  /* 队满丢弃, 与 V1.7 一致 */
     }
 
     /* flush TX ring: 零拷贝取连续段直接上送(每空闲 EP3 槽一个最大包) */
