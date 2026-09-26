@@ -83,6 +83,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 | v2.5 | 23860 | 28 | 740 | 默认裁剪（终值）；+et_modbus_master 入 glob；**et_log 规格解析加固** + demo 改域宽格式串（删 24 行逐位拼字符绕行）。板侧 CubeMX 工程本版**已同步 Core/et 并交叉编译（0 warning，FLASH 38712 B / RAM 5312 B）**；板上走单于 v2.6-r2 补齐（主站读/写/重发/异常/广播逐字节 + 从站分流复跑，见实机记录 §13） |
 | v2.6 | 24100 | 28 | 740 | 默认裁剪；**et_log 修饰面收口**（`%c` 域宽生效 + `j/t/L` 消费与占位）+ **et_modbus_master 读应答定长合理性校验**（噪声逐字节重同步）。板侧工程本版**已同步**（`Core/et` 全量重拷 + `diff -rq` 全 OK，0 warning，板侧 FLASH 75144 B / RAM 5960 B，见实机记录 §14） |
 | v2.7 | 24260 | 28 | 740 | 默认裁剪；**从站解析边界对称化**（P0-1/P0-2，`CO-5`）+ **selftest 20→22**（不在此构建）+ 主站读路径死代码清理（P2-1）。板侧工程本版**已同步并上板**（`diff -rq` 全 OK、0 warning；板侧 Debug FLASH **81244 B** / RAM **6768 B**，`AT+SELFTEST` → `SELFTEST: 22/22 PASS`，见实机记录 §15） |
+| v2.8 | 24256 | 28 | 740 | 默认裁剪；**治理版**（库内代码零改动，`CO-7` 分支 B 论证维持；`apidump --diff` 对 v2.7 基线 0/0）；板侧工程**本版未重烧**（板侧维持 v2.7 同步态，见实机记录 §15）；text −4 B 为版本宏常量折叠差 |
 
 ## 烧录与运行
 
