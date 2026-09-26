@@ -184,8 +184,11 @@ gen_body() {
 
 # 清单条目行(去 markdown 包裹); 忽略 ET_VERSION* 版本元数据宏 —— --diff 的
 # 比较单元。C locale 排序保证跨环境(Windows Git Bash / ubuntu)comm 顺序一致。
+# 显式 `tr -d '\r'`(v2.8 P1-3, CO-8(v2.7)): 把"GNU sed 读文件时剥 CR 的隐式副作用"
+# 升级为契约 —— 管道输入不经文本模式转换, CRLF 经管道进入模式空间会使 `$` 锚定
+# 落空 → 0 条目 → --diff 误红; 先剥 CR 后不再依赖任何实现的隐式行为。
 item_lines() {
-    sed -n 's/^- `\(.*\)`$/\1/p' "$1" | grep -v '^ET_VERSION'
+    tr -d '\r' < "$1" | sed -n 's/^- `\(.*\)`$/\1/p' | grep -v '^ET_VERSION'
 }
 
 if [ "${1:-}" = "--check" ]; then
