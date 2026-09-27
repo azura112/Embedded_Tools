@@ -54,7 +54,8 @@
 │   ├── port.h         # 平台适配契约（唯一碰硬件的层，v1.2 起含 flash 三件套）
 │   ├── host/          # PC 模拟实现（flash 模拟器 + 时间注入 + 掉电注入）
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
-│   └── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
+│   ├── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
+│   └── ch32x035/      # CH32X035G8U6 参考移植（PD 测试板/Qingke RISC-V2A，python build.py，不入 CI/sizecheck）
 ├── test/              # 迷你框架 + 497 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 33 + modbus_master 32 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
@@ -82,7 +83,7 @@ make test-g4 # v1.6 双几何回归: G474 2KB 页几何下同一套用例（stor
 make demo    # 全栈演示（虚拟 UART + 定时器 + 按键 + LED + kv）
 ```
 
-STM32F103 真机构建/烧录见 [port/stm32f103/README.md](port/stm32f103/README.md)；STM32G474 见 [port/stm32g474/README.md](port/stm32g474/README.md)。
+STM32F103 真机构建/烧录见 [port/stm32f103/README.md](port/stm32f103/README.md)；STM32G474 见 [port/stm32g474/README.md](port/stm32g474/README.md)；CH32X035G8U6（PD 测试板，库侧参考移植）见 [port/ch32x035/README.md](port/ch32x035/README.md)。
 
 ## 使用速查
 
@@ -167,7 +168,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | `port_putc()` | 阻塞式字符输出（日志底层） |
 | `port_flash_read/write/erase_sector` | 仅 `ET_MODULE_KV=1` 时必选：4B 对齐擦写、只允许 1→0 写、短写如实上报（掉电/故障截断） |
 
-已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已完成 **v1.6~v1.9 板面收口 + v2.1/v2.2 控制链路上板**（升级链真机走单 5 条 / 库化 selftest 22 套件 / PID 闭环真机走单，记录见仓库根 `移植stm32实机记录.md`），F103 真机维持常设挂账（编译+Renode 仿真门）。
+已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已完成 **v1.6~v1.9 板面收口 + v2.1/v2.2 控制链路上板**（升级链真机走单 5 条 / 库化 selftest 22 套件 / PID 闭环真机走单，记录见仓库根 `移植stm32实机记录.md`），F103 真机维持常设挂账（编译+Renode 仿真门）。**CH32X035G8U6**（`port/ch32x035/`，Qingke RISC-V2A）为**库侧参考移植**（应用以工程本体为准）：`python build.py`（MRS2 工具链，**不入 CI/sizecheck**）零警告编译 + et 重构版固件实机运行（两处移植缺陷实机定位修复，见其 README 验证状态），上板回归清单未系统执行，不按"已验证"整体结论计。
 
 裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关（支持 `-D` 覆盖），未启用的模块不参与编译（对应 `.c` 亦移出构建列表）。
 

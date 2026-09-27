@@ -4,10 +4,15 @@ WCH CH32X035G8U6(Qingke RISC-V2A, 48MHz HSI, 62K flash / 20K RAM)平台移植,
 载体是一块自制 USB-PD Sink 测试板固件的 **et 重构版**:应用逻辑与既已上板验证的
 V1.7 基线逐行为对齐,骨架层(调度/缓冲/按键/LED/日志/看门狗)改用本库组件。
 
-> **验证状态(如实声明)**:`python build.py` 于 MRS2 RISC-V 工具链编译通过,
-> app/port/et 层 `-Wall -Wextra` 零警告。**未做板上验证** —— PD 协商、CDC 枚举、
-> LCD、按键、IWDG 时序均需真机回归后方可按"已验证"计(基线 V1.7 已上板验证,
-> 回归时两版可逐行比对)。
+> **验证状态(如实声明,v2.9 P1-3 口径核清)**:`python build.py` 于 MRS2 RISC-V 工具链编译通过,
+> app/port/et 层 `-Wall -Wextra` 零警告。**实机运行史**:et 重构版固件已在真机启动运行,
+> 两处移植缺陷经实机定位修复(2026-09-26: `98d3612` SysTick 缺 PFIC 门控 → 时基冻结/喂狗
+> 失效/IWDG 周期复位;`6bafe21` SysTick 被 WCH `debug.c` 延时函数轮询独占 → 时基改 TIM1;
+> 命令通道移至 COM16(UART RX)、CDC 退为纯数据上报,`405265e`)。**上板回归清单(下)未系统
+> 执行** —— PD 协商各档/CDC 枚举/LCD/按键/IWDG 时序/LED 三态等尚未逐项按通过计,故
+> **不按"已验证"整体结论计**;应用 V1.7 基线功能以工程本体为准(回归时两版可逐行比对)。
+> 本 port **不入 CI 七 job / 不入 sizecheck / 不设体积表行**(MRS2 工具链非本机与 CI 常设,
+> 构建形态为 `python build.py`;再评估触发 = MRS2 工具链门建立或该板固件进入功能交付窗口)。
 
 ## 来源与基线
 
