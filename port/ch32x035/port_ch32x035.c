@@ -233,6 +233,22 @@ bool port_wdt_disable(void)
 #define FLASH_PROG_WORDS        (FLASH_PROG_BLOCK / 4u)
 #define FLASH_OP_GUARD          1000000u
 
+/* 等待 BSY 断言(bounded): STRT 写入后控制器需若干周期才置忙, 若直接轮询
+ * "等 BSY 清零"可能立即读到 0 而提前返回 —— 携带"硬件仍在擦写"的状态
+ * 返回主循环, 中断恢复后 ISR 在控制器忙时取指 → 读出垃圾 → 非法指令复位
+ * (实机#4-#6 连环教训)。至多数百次读(µs 级); 操作真的极快完成时循环
+ * 自然耗尽, 转由 flash_wait_idle 收尾。 */
+static void flash_wait_busy_assert(void)
+{
+    uint32_t i;
+
+    for (i = 0u; i < 512u; i++) {
+        if ((FLASH->STATR & X035_SR_BSY) != 0u) {
+            break;
+        }
+    }
+}
+
 /* 等待空闲: 必须 always_inline —— 擦写进行中禁止发生新的取指
  * (ROM_ERASE/ROM_WRITE 的等待循环同为函数内联形态) */
 static inline __attribute__((always_inline)) void flash_wait_idle(void)
@@ -298,6 +314,7 @@ static void flash_program_block(uint32_t blk, const uint32_t *words)
 
     FLASH->ADDR = blk - FLASH_PROG_BLOCK;
     FLASH->CTLR |= X035_CR_STRT_Set;
+    flash_wait_busy_assert();
     flash_wait_idle();
     FLASH->CTLR &= ~X035_CR_PAGE_PG;
 }
@@ -393,10 +410,21 @@ bool port_flash_erase_sector(uint32_t sector_index)
     FLASH->CTLR |= X035_CR_PER_Set;
     FLASH->ADDR = addr;
     FLASH->CTLR |= X035_CR_STRT_Set;
+    flash_wait_busy_assert( );
     flash_wait_idle( );
     FLASH->CTLR &= X035_CR_PER_Reset;
     FLASH->CTLR |= X035_CR_LOCK_Set;
     ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
+    /* 回读验证(0x0 别名): 首 16B 应全 0xFF, 把"假擦除"变可观测 */
+    if (ok) {
+        uint32_t i;
+        for (i = 0u; i < 16u; i++) {
+            if (*(volatile uint8_t *)(PORT_FLASH_AREA_BASE_RD + (addr - PORT_FLASH_AREA_BASE) + i) != 0xFFu) {
+                ok = false;
+                break;
+            }
+        }
+    }
     PORT_CRITICAL_EXIT();
     flash_irq_unmask( );
     return ok;
