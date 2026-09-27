@@ -415,18 +415,16 @@ bool port_flash_erase_sector(uint32_t sector_index)
 
     PORT_CRITICAL_ENTER();
     flash_irq_mask( );                          /* PFIC 级屏蔽(擦写窗口内禁止取指) */
-    flash_unlock_both( );                       /* KEYR + MODEKEYR 两级解锁 */
-    /* 序列与 vendor ROM_ERASE 的 1KB 分支逐行同款(等待内联) */
-    FLASH->CTLR &= (X035_CR_OPTER_Reset & X035_CR_PAGE_ER_Reset);
-    FLASH->CTLR |= X035_CR_PER_Set;
-    FLASH->ADDR = addr;
-    FLASH->CTLR |= X035_CR_STRT_Set;
-    flash_start_delay( );
-    flash_wait_idle( );
-    FLASH->CTLR &= X035_CR_PER_Reset;
-    FLASH->CTLR |= X035_CR_LOCK_Set;
+    /* 对照实验(实机#8): 直接调用 vendor FLASH_ErasePage —— 其内部序列为
+     * 官方参考(仅 KEYR 解锁, 不用 MODEKEYR; 自带 WaitForLastOperation)。
+     * 此前手写序列多做了 MODEKEYR 快速模式解锁 —— 该解锁只属于
+     * ROM_WRITE/ROM_ERASE 快编程路径, 用于普通 PER 擦除可能把控制器
+     * 带入异常模式, 是本轮前后的最大嫌疑差异。 */
+    FLASH_Unlock();
+    ok = (FLASH_ErasePage( addr ) == FLASH_COMPLETE);
+    FLASH_Lock();
     flash_settle( );
-    ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
+    ok = ok && ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
     /* 回读验证(0x0 别名): 首 16B 应全 0xFF, 把"假擦除"变可观测 */
     if (ok) {
         uint32_t i;
