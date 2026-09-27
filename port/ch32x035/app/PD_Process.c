@@ -464,7 +464,23 @@ UINT8 PD_Send_Handle( UINT8 *pbuf, UINT8 len )
  */
 void PDO_Request( UINT8 pdo_index )
 {
+    PDO_Request_Cur( pdo_index, 100 );          /* 100% = 标称电流 */
+}
+
+/*********************************************************************
+ * @fn      PDO_Request_Cur
+ *
+ * @brief   V1.9 测试钩子: 以标称电流的 cur_pct% 发起 REQUEST。
+ *          50 = 半电流(测欠额请求); 300 = 超标(源端应 Reject, 压测);
+ *          100 = 等价 PDO_Request。越界序号钳位、状态机流转均与
+ *          PDO_Request 一致。
+ *
+ * @return  none
+ */
+void PDO_Request_Cur( UINT8 pdo_index, UINT16 cur_pct )
+{
     UINT16 Current,Voltage;
+    UINT32 CurNew;
     UINT8  status;
 
     if( pdo_index == 0 )
@@ -483,8 +499,21 @@ void PDO_Request( UINT8 pdo_index )
 
     memcpy( &PD_Rx_Buf[ 2 ], &Adapter_SrcCap[ 4*(pdo_index-1) + 1 ], 4 );
     PD_PDO_Analyse( 1, &PD_Rx_Buf[ 2 ], &Current, &Voltage );
+
+    /* 缩放电流(PDO[9:0], 10mA 单元, 10 位上限), 覆写 RDO 源字段后
+     * 由下方既有字节搬移逻辑生成操作电流域 */
+    CurNew = ( (UINT32)Current * cur_pct ) / 100;
+    if( CurNew > 0x3FF * 10 )
+    {
+        CurNew = 0x3FF * 10;
+    }
+    CurNew = ( CurNew / 10 ) * 10;              /* 10mA 对齐 */
+    Current = (UINT16)CurNew;
+    PD_Rx_Buf[ 2 ] = ( UINT8 )( ( CurNew / 10 ) & 0xFF );
+    PD_Rx_Buf[ 3 ] = ( PD_Rx_Buf[ 3 ] & 0xFC ) | ( UINT8 )( ( CurNew / 10 ) >> 8 );
+
     PD_Request_mV = Voltage;
-    printf("Request PDO%d: %d mV / %d mA\r\n", pdo_index, Voltage, Current);
+    printf("Request PDO%d: %d mV / %d mA (%d%%)\r\n", pdo_index, Voltage, Current, cur_pct);
 
     PD_Load_Header( 0x00, DEF_TYPE_REQUEST );
     PD_Rx_Buf[ 5 ] = 0x03;
@@ -508,6 +537,48 @@ void PDO_Request( UINT8 pdo_index )
     }
     PD_Ctl.PD_Comm_Timer = 0;
     PD_Ctl.Flag.Bit.PD_Comm_Succ = 1;
+}
+
+/*********************************************************************
+ * @fn      PD_Send_HardReset
+ *
+ * @brief   V1.9 测试钩子: 主动发送 Hard Reset(序列与 STA_TX_HRST 相同)。
+ *          源端断电重连后重新广播 SrcCap, 协议从头协商。
+ *
+ * @return  none
+ */
+void PD_Send_HardReset( void )
+{
+    PD_Ctl.Flag.Bit.Stop_Det_Chk = 1;
+    PD_Phy_SendPack( 0x01, NULL, 0, UPD_HARD_RESET );
+    PD_Rx_Mode( );
+    PD_Ctl.PD_State = STA_IDLE;
+    PD_Ctl.PD_Comm_Timer = 0;
+}
+
+/*********************************************************************
+ * @fn      PD_Send_SoftReset
+ *
+ * @brief   V1.9 测试钩子: 主动发送 Soft Reset(序列与 STA_TX_SOFTRST 相同),
+ *          源端 Accept 后重发 SrcCap。发送失败按协议栈惯例升级为 Hard Reset。
+ *
+ * @return  none
+ */
+void PD_Send_SoftReset( void )
+{
+    UINT8 status;
+
+    PD_Load_Header( 0x00, DEF_TYPE_SOFT_RESET );
+    status = PD_Send_Handle( NULL, 0 );
+    if( status == DEF_PD_TX_OK )
+    {
+        PD_Ctl.PD_State = STA_IDLE;
+    }
+    else
+    {
+        PD_Ctl.PD_State = STA_TX_HRST;
+    }
+    PD_Ctl.PD_Comm_Timer = 0;
 }
 
 /*********************************************************************

@@ -23,8 +23,10 @@
  *    ⚠ PSCR/RLDR 在 LSI 时钟域, 写入需 ~2 LSI 周期同步 —— 必须先等
  *    PVU/RVU 清零再 Enable, 否则计数器从错误暂态值起跑会造成秒级
  *    复位风暴(本板实机教训, 见 README)。
- *  - flash 参数区三件套未实现: ET_MODULE_KV=0 构建不需要; 如需启用 et_kv,
- *    参照 port/stm32f103/ 补 port_flash_* 并自行评估 62K flash 的分区。
+ *  - flash 参数区三件套(V1.9 起实现): 1KB 擦除页 + 256B 快编程块; 写路径
+ *    = 读-合并-整块重编程(无字编程路径的等价实现, 详见 .c); 参数区 =
+ *    片内 62K flash 尾部 PORT_FLASH_SECTOR_COUNT×1KB(Link.ld 代码区已缩
+ *    到 60K 预留)。
  */
 #ifndef PORT_CH32X035_H
 #define PORT_CH32X035_H

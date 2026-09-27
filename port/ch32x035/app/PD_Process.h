@@ -47,6 +47,9 @@ extern void PD_Phy_SendPack(UINT8 mode, UINT8 *pbuf, UINT8 len, UINT8 sop);
 extern void PD_Main_Proc(void);
 extern void PD_PDO_Analyse(UINT8 pdo_idx, UINT8 *srccap, UINT16 *current, UINT16 *voltage);
 extern void PDO_Request(UINT8 pdo_index);
+extern void PDO_Request_Cur(UINT8 pdo_index, UINT16 cur_pct);   /* V1.9 测试钩子 */
+extern void PD_Send_HardReset(void);                            /* V1.9 测试钩子 */
+extern void PD_Send_SoftReset(void);                            /* V1.9 测试钩子 */
 extern void PD_Save_Adapter_SrcCap(void);
 
 #ifdef __cplusplus

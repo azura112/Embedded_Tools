@@ -183,3 +183,162 @@ bool port_wdt_disable(void)
 {
     return false;                               /* IWDG 语义: 启动后不可停 */
 }
+
+/* ============ flash 参数区 (port.h 契约, V1.9) ============
+ * CH32X035 控制器特性(vendor ch32x035_flash.c 为准):
+ *  - 擦除页 1KB(FLASH_ErasePage, F1 风格 PER+ADDR+STRT, 调用方解锁);
+ *  - 无字编程公开路径: 快编程 = 256B 块缓冲(BUF_RST/BUF_LOAD + STRT,
+ *    256B 对齐), ROM_WRITE 即此封裝;
+ *  - 因此 port_flash_write 用"读-合并-整 256B 块重编程": 无需擦除、无额外
+ *    磨损(编程只拉 1→0); et_kv 仅写已擦区, 合并恒满足 1→0 契约;
+ *    调用方违反(需 0→1)时回读校验不符 → 按短写如实上报;
+ *  - 参数区 = 片内 flash 尾部 PORT_FLASH_SECTOR_COUNT 个 1KB 扇区,
+ *    Link.ld 已把代码区缩到 60K 预留出该 2KB。 */
+
+#ifndef PORT_CH32X035_FLASH_SIZE
+#define PORT_CH32X035_FLASH_SIZE    (62u * 1024u)   /* CH32X035G8U6: 62KB */
+#endif
+
+#define PORT_FLASH_AREA_SIZE    ((uint32_t)PORT_FLASH_SECTOR_SIZE * \
+                                 (uint32_t)PORT_FLASH_SECTOR_COUNT)
+#define PORT_FLASH_AREA_BASE    (0x08000000u + PORT_CH32X035_FLASH_SIZE - \
+                                 PORT_FLASH_AREA_SIZE)
+
+/* 控制器位定义(与 vendor ch32x035_flash.c 同值, 该文件未导出) */
+#define X035_CR_STRT_Set        ((uint32_t)0x00000040)
+#define X035_CR_LOCK_Set        ((uint32_t)0x00000080)
+#define X035_CR_OPTER_Reset     ((uint32_t)0xFFFFFFDF)
+#define X035_CR_PAGE_PG         ((uint32_t)0x00010000)
+#define X035_CR_PAGE_ER_Reset   ((uint32_t)0xFFFDFFFF)
+#define X035_CR_BUF_LOAD        ((uint32_t)0x00040000)
+#define X035_CR_BUF_RST         ((uint32_t)0x00080000)
+#define X035_SR_BSY             ((uint32_t)0x00000001)
+#define X035_FLASH_KEY1         ((uint32_t)0x45670123)
+#define X035_FLASH_KEY2         ((uint32_t)0xCDEF89AB)
+
+#define FLASH_PROG_BLOCK        256u    /* 快编程块 */
+#define FLASH_PROG_WORDS        (FLASH_PROG_BLOCK / 4u)
+#define FLASH_OP_GUARD          1000000u
+
+static void flash_wait_idle(void)
+{
+    uint32_t guard = FLASH_OP_GUARD;
+
+    while ((FLASH->STATR & X035_SR_BSY) != 0u) {
+        if (--guard == 0u) {
+            return;                             /* 硬件卡死: 上层回读校验兜底 */
+        }
+    }
+}
+
+/* 整 256B 块编程(words = 块完整目标内容); 调用方已解锁 */
+static void flash_program_block(uint32_t blk, const uint32_t *words)
+{
+    uint32_t i;
+
+    FLASH->MODEKEYR = X035_FLASH_KEY1;          /* 快编程模式解锁 */
+    FLASH->MODEKEYR = X035_FLASH_KEY2;
+    FLASH->CTLR &= (X035_CR_OPTER_Reset & X035_CR_PAGE_ER_Reset);
+    FLASH->CTLR |= X035_CR_PAGE_PG;
+    FLASH->CTLR |= X035_CR_BUF_RST;
+    flash_wait_idle();
+
+    for (i = 0u; i < FLASH_PROG_WORDS; i++) {
+        *(volatile uint32_t *)blk = words[ i ];     /* 写地址即装填缓冲 */
+        FLASH->CTLR |= X035_CR_BUF_LOAD;
+        flash_wait_idle();
+        blk += 4u;
+    }
+
+    FLASH->ADDR = blk - FLASH_PROG_BLOCK;
+    FLASH->CTLR |= X035_CR_STRT_Set;
+    flash_wait_idle();
+    FLASH->CTLR &= ~X035_CR_PAGE_PG;
+}
+
+bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
+{
+    const uint8_t *src;
+    uint8_t *dst;
+
+    if ((buf == NULL) || (offset > PORT_FLASH_AREA_SIZE) ||
+        (len > PORT_FLASH_AREA_SIZE - offset)) {
+        return false;
+    }
+    src = (const uint8_t *)(PORT_FLASH_AREA_BASE + offset);
+    dst = (uint8_t *)buf;
+    while (len-- > 0u) {
+        *dst++ = *src++;
+    }
+    return true;
+}
+
+uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
+{
+    static uint32_t merge[ FLASH_PROG_WORDS ];  /* 读-合并缓冲(🏠MAIN 单上下文) */
+    const uint8_t *src = (const uint8_t *)buf;
+    uint32_t done = 0u;
+    uint32_t i;
+
+    if ((src == NULL) || (len == 0u) ||
+        ((offset & 3u) != 0u) || ((len & 3u) != 0u)) {
+        return 0u;
+    }
+    if ((offset > PORT_FLASH_AREA_SIZE) ||
+        (len > PORT_FLASH_AREA_SIZE - offset)) {
+        return 0u;
+    }
+
+    PORT_CRITICAL_ENTER();
+    FLASH->KEYR = X035_FLASH_KEY1;              /* FPEC 解锁(已解锁则无害) */
+    FLASH->KEYR = X035_FLASH_KEY2;
+
+    while (done < len) {
+        uint32_t abs    = PORT_FLASH_AREA_BASE + offset + done;
+        uint32_t blk    = abs & ~(FLASH_PROG_BLOCK - 1u);
+        uint32_t inner  = abs - blk;
+        uint32_t chunk  = FLASH_PROG_BLOCK - inner;
+        uint8_t *m      = (uint8_t *)merge;
+
+        if (chunk > len - done) {
+            chunk = len - done;
+        }
+
+        (void)port_flash_read(blk - PORT_FLASH_AREA_BASE, m, FLASH_PROG_BLOCK);
+        for (i = 0u; i < chunk; i++) {
+            m[ inner + i ] &= src[ done + i ];  /* 1→0 合并 */
+        }
+        flash_program_block(blk, merge);
+
+        /* 回读校验: 不符(含 0→1 违约)按故障截断, 如实上报短写 */
+        for (i = 0u; i < chunk; i++) {
+            if (*(volatile uint8_t *)(abs + i) != m[ inner + i ]) {
+                FLASH->CTLR |= X035_CR_LOCK_Set;
+                PORT_CRITICAL_EXIT();
+                return done;
+            }
+        }
+        done += chunk;
+    }
+
+    FLASH->CTLR |= X035_CR_LOCK_Set;            /* 重新上锁 */
+    PORT_CRITICAL_EXIT();
+    return done;
+}
+
+bool port_flash_erase_sector(uint32_t sector_index)
+{
+    bool ok = false;
+
+    if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
+        return false;
+    }
+
+    PORT_CRITICAL_ENTER();
+    FLASH_Unlock();
+    ok = (FLASH_ErasePage(PORT_FLASH_AREA_BASE +
+                          sector_index * PORT_FLASH_SECTOR_SIZE) == FLASH_COMPLETE);
+    FLASH_Lock();
+    PORT_CRITICAL_EXIT();
+    return ok;
+}

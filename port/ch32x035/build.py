@@ -30,10 +30,12 @@ COMMON = [
 ]
 
 # Embedded_Tools 裁剪: 本固件只启用 ringbuf/queue/sched/wdt/key/led/log;
-# KV/BOOTCTL 未实现 flash 契约, 显式关闭; CDC 环容量均为 2 的幂。
+# KV 启用: 参数区 = 片内 62K flash 尾部 2×1KB(Link.ld 代码区 60K 预留);
+# BOOTCTL 未启用。CDC 环容量均为 2 的幂。
 DEFS = [
     "-DET_RINGBUF_POW2=1",
-    "-DET_MODULE_KV=0",
+    "-DET_MODULE_KV=1",
+    "-DPORT_FLASH_SECTOR_COUNT=2",
     "-DET_MODULE_BOOTCTL=0",
 ]
 
@@ -46,6 +48,8 @@ INCLUDES = [
     "-I" + str(ET_ROOT / "sys"),
     "-I" + str(ET_ROOT / "drivers"),
     "-I" + str(ET_ROOT / "debug"),
+    "-I" + str(ET_ROOT / "protocol"),
+    "-I" + str(ET_ROOT / "storage"),
 ]
 
 STRICT = ["-Wall", "-Wextra"]    # et 源 + port + app 零警告门
@@ -88,7 +92,7 @@ cc(PROJ / "port_ch32x035.c", STRICT)
 # Embedded_Tools 模块(仅本固件启用的七个)
 for relmod in ["core/et_ringbuf.c", "core/et_queue.c", "sys/et_sched.c",
                "sys/et_wdt.c", "drivers/et_key.c", "drivers/et_led.c",
-               "debug/et_log.c"]:
+               "debug/et_log.c", "protocol/et_crc.c", "storage/et_kv.c"]:
     cc(ET_ROOT / relmod, STRICT)
 
 startup = PROJ / "Startup" / "startup_ch32x035.S"
