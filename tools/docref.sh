@@ -115,6 +115,25 @@ if [ "$END_SHA" != "$HEAD_SHA" ]; then
     # 边界要求两侧非十六进制, 防 sha256(64 位)被截取误配。
     reg_shas=$(grep '修订登记' "$DOC_REL" | grep -oE '(^|[^0-9a-f])[0-9a-f]{7,40}($|[^0-9a-f])' \
               | sed 's/[^0-9a-f]//g' | sort -u)
+    # CO-2(v2.8) 硬化 (b): 登记 token 存在性/区间校验 —— 每个 token 须解析到存在
+    # 提交且位于 END..HEAD 区间(含端点); 悬空/越界登记 → FAIL 点名(与 §4 清单
+    # 逐 SHA 断言同型)。红证据见交付文档机制自证表(HC-3)。
+    if [ -n "$reg_shas" ]; then
+        bad_reg=""
+        for tok in $reg_shas; do
+            if ! git rev-parse --verify --quiet "${tok}^{commit}" >/dev/null 2>&1; then
+                bad_reg="$bad_reg $tok(悬空/不存在)"
+            elif ! git merge-base --is-ancestor "$END_SHA" "$tok" 2>/dev/null \
+                 || ! git merge-base --is-ancestor "$tok" "$HEAD_SHA" 2>/dev/null; then
+                bad_reg="$bad_reg $tok(越界: 不在 END..HEAD 区间)"
+            fi
+        done
+        if [ -n "$bad_reg" ]; then
+            echo "docref: FAIL —— 修订登记含无效 SHA:$bad_reg"
+            echo "       登记 token 须解析到 END..HEAD 内存在提交(含 = END); 修正登记行后重跑。"
+            exit 1
+        fi
+    fi
     n_after=0
     unreg=""
     while IFS= read -r c; do
@@ -123,9 +142,16 @@ if [ "$END_SHA" != "$HEAD_SHA" ]; then
         cshort=$(git rev-parse --short "$c")
         cdesc=$(git log -1 --format='%h %s' "$c")
         cfiles=$(git -c core.quotepath=off diff-tree --no-commit-id --name-only -r "$c")
+        # CO-2(v2.8) 硬化 (a): 匹配语义翻转 —— 登记 token 必须是**提交全 SHA 的前缀**
+        # (git 前缀等价语义), 取代旧"提交短 SHA 是 token 前缀"的包含式匹配
+        # (后者在 token 长于 7 位时有短 SHA 前缀碰撞的理论误放行面)。
         registered=0
-        if [ -n "$reg_shas" ] && printf '%s\n' "$reg_shas" | grep -q "^${cshort}"; then
-            registered=1
+        if [ -n "$reg_shas" ]; then
+            for tok in $reg_shas; do
+                case "$c" in
+                    "$tok"*) registered=1; break ;;
+                esac
+            done
         fi
         if [ "$registered" -eq 1 ]; then
             continue
