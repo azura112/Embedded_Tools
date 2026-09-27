@@ -217,6 +217,8 @@ bool port_wdt_disable(void)
 /* 控制器位定义(与 vendor ch32x035_flash.c 同值, 该文件未导出) */
 #define X035_CR_STRT_Set        ((uint32_t)0x00000040)
 #define X035_CR_LOCK_Set        ((uint32_t)0x00000080)
+#define X035_CR_PER_Set         ((uint32_t)0x00000002)
+#define X035_CR_PER_Reset       ((uint32_t)0xFFFFFFFD)
 #define X035_CR_OPTER_Reset     ((uint32_t)0xFFFFFFDF)
 #define X035_CR_PAGE_PG         ((uint32_t)0x00010000)
 #define X035_CR_PAGE_ER_Reset   ((uint32_t)0xFFFDFFFF)
