@@ -772,6 +772,17 @@ int main(void)
              rst_iwdg, rst_sft, rst_wwdg, rst_lpw, rst_por, rst_pin );
     RCC_ClearFlag( );
 
+    /* 上一轮 HardFault 现场(mcause/mepc, RAM 暂存跨复位) */
+    {
+        volatile uint32_t *hf = (volatile uint32_t *)0x20001000u;
+        if( hf[ 0 ] == 0xC0DEF00Du )
+        {
+            ET_LOGE( "hf", "mcause=%08x mepc=%08x",
+                     (unsigned)hf[ 1 ], (unsigned)hf[ 2 ] );
+            hf[ 0 ] = 0;
+        }
+    }
+
     ET_LOGI( "app", "SystemClk:%u", (unsigned)SystemCoreClock );
     ET_LOGI( "app", "ChipID:%08x", (unsigned)DBGMCU_GetCHIPID() );
     ET_LOGI( "app", "CH32X035 PD SNK Test Board fw V1.9 (et %s)", ET_VERSION_STRING );

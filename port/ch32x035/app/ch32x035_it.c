@@ -10,10 +10,15 @@
 * microcontroller manufactured by Nanjing Qinheng Microelectronics.
 *******************************************************************************/
 #include "ch32x035_it.h"
-#include <stdio.h>
 
 void NMI_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+
+/* HardFault 现场暂存(RAM 0x20001000, bss 之后/栈之前, 跨软复位保留):
+ * [0]=magic [1]=mcause [2]=mepc。启动代码在串口就绪后打印并清除。
+ * (不在故障上下文 printf —— flash 故障类 HardFault 中 printf 会再次取指故障) */
+#define HF_SCRATCH      ((volatile uint32_t *)0x20001000u)
+#define HF_MAGIC        0xC0DEF00Du
 
 /*********************************************************************
  * @fn      NMI_Handler
@@ -38,15 +43,17 @@ void NMI_Handler(void)
  */
 void HardFault_Handler(void)
 {
-  /* V1.9 诊断: 转储 mcause/mepc 后再复位 —— mcause 低 4 位区分
-   * 1=取指访问故障 / 5=Load 访问故障 / 7=Store 访问故障 / 2=非法指令,
-   * mepc 即出错指令地址(与 elf/objdump 对位) */
+  /* V1.9 诊断: 现场写入 RAM 暂存区后复位(mcause: 1=取指访问故障
+   * 5=Load 访问故障 7=Store 访问故障 2=非法指令; mepc=出错指令地址)。
+   * 打印由下一轮启动的 main 完成(不在故障上下文触碰 flash) */
   uint32_t mc, ep;
 
   __asm__ __volatile__ ("csrr %0, mcause" : "=r"(mc));
   __asm__ __volatile__ ("csrr %0, mepc"   : "=r"(ep));
-  printf( "HF! mcause=%08x mepc=%08x\r\n",
-          (unsigned)mc, (unsigned)ep );
+
+  HF_SCRATCH[ 0 ] = HF_MAGIC;
+  HF_SCRATCH[ 1 ] = mc;
+  HF_SCRATCH[ 2 ] = ep;
 
   NVIC_SystemReset();
   while (1)

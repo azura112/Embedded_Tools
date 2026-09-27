@@ -223,6 +223,7 @@ bool port_wdt_disable(void)
 #define X035_CR_BUF_LOAD        ((uint32_t)0x00040000)
 #define X035_CR_BUF_RST         ((uint32_t)0x00080000)
 #define X035_SR_BSY             ((uint32_t)0x00000001)
+#define X035_SR_WRPRTERR        ((uint32_t)0x00000010)
 #define X035_FLASH_KEY1         ((uint32_t)0x45670123)
 #define X035_FLASH_KEY2         ((uint32_t)0xCDEF89AB)
 
@@ -230,7 +231,9 @@ bool port_wdt_disable(void)
 #define FLASH_PROG_WORDS        (FLASH_PROG_BLOCK / 4u)
 #define FLASH_OP_GUARD          1000000u
 
-static void flash_wait_idle(void)
+/* 等待空闲: 必须 always_inline —— 擦写进行中禁止发生新的取指
+ * (ROM_ERASE/ROM_WRITE 的等待循环同为函数内联形态) */
+static inline __attribute__((always_inline)) void flash_wait_idle(void)
 {
     uint32_t guard = FLASH_OP_GUARD;
 
@@ -241,13 +244,21 @@ static void flash_wait_idle(void)
     }
 }
 
+/* FPEC + 快速模式两级解锁(vendor ROM_ERASE/ROM_WRITE 同款; X035 擦写
+ * 必须 MODEKEYR 解锁, 缺失则控制器进错误态 → 后续所有 flash 取指故障) */
+static inline __attribute__((always_inline)) void flash_unlock_both(void)
+{
+    FLASH->KEYR = X035_FLASH_KEY1;
+    FLASH->KEYR = X035_FLASH_KEY2;
+    FLASH->MODEKEYR = X035_FLASH_KEY1;
+    FLASH->MODEKEYR = X035_FLASH_KEY2;
+}
+
 /* 整 256B 块编程(words = 块完整目标内容); 调用方已解锁 */
 static void flash_program_block(uint32_t blk, const uint32_t *words)
 {
     uint32_t i;
 
-    FLASH->MODEKEYR = X035_FLASH_KEY1;          /* 快编程模式解锁 */
-    FLASH->MODEKEYR = X035_FLASH_KEY2;
     FLASH->CTLR &= (X035_CR_OPTER_Reset & X035_CR_PAGE_ER_Reset);
     FLASH->CTLR |= X035_CR_PAGE_PG;
     FLASH->CTLR |= X035_CR_BUF_RST;
@@ -300,8 +311,7 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
     }
 
     PORT_CRITICAL_ENTER();
-    FLASH->KEYR = X035_FLASH_KEY1;              /* FPEC 解锁(已解锁则无害) */
-    FLASH->KEYR = X035_FLASH_KEY2;
+    flash_unlock_both( );                       /* KEYR + MODEKEYR 两级解锁 */
 
     while (done < len) {
         uint32_t abs    = PORT_FLASH_AREA_BASE + offset + done;
@@ -340,16 +350,24 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
 bool port_flash_erase_sector(uint32_t sector_index)
 {
     bool ok = false;
+    uint32_t addr;
 
     if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
         return false;
     }
+    addr = PORT_FLASH_AREA_BASE + sector_index * PORT_FLASH_SECTOR_SIZE;
 
     PORT_CRITICAL_ENTER();
-    FLASH_Unlock();
-    ok = (FLASH_ErasePage(PORT_FLASH_AREA_BASE +
-                          sector_index * PORT_FLASH_SECTOR_SIZE) == FLASH_COMPLETE);
-    FLASH_Lock();
+    flash_unlock_both( );                       /* KEYR + MODEKEYR 两级解锁 */
+    /* 序列与 vendor ROM_ERASE 的 1KB 分支逐行同款(等待内联) */
+    FLASH->CTLR &= (X035_CR_OPTER_Reset & X035_CR_PAGE_ER_Reset);
+    FLASH->CTLR |= X035_CR_PER_Set;
+    FLASH->ADDR = addr;
+    FLASH->CTLR |= X035_CR_STRT_Set;
+    flash_wait_idle( );
+    FLASH->CTLR &= X035_CR_PER_Reset;
+    FLASH->CTLR |= X035_CR_LOCK_Set;
+    ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
     PORT_CRITICAL_EXIT();
     return ok;
 }
