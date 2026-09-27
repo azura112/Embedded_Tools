@@ -233,32 +233,36 @@ bool port_wdt_disable(void)
 #define FLASH_PROG_WORDS        (FLASH_PROG_BLOCK / 4u)
 #define FLASH_OP_GUARD          1000000u
 
-/* 等待 BSY 断言(bounded): STRT 写入后控制器需若干周期才置忙, 若直接轮询
- * "等 BSY 清零"可能立即读到 0 而提前返回 —— 携带"硬件仍在擦写"的状态
- * 返回主循环, 中断恢复后 ISR 在控制器忙时取指 → 读出垃圾 → 非法指令复位
- * (实机#4-#6 连环教训)。至多数百次读(µs 级); 操作真的极快完成时循环
- * 自然耗尽, 转由 flash_wait_idle 收尾。 */
-static void flash_wait_busy_assert(void)
+/* ⚠ 擦写窗口内的一切循环都必须"小到完全驻留预取缓冲"(实机#4-#6 定案):
+ * X035 无读-写并行 —— 擦写进行中新发起的取指会读到垃圾, CPU 执行垃圾
+ * 即非法指令复位(mcause=2, PC 落在任意正在执行的函数体内)。
+ * 因此本文件擦写路径只用两类极短循环(vendor ROM_ERASE/ROM_WRITE 同形):
+ *   flash_start_delay : ~32 次 NOP, 等 BSY 断言(此时擦写刚启动)
+ *   flash_wait_idle   : 裸 3 指令轮询 STATR.BSY(无守卫计数, 硬件卡死由
+ *                       IWDG 10s 兜底 —— 守卫循环会超出预取缓冲, 禁用)
+ * 另: 操作完成后再 flash_settle(~20us)才允许取指/数据访问(控制器恢复)。 */
+static inline __attribute__((always_inline)) void flash_start_delay(void)
 {
     uint32_t i;
 
-    for (i = 0u; i < 512u; i++) {
-        if ((FLASH->STATR & X035_SR_BSY) != 0u) {
-            break;
-        }
+    for (i = 0u; i < 32u; i++) {
+        __NOP();
     }
 }
 
-/* 等待空闲: 必须 always_inline —— 擦写进行中禁止发生新的取指
- * (ROM_ERASE/ROM_WRITE 的等待循环同为函数内联形态) */
 static inline __attribute__((always_inline)) void flash_wait_idle(void)
 {
-    uint32_t guard = FLASH_OP_GUARD;
-
     while ((FLASH->STATR & X035_SR_BSY) != 0u) {
-        if (--guard == 0u) {
-            return;                             /* 硬件卡死: 上层回读校验兜底 */
-        }
+        /* vendor 同形: 3 指令, 无新增取指 */
+    }
+}
+
+static inline __attribute__((always_inline)) void flash_settle(void)
+{
+    uint32_t i;
+
+    for (i = 0u; i < 1000u; i++) {             /* ≈20us @48MHz, 控制器恢复窗 */
+        __NOP();
     }
 }
 
@@ -289,6 +293,12 @@ static void flash_irq_mask(void)
 
 static void flash_irq_unmask(void)
 {
+    /* 先清屏蔽期间积压的 pending: 否则解除屏蔽瞬间 ISR 立即取指 ——
+     * 若恰逢控制器尚未完全恢复, 取指读到垃圾即非法指令(实机#5/#6 教训) */
+    NVIC_ClearPendingIRQ( TIM1_UP_IRQn );
+    NVIC_ClearPendingIRQ( USART1_IRQn );
+    NVIC_ClearPendingIRQ( USBFS_IRQn );
+    NVIC_ClearPendingIRQ( USBPD_IRQn );
     NVIC_EnableIRQ( TIM1_UP_IRQn );
     NVIC_EnableIRQ( USART1_IRQn );
     NVIC_EnableIRQ( USBFS_IRQn );
@@ -314,9 +324,10 @@ static void flash_program_block(uint32_t blk, const uint32_t *words)
 
     FLASH->ADDR = blk - FLASH_PROG_BLOCK;
     FLASH->CTLR |= X035_CR_STRT_Set;
-    flash_wait_busy_assert();
+    flash_start_delay();
     flash_wait_idle();
     FLASH->CTLR &= ~X035_CR_PAGE_PG;
+    flash_settle();
 }
 
 bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
@@ -410,10 +421,11 @@ bool port_flash_erase_sector(uint32_t sector_index)
     FLASH->CTLR |= X035_CR_PER_Set;
     FLASH->ADDR = addr;
     FLASH->CTLR |= X035_CR_STRT_Set;
-    flash_wait_busy_assert( );
+    flash_start_delay( );
     flash_wait_idle( );
     FLASH->CTLR &= X035_CR_PER_Reset;
     FLASH->CTLR |= X035_CR_LOCK_Set;
+    flash_settle( );
     ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
     /* 回读验证(0x0 别名): 首 16B 应全 0xFF, 把"假擦除"变可观测 */
     if (ok) {
