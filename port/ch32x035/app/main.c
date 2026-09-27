@@ -90,6 +90,9 @@ static uint8_t        pdo_restored = 0;     /* 本次连接是否已恢复 */
  *
  * @return  none
  */
+static void Rep_Printf(const char *fmt, ...);
+static uint8_t App_KV_Load_U8(uint16_t key, uint8_t dflt);
+
 static void App_KV_SelfTest( void )
 {
     static const uint8_t pat[ 8 ] = { 'K', 'V', 'T', '1', 0x5A, 0xA5, 0x00, 0xFF };
@@ -165,8 +168,6 @@ static uint8_t led_state_last = 0xFFu;   /* 0=no source, 1=negotiating, 2=contra
 
 static void LCD_Status_Init(void);
 static void LCD_Status_Update(uint16_t vbus);
-static void Rep_Printf(const char *fmt, ...);
-static uint8_t App_KV_Load_U8(uint16_t key, uint8_t dflt);
 
 /*********************************************************************
  * @fn      Rep_Printf
