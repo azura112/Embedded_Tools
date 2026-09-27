@@ -95,6 +95,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.7 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；**+selftest 22 套件**（新增 `modbus`/`log` 冒烟）—— **bss +784 B** = 新套件的文件级静态缓冲（主站双缓冲 2×`ET_MODBUS_ADU_MAX`=512B + 从站 rx32/tx64 + 标量），text +3068 B 为两套件代码 |
 | v2.8 | 23880 | 24 | 740 | 默认裁剪构建；**治理版**（库内代码零改动，`CO-7` 分支 B 论证维持；`apidump --diff` 对 v2.7 基线 0/0）：基线滚动清偿（v2.6/v2.7 归档 + 模板第⑥项）+ 门空隙收口（docref 清单可达性/白名单式判定、apidump 抗行尾/双守卫）；text −4 B 为版本宏常量折叠差 |
 | v2.8 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7 行逐值相同（本版无库内代码改动） |
+| v2.9 | 23884 | 24 | 740 | 默认裁剪构建；**治理版**（库内代码零改动，`apidump --diff` 对 v2.8 基线 0/0）：模板⑥口径澄清 + docref 修订登记硬化 + ch32x035 交付面收口；与 v2.7/v2.8 默认行逐值相同 |
+| v2.9 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7/v2.8 行逐值相同（本版无库内代码改动） |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
