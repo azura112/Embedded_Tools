@@ -81,21 +81,64 @@ static uint8_t        pdo_restored = 0;     /* 本次连接是否已恢复 */
 #define KV_KEY_TARGET_PDO   1u
 #define KV_KEY_BACKLIGHT    2u
 
-static void App_KV_Init( void )
+/*********************************************************************
+ * @fn      App_KV_SelfTest
+ *
+ * @brief   V1.9 诊断命令 'k': 逐级 flash 自检(每步打印, 崩溃点即最后
+ *          一行)。PASS 后才置 kv_ready 并读回记忆项 —— flash 路径
+ *          未验证期间, 开机不自动触碰 flash(安全引导)。
+ *
+ * @return  none
+ */
+static void App_KV_SelfTest( void )
 {
-    if( et_kv_init( &app_kv, &app_kv_layout ) )
+    static const uint8_t pat[ 8 ] = { 'K', 'V', 'T', '1', 0x5A, 0xA5, 0x00, 0xFF };
+    uint8_t rdbk[ 8 ];
+    uint32_t n;
+    uint8_t i, ok = 1;
+
+    Rep_Printf("kv1 erase s0\r\n");
+    if( !port_flash_erase_sector( 0u ) ) { Rep_Printf("kv FAIL erase0\r\n"); return; }
+    Rep_Printf("kv2 erase s1\r\n");
+    if( !port_flash_erase_sector( 1u ) ) { Rep_Printf("kv FAIL erase1\r\n"); return; }
+    Rep_Printf("kv3 write 8B\r\n");
+    n = port_flash_write( 0u, pat, 8u );
+    if( n != 8u ) { Rep_Printf("kv FAIL write=%u\r\n", (unsigned)n); return; }
+    Rep_Printf("kv4 readback\r\n");
+    port_flash_read( 0u, rdbk, 8u );
+    for( i = 0; i < 8u; i++ )
     {
-        kv_ready = 1;
-        return;
+        if( rdbk[ i ] != pat[ i ] ) ok = 0;
     }
-    if( et_kv_format( &app_kv, &app_kv_layout ) &&
-        et_kv_init( &app_kv, &app_kv_layout ) )
+    if( !ok ) { Rep_Printf("kv FAIL verify\r\n"); return; }
+    Rep_Printf("kv5 et_kv init+set+get\r\n");
+    if( !et_kv_init( &app_kv, &app_kv_layout ) )
     {
-        kv_ready = 1;
-        ET_LOGW( "kv", "formatted" );
-        return;
+        if( !et_kv_format( &app_kv, &app_kv_layout ) ||
+            !et_kv_init( &app_kv, &app_kv_layout ) )
+        {
+            Rep_Printf("kv FAIL et init\r\n"); return;
+        }
     }
-    ET_LOGE( "kv", "unavailable, persistence off" );
+    if( !et_kv_set( &app_kv, KV_KEY_TARGET_PDO, &kv_pdo_saved, 1u ) )
+    {
+        Rep_Printf("kv FAIL et set\r\n"); return;
+    }
+    if( !et_kv_get( &app_kv, KV_KEY_TARGET_PDO, rdbk, 1u, NULL ) ||
+        ( rdbk[ 0 ] != kv_pdo_saved ) )
+    {
+        Rep_Printf("kv FAIL et get\r\n"); return;
+    }
+    kv_ready = 1;
+    /* 记忆项读回: 背光立即生效, 目标档交由建连恢复逻辑 */
+    backlight = App_KV_Load_U8( KV_KEY_BACKLIGHT, 80 );
+    if( backlight > 100 ) backlight = 80;
+    Board_Backlight_Set( backlight );
+    kv_pdo_saved = App_KV_Load_U8( KV_KEY_TARGET_PDO, 1 );
+    if( ( kv_pdo_saved < 1 ) || ( kv_pdo_saved > 8 ) ) kv_pdo_saved = 1;
+    pdo_restored = 0;                       /* 重新武装建连恢复 */
+    Rep_Printf("kv PASS, persistence on (backlight %u%%, saved PDO%u)\r\n",
+               (unsigned)backlight, (unsigned)kv_pdo_saved);
 }
 
 static void App_KV_Save_U8( uint16_t key, uint8_t val )
@@ -122,6 +165,8 @@ static uint8_t led_state_last = 0xFFu;   /* 0=no source, 1=negotiating, 2=contra
 
 static void LCD_Status_Init(void);
 static void LCD_Status_Update(uint16_t vbus);
+static void Rep_Printf(const char *fmt, ...);
+static uint8_t App_KV_Load_U8(uint16_t key, uint8_t dflt);
 
 /*********************************************************************
  * @fn      Rep_Printf
@@ -305,6 +350,12 @@ static void App_Command( uint8_t cmd )
             Rep_Printf("SWEEP,pdo,target_mV,vbus_mV,contract_mV\r\n");
             break;
 
+        /* 'k': flash/kv 逐级自检(安全引导下唯一触碰 flash 的入口) */
+        case 'k':
+            App_Cancel_Sweep( );
+            App_KV_SelfTest( );
+            break;
+
         /* 'r': Hard Reset(压测) —— 源端断开重连后从头协商 */
         case 'r':
             App_Cancel_Sweep( );
@@ -395,7 +446,7 @@ static void App_Command( uint8_t cmd )
                 Rep_Printf("Commands: n=next PDO, 1-8=select PDO, b=backlight, s=status,\r\n"
                            "          a=auto-sweep all PDOs (CSV report)\r\n"
                            "PD test:  r=hard reset, e=soft reset, x=half-current req,\r\n"
-                           "          z=over-current req (300%%, expect Reject)\r\n"
+                           "          z=over-current req (300%%, expect Reject), k=kv test\r\n"
                            "LCD tune: o=orientation(0-7), c=BGR, , . < > =shift offsets, ?=help\r\n");
             }
             break;
@@ -800,23 +851,9 @@ int main(void)
 
     ET_LOGI( "boot", "b3 pre-kv" );
 
-    /* 掉电记忆: kv 初始化(必要时自动格式化), 读回背光与上次目标档 */
-    App_KV_Init( );
-    backlight = App_KV_Load_U8( KV_KEY_BACKLIGHT, 80 );
-    if( backlight > 100 )
-    {
-        backlight = 80;
-    }
-    kv_pdo_saved = App_KV_Load_U8( KV_KEY_TARGET_PDO, 1 );
-    if( ( kv_pdo_saved < 1 ) || ( kv_pdo_saved > 8 ) )
-    {
-        kv_pdo_saved = 1;
-    }
-    if( kv_pdo_saved != 1 )
-    {
-        ET_LOGI( "kv", "saved PDO%u, restore on connect", (unsigned)kv_pdo_saved );
-    }
-    ET_LOGI( "boot", "b4 kv ready=%u pdo=%u", kv_ready, kv_pdo_saved );
+    /* 掉电记忆: flash 路径未在板上验证前, 开机不自动触碰 flash(安全引导)。
+     * 用 'k' 命令运行逐级自检, PASS 后本轮上电内启用持久化 */
+    kv_pdo_saved = 1;
 
     Board_LED_Init();
     Keys_Init();
