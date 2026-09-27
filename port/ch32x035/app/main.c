@@ -92,6 +92,7 @@ static uint8_t        pdo_restored = 0;     /* 本次连接是否已恢复 */
  */
 static void Rep_Printf(const char *fmt, ...);
 static uint8_t App_KV_Load_U8(uint16_t key, uint8_t dflt);
+extern void Trace_Push(uint32_t id);        /* ch32x035_it.c: RAM 轨迹(诊断) */
 
 static void App_KV_SelfTest( void )
 {
@@ -100,21 +101,31 @@ static void App_KV_SelfTest( void )
     uint32_t n;
     uint8_t i, ok = 1;
 
+    Trace_Push( 103u );
     Rep_Printf("kv1 erase s0\r\n");
+    Trace_Push( 105u );
     if( !port_flash_erase_sector( 0u ) ) { Rep_Printf("kv FAIL erase0\r\n"); return; }
+    Trace_Push( 106u );
     Rep_Printf("kv2 erase s1\r\n");
+    Trace_Push( 107u );
     if( !port_flash_erase_sector( 1u ) ) { Rep_Printf("kv FAIL erase1\r\n"); return; }
+    Trace_Push( 108u );
     Rep_Printf("kv3 write 8B\r\n");
+    Trace_Push( 109u );
     n = port_flash_write( 0u, pat, 8u );
+    Trace_Push( 110u );
     if( n != 8u ) { Rep_Printf("kv FAIL write=%u\r\n", (unsigned)n); return; }
     Rep_Printf("kv4 readback\r\n");
+    Trace_Push( 111u );
     port_flash_read( 0u, rdbk, 8u );
+    Trace_Push( 112u );
     for( i = 0; i < 8u; i++ )
     {
         if( rdbk[ i ] != pat[ i ] ) ok = 0;
     }
     if( !ok ) { Rep_Printf("kv FAIL verify\r\n"); return; }
     Rep_Printf("kv5 et_kv init+set+get\r\n");
+    Trace_Push( 113u );
     if( !et_kv_init( &app_kv, &app_kv_layout ) )
     {
         if( !et_kv_format( &app_kv, &app_kv_layout ) ||
@@ -123,6 +134,7 @@ static void App_KV_SelfTest( void )
             Rep_Printf("kv FAIL et init\r\n"); return;
         }
     }
+    Trace_Push( 114u );
     if( !et_kv_set( &app_kv, KV_KEY_TARGET_PDO, &kv_pdo_saved, 1u ) )
     {
         Rep_Printf("kv FAIL et set\r\n"); return;
@@ -353,7 +365,9 @@ static void App_Command( uint8_t cmd )
 
         /* 'k': flash/kv 逐级自检(安全引导下唯一触碰 flash 的入口) */
         case 'k':
+            Trace_Push( 101u );
             App_Cancel_Sweep( );
+            Trace_Push( 102u );
             App_KV_SelfTest( );
             break;
 
@@ -824,13 +838,24 @@ int main(void)
              rst_iwdg, rst_sft, rst_wwdg, rst_lpw, rst_por, rst_pin );
     RCC_ClearFlag( );
 
-    /* 上一轮 HardFault 现场(mcause/mepc, RAM 暂存跨复位) */
+    /* 上一轮 HardFault 现场 + 轨迹(mcause/mepc/最后检查点, RAM 跨复位保留) */
     {
-        volatile uint32_t *hf = (volatile uint32_t *)0x20001000u;
+        volatile uint32_t *hf = (volatile uint32_t *)0x20004400u;
         if( hf[ 0 ] == 0xC0DEF00Du )
         {
+            uint32_t h = hf[ 3 ], i;
             ET_LOGE( "hf", "mcause=%08x mepc=%08x",
                      (unsigned)hf[ 1 ], (unsigned)hf[ 2 ] );
+            printf( "hf trace:" );
+            for( i = 0u; i < 32u; i++ )
+            {
+                uint32_t v = hf[ 4 + ( ( h + i ) & 31u ) ];
+                if( v != 0u )
+                {
+                    printf( " %u", (unsigned)v );
+                }
+            }
+            printf( "\r\n" );
             hf[ 0 ] = 0;
         }
     }
