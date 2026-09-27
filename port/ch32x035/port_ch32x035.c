@@ -193,7 +193,13 @@ bool port_wdt_disable(void)
  *    磨损(编程只拉 1→0); et_kv 仅写已擦区, 合并恒满足 1→0 契约;
  *    调用方违反(需 0→1)时回读校验不符 → 按短写如实上报;
  *  - 参数区 = 片内 flash 尾部 PORT_FLASH_SECTOR_COUNT 个 1KB 扇区,
- *    Link.ld 已把代码区缩到 60K 预留出该 2KB。 */
+ *    Link.ld 已把代码区缩到 60K 预留出该 2KB。
+ *
+ * ⚠ 双别名(实机教训 2026-09-26): 代码在 0x00000000 别名执行, 0x08000000
+ *   是 F1 风格编程接口地址 —— 厂商驱动只对它做"写"。对 0x08000000 做
+ *   数据"读"触发访问故障(HardFault, 复位风暴 ~60ms/圈)。因此:
+ *   读(含合并读/回读校验)一律走 0x00000000 别名; 擦写走 0x08000000
+ *   接口地址(ROM_WRITE 同款)。 */
 
 #ifndef PORT_CH32X035_FLASH_SIZE
 #define PORT_CH32X035_FLASH_SIZE    (62u * 1024u)   /* CH32X035G8U6: 62KB */
@@ -201,6 +207,10 @@ bool port_wdt_disable(void)
 
 #define PORT_FLASH_AREA_SIZE    ((uint32_t)PORT_FLASH_SECTOR_SIZE * \
                                  (uint32_t)PORT_FLASH_SECTOR_COUNT)
+/* 读/校验用: 代码别名 */
+#define PORT_FLASH_AREA_BASE_RD (0x00000000u + PORT_CH32X035_FLASH_SIZE - \
+                                 PORT_FLASH_AREA_SIZE)
+/* 擦/写寄存器接口用: 编程别名 */
 #define PORT_FLASH_AREA_BASE    (0x08000000u + PORT_CH32X035_FLASH_SIZE - \
                                  PORT_FLASH_AREA_SIZE)
 
@@ -265,7 +275,7 @@ bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
         (len > PORT_FLASH_AREA_SIZE - offset)) {
         return false;
     }
-    src = (const uint8_t *)(PORT_FLASH_AREA_BASE + offset);
+    src = (const uint8_t *)(PORT_FLASH_AREA_BASE_RD + offset);
     dst = (uint8_t *)buf;
     while (len-- > 0u) {
         *dst++ = *src++;
@@ -310,9 +320,10 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
         }
         flash_program_block(blk, merge);
 
-        /* 回读校验: 不符(含 0→1 违约)按故障截断, 如实上报短写 */
+        /* 回读校验(0x0 别名): 不符(含 0→1 违约)按故障截断, 如实上报短写 */
         for (i = 0u; i < chunk; i++) {
-            if (*(volatile uint8_t *)(abs + i) != m[ inner + i ]) {
+            if (*(volatile uint8_t *)(PORT_FLASH_AREA_BASE_RD + offset + done + i) !=
+                m[ inner + i ]) {
                 FLASH->CTLR |= X035_CR_LOCK_Set;
                 PORT_CRITICAL_EXIT();
                 return done;

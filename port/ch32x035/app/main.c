@@ -746,6 +746,17 @@ static void LCD_Status_Update( uint16_t vbus )
  */
 int main(void)
 {
+    /* 复位原因先行采样(V1.9 诊断): RCC 标志跨软复位保持, 打印后清除。
+     * IWDG=看门狗超时 / SFT=HardFault 软复位 / POR+PIN=正常上电 */
+    uint8_t rst_iwdg, rst_sft, rst_wwdg, rst_lpw, rst_por, rst_pin;
+
+    rst_iwdg = ( RCC_GetFlagStatus( RCC_FLAG_IWDGRST ) != RESET );
+    rst_sft  = ( RCC_GetFlagStatus( RCC_FLAG_SFTRST ) != RESET );
+    rst_wwdg = ( RCC_GetFlagStatus( RCC_FLAG_WWDGRST ) != RESET );
+    rst_lpw  = ( RCC_GetFlagStatus( RCC_FLAG_LPWRRST ) != RESET );
+    rst_por  = ( RCC_GetFlagStatus( RCC_FLAG_PORRST ) != RESET );
+    rst_pin  = ( RCC_GetFlagStatus( RCC_FLAG_PINRST ) != RESET );
+
     /* IWDG cannot be stopped once enabled and keeps counting across resets:
      * feed immediately so an inherited short timeout cannot bite mid-boot
      * before et_wdt_enable below reconfigures it. Harmless if never enabled. */
@@ -756,6 +767,10 @@ int main(void)
     Delay_Init();
     USART_Printf_Init(115200);
     UART_Cmd_Init( );       /* 打开 USART1 接收: 命令通道在 COM16(V1.8 起) */
+
+    ET_LOGI( "boot", "rst iwdg=%u sft=%u wwdg=%u lpw=%u por=%u pin=%u",
+             rst_iwdg, rst_sft, rst_wwdg, rst_lpw, rst_por, rst_pin );
+    RCC_ClearFlag( );
 
     ET_LOGI( "app", "SystemClk:%u", (unsigned)SystemCoreClock );
     ET_LOGI( "app", "ChipID:%08x", (unsigned)DBGMCU_GetCHIPID() );
@@ -771,6 +786,8 @@ int main(void)
     {
         ET_LOGE( "wdt", "arm failed" );
     }
+
+    ET_LOGI( "boot", "b3 pre-kv" );
 
     /* 掉电记忆: kv 初始化(必要时自动格式化), 读回背光与上次目标档 */
     App_KV_Init( );
@@ -788,6 +805,7 @@ int main(void)
     {
         ET_LOGI( "kv", "saved PDO%u, restore on connect", (unsigned)kv_pdo_saved );
     }
+    ET_LOGI( "boot", "b4 kv ready=%u pdo=%u", kv_ready, kv_pdo_saved );
 
     Board_LED_Init();
     Keys_Init();
@@ -799,6 +817,7 @@ int main(void)
     LCD_Init();
     et_wdt_feed( );                         /* LCD init burns ~450ms of delays */
     LCD_Status_Init();
+    ET_LOGI( "boot", "b5 lcd done" );
 
     PD_Init( );
     CDC_Init( );
@@ -810,6 +829,7 @@ int main(void)
     et_sched_register( &task_app,    task_app_fn,    NULL, 10u );
     et_sched_register( &task_vbus,   task_vbus_fn,   NULL, 100u );
     et_sched_register( &task_report, task_report_fn, NULL, 500u );
+    ET_LOGI( "boot", "b6 loop start" );
 
     while(1)
     {
