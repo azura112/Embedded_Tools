@@ -256,6 +256,29 @@ static inline __attribute__((always_inline)) void flash_unlock_both(void)
     FLASH->MODEKEYR = X035_FLASH_KEY2;
 }
 
+/* flash 擦写期间的 PFIC 级中断屏蔽(实机教训 2026-09-27):
+ * X035 的 PD/USB 中断为 HPE(硬件前导)快速中断, mstatus 临界区不能可靠
+ * 约束其取指 —— 擦除窗口内 ISR 取 flash 指令 = 控制器忙时取到垃圾 →
+ * 非法指令复位(现象: 'k' 自检停在首次擦除, mcause=2, PC 恒在 PD/USB
+ * ISR 体内)。凡"代码在 flash 里"的中断源都必须在此窗口内从 PFIC 关闭:
+ * TIM1(时基)/USART1(命令 RX)/USBFS/USBPD。开机能到达任何 flash 操作
+ * 的前提是四者均已初始化, 故直接无条件 关→操作→开。 */
+static void flash_irq_mask(void)
+{
+    NVIC_DisableIRQ( TIM1_UP_IRQn );
+    NVIC_DisableIRQ( USART1_IRQn );
+    NVIC_DisableIRQ( USBFS_IRQn );
+    NVIC_DisableIRQ( USBPD_IRQn );
+}
+
+static void flash_irq_unmask(void)
+{
+    NVIC_EnableIRQ( TIM1_UP_IRQn );
+    NVIC_EnableIRQ( USART1_IRQn );
+    NVIC_EnableIRQ( USBFS_IRQn );
+    NVIC_EnableIRQ( USBPD_IRQn );
+}
+
 /* 整 256B 块编程(words = 块完整目标内容); 调用方已解锁 */
 static void flash_program_block(uint32_t blk, const uint32_t *words)
 {
@@ -313,6 +336,7 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
     }
 
     PORT_CRITICAL_ENTER();
+    flash_irq_mask( );                          /* PFIC 级屏蔽(擦写窗口内禁止取指) */
     flash_unlock_both( );                       /* KEYR + MODEKEYR 两级解锁 */
 
     while (done < len) {
@@ -338,6 +362,7 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
                 m[ inner + i ]) {
                 FLASH->CTLR |= X035_CR_LOCK_Set;
                 PORT_CRITICAL_EXIT();
+                flash_irq_unmask( );
                 return done;
             }
         }
@@ -346,6 +371,7 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
 
     FLASH->CTLR |= X035_CR_LOCK_Set;            /* 重新上锁 */
     PORT_CRITICAL_EXIT();
+    flash_irq_unmask( );
     return done;
 }
 
@@ -360,6 +386,7 @@ bool port_flash_erase_sector(uint32_t sector_index)
     addr = PORT_FLASH_AREA_BASE + sector_index * PORT_FLASH_SECTOR_SIZE;
 
     PORT_CRITICAL_ENTER();
+    flash_irq_mask( );                          /* PFIC 级屏蔽(擦写窗口内禁止取指) */
     flash_unlock_both( );                       /* KEYR + MODEKEYR 两级解锁 */
     /* 序列与 vendor ROM_ERASE 的 1KB 分支逐行同款(等待内联) */
     FLASH->CTLR &= (X035_CR_OPTER_Reset & X035_CR_PAGE_ER_Reset);
@@ -371,5 +398,6 @@ bool port_flash_erase_sector(uint32_t sector_index)
     FLASH->CTLR |= X035_CR_LOCK_Set;
     ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
     PORT_CRITICAL_EXIT();
+    flash_irq_unmask( );
     return ok;
 }
