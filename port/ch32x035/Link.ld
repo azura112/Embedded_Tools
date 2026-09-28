@@ -149,7 +149,7 @@ SECTIONS
 	} >RAM AT>FLASH
 
 	PROVIDE( _end = _ebss);
-	PROVIDE( end = . );    .noinit (NOLOAD) : { . = ALIGN(4); *(.noinit); . = ALIGN(4); } >RAM
+	PROVIDE( end = . );    .noinit 0x20004000 (NOLOAD) : { . = ALIGN(4); *(.noinit); . = ALIGN(4); } >RAM
 
     .stack ORIGIN(RAM) + LENGTH(RAM) - __stack_size :
     {
