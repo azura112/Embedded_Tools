@@ -96,7 +96,9 @@ void port_critical_enter(void)
     if (g_crit_nest == 0u) {
         g_crit_saved_mstatus = ms;
         __asm__ __volatile__ ("csrc 0x800, %0" :: "r" (0x88u) : "memory");
-        __asm__ __volatile__ ("fence.i" ::: "memory");
+        /* ⚠ 无 fence.i(实机#12): fence.i 会冲刷取指流, 在本板上触发
+         * 2 字节指令流错位(非法指令, PC 落在任意执行点) —— 中断屏蔽
+         * 只需 CSR 写, 不需要指令流同步 */
     }
     g_crit_nest++;
 }
@@ -292,7 +294,8 @@ flash_op_in_ram(uint32_t op, uint32_t fbase, uint32_t addr,
     volatile uint32_t *statr    = (volatile uint32_t *)(fbase + X035_REG_STATR);
     volatile uint32_t *ctlr     = (volatile uint32_t *)(fbase + X035_REG_CTLR);
     volatile uint32_t *addr_r   = (volatile uint32_t *)(fbase + X035_REG_ADDR);
-    volatile uint32_t *probe    = (volatile uint32_t *)0x20002090u;  /* 诊断暂存 */
+    extern volatile uint32_t hf_scratch[ 48 ];          /* it.c: .noinit 暂存 */
+    volatile uint32_t *probe    = &hf_scratch[ 41 ];    /* [41]=步骤 [42]=STATR */
     uint32_t i;
 
     probe[ 0 ] = 1u;                            /* 进入例程 */
