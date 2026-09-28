@@ -186,20 +186,23 @@ bool port_wdt_disable(void)
 
 /* ============ flash 参数区 (port.h 契约, V1.9) ============
  * CH32X035 控制器特性(vendor ch32x035_flash.c 为准):
- *  - 擦除页 1KB(FLASH_ErasePage, F1 风格 PER+ADDR+STRT, 调用方解锁);
- *  - 无字编程公开路径: 快编程 = 256B 块缓冲(BUF_RST/BUF_LOAD + STRT,
- *    256B 对齐), ROM_WRITE 即此封裝;
- *  - 因此 port_flash_write 用"读-合并-整 256B 块重编程": 无需擦除、无额外
- *    磨损(编程只拉 1→0); et_kv 仅写已擦区, 合并恒满足 1→0 契约;
- *    调用方违反(需 0→1)时回读校验不符 → 按短写如实上报;
+ *  - 擦除页 1KB(PER+ADDR+STRT), 编程 = 256B 快编程块(PAGE_PG+BUF_LOAD);
+ *  - ⚠⭐ 主 flash 无读-写并行(实机#4-#9 定案): 擦写进行中的任何取指
+ *    —— 包括等待循环自身的新取指 —— 都会读到垃圾, CPU 执行垃圾即
+ *    非法指令复位。中断屏蔽(mstatus 与 PFIC 层)、缩短循环均无法规避,
+ *    vendor FLASH_ErasePage 同样复现。vendor 自己的 .Bcode 方案是把
+ *    flash 操作函数放进 0x1FFF0000 的独立 BOOT FLASH —— 本 port 采用
+ *    等价思路: 擦/写核心序列整体拷贝到 RAM 执行(fence.i 后经函数指针
+ *    调用), 例程自含解锁与 BSY 轮询, 擦写窗口内物理上零 flash 取指;
+ *  - 例程硬约束: 只允许使用实参、立即数与寄存器绝对地址 —— 禁止引用
+ *    静态数据/字符串常量/其他函数(拷贝后这类引用全部失效);
+ *  - 写路径 = 读-合并-整 256B 块重编程(无额外磨损); et_kv 仅写已擦区,
+ *    合并恒满足 1→0 契约; 违约时回读校验不符 → 按短写如实上报;
  *  - 参数区 = 片内 flash 尾部 PORT_FLASH_SECTOR_COUNT 个 1KB 扇区,
- *    Link.ld 已把代码区缩到 60K 预留出该 2KB。
- *
- * ⚠ 双别名(实机教训 2026-09-26): 代码在 0x00000000 别名执行, 0x08000000
- *   是 F1 风格编程接口地址 —— 厂商驱动只对它做"写"。对 0x08000000 做
- *   数据"读"触发访问故障(HardFault, 复位风暴 ~60ms/圈)。因此:
- *   读(含合并读/回读校验)一律走 0x00000000 别名; 擦写走 0x08000000
- *   接口地址(ROM_WRITE 同款)。 */
+ *    Link.ld 代码区 60K 预留尾部 2KB;
+ *  - 读(含合并读/回读校验)走 0x00000000 代码别名; 擦/写寄存器接口走
+ *    0x08000000 别名(仅寄存器写, 无数据读)。
+ */
 
 #ifndef PORT_CH32X035_FLASH_SIZE
 #define PORT_CH32X035_FLASH_SIZE    (62u * 1024u)   /* CH32X035G8U6: 62KB */
@@ -207,82 +210,26 @@ bool port_wdt_disable(void)
 
 #define PORT_FLASH_AREA_SIZE    ((uint32_t)PORT_FLASH_SECTOR_SIZE * \
                                  (uint32_t)PORT_FLASH_SECTOR_COUNT)
-/* 读/校验用: 代码别名 */
-#define PORT_FLASH_AREA_BASE_RD (0x00000000u + PORT_CH32X035_FLASH_SIZE - \
-                                 PORT_FLASH_AREA_SIZE)
-/* 擦/写寄存器接口用: 编程别名 */
 #define PORT_FLASH_AREA_BASE    (0x08000000u + PORT_CH32X035_FLASH_SIZE - \
-                                 PORT_FLASH_AREA_SIZE)
+                                 PORT_FLASH_AREA_SIZE)      /* 擦/写接口 */
+#define PORT_FLASH_AREA_BASE_RD (0x00000000u + PORT_CH32X035_FLASH_SIZE - \
+                                 PORT_FLASH_AREA_SIZE)      /* 读/校验 */
 
-/* 控制器位定义(与 vendor ch32x035_flash.c 同值, 该文件未导出) */
-#define X035_CR_STRT_Set        ((uint32_t)0x00000040)
-#define X035_CR_LOCK_Set        ((uint32_t)0x00000080)
-#define X035_CR_PER_Set         ((uint32_t)0x00000002)
-#define X035_CR_PER_Reset       ((uint32_t)0xFFFFFFFD)
-#define X035_CR_OPTER_Reset     ((uint32_t)0xFFFFFFDF)
-#define X035_CR_PAGE_PG         ((uint32_t)0x00010000)
-#define X035_CR_PAGE_ER_Reset   ((uint32_t)0xFFFDFFFF)
-#define X035_CR_BUF_LOAD        ((uint32_t)0x00040000)
-#define X035_CR_BUF_RST         ((uint32_t)0x00080000)
-#define X035_SR_BSY             ((uint32_t)0x00000001)
-#define X035_SR_WRPRTERR        ((uint32_t)0x00000010)
-#define X035_FLASH_KEY1         ((uint32_t)0x45670123)
-#define X035_FLASH_KEY2         ((uint32_t)0xCDEF89AB)
+#define X035_FLASH_KEY1         0x45670123u
+#define X035_FLASH_KEY2         0xCDEF89ABu
+/* FLASH 寄存器偏移(FLASH_TypeDef, 基址 0x4001A000) */
+#define X035_REG_KEYR           0x04u
+#define X035_REG_STATR          0x0Cu
+#define X035_REG_CTLR           0x10u
+#define X035_REG_ADDR           0x14u
+#define X035_REG_MODEKEYR       0x24u
 
 #define FLASH_PROG_BLOCK        256u    /* 快编程块 */
 #define FLASH_PROG_WORDS        (FLASH_PROG_BLOCK / 4u)
-#define FLASH_OP_GUARD          1000000u
 
-/* ⚠ 擦写窗口内的一切循环都必须"小到完全驻留预取缓冲"(实机#4-#6 定案):
- * X035 无读-写并行 —— 擦写进行中新发起的取指会读到垃圾, CPU 执行垃圾
- * 即非法指令复位(mcause=2, PC 落在任意正在执行的函数体内)。
- * 因此本文件擦写路径只用两类极短循环(vendor ROM_ERASE/ROM_WRITE 同形):
- *   flash_start_delay : ~32 次 NOP, 等 BSY 断言(此时擦写刚启动)
- *   flash_wait_idle   : 裸 3 指令轮询 STATR.BSY(无守卫计数, 硬件卡死由
- *                       IWDG 10s 兜底 —— 守卫循环会超出预取缓冲, 禁用)
- * 另: 操作完成后再 flash_settle(~20us)才允许取指/数据访问(控制器恢复)。 */
-static inline __attribute__((always_inline)) void flash_start_delay(void)
-{
-    uint32_t i;
+#define X035_SR_BSY             ((uint32_t)0x00000001)
+#define X035_SR_WRPRTERR        ((uint32_t)0x00000010)
 
-    for (i = 0u; i < 32u; i++) {
-        __NOP();
-    }
-}
-
-static inline __attribute__((always_inline)) void flash_wait_idle(void)
-{
-    while ((FLASH->STATR & X035_SR_BSY) != 0u) {
-        /* vendor 同形: 3 指令, 无新增取指 */
-    }
-}
-
-static inline __attribute__((always_inline)) void flash_settle(void)
-{
-    uint32_t i;
-
-    for (i = 0u; i < 1000u; i++) {             /* ≈20us @48MHz, 控制器恢复窗 */
-        __NOP();
-    }
-}
-
-/* FPEC + 快速模式两级解锁(vendor ROM_ERASE/ROM_WRITE 同款; X035 擦写
- * 必须 MODEKEYR 解锁, 缺失则控制器进错误态 → 后续所有 flash 取指故障) */
-static inline __attribute__((always_inline)) void flash_unlock_both(void)
-{
-    FLASH->KEYR = X035_FLASH_KEY1;
-    FLASH->KEYR = X035_FLASH_KEY2;
-    FLASH->MODEKEYR = X035_FLASH_KEY1;
-    FLASH->MODEKEYR = X035_FLASH_KEY2;
-}
-
-/* flash 擦写期间的 PFIC 级中断屏蔽(实机教训 2026-09-27):
- * X035 的 PD/USB 中断为 HPE(硬件前导)快速中断, mstatus 临界区不能可靠
- * 约束其取指 —— 擦除窗口内 ISR 取 flash 指令 = 控制器忙时取到垃圾 →
- * 非法指令复位(现象: 'k' 自检停在首次擦除, mcause=2, PC 恒在 PD/USB
- * ISR 体内)。凡"代码在 flash 里"的中断源都必须在此窗口内从 PFIC 关闭:
- * TIM1(时基)/USART1(命令 RX)/USBFS/USBPD。开机能到达任何 flash 操作
- * 的前提是四者均已初始化, 故直接无条件 关→操作→开。 */
 /* 中断门控总开关: 启动期(尚未使能任何中断)做 flash 自检时关闭 ——
  * 避免 unmask 把四个中断提前打开。运行期必须保持开启。 */
 static bool g_flash_irq_gate = true;
@@ -292,6 +239,8 @@ void port_flash_irq_gate_set(bool on)
     g_flash_irq_gate = on;
 }
 
+/* flash 擦写期间的 PFIC 级中断屏蔽: 即便走 RAM 执行, 主循环期间被
+ * 打断也会拉长窗口, 统一屏蔽四源(TIM1/USART1/USBFS/USBPD)。 */
 static void flash_irq_mask(void)
 {
     if (!g_flash_irq_gate) {
@@ -308,8 +257,7 @@ static void flash_irq_unmask(void)
     if (!g_flash_irq_gate) {
         return;
     }
-    /* 先清屏蔽期间积压的 pending: 否则解除屏蔽瞬间 ISR 立即取指 ——
-     * 若恰逢控制器尚未完全恢复, 取指读到垃圾即非法指令(实机#5/#6 教训) */
+    /* 先清屏蔽期间积压的 pending, 再使能 */
     NVIC_ClearPendingIRQ( TIM1_UP_IRQn );
     NVIC_ClearPendingIRQ( USART1_IRQn );
     NVIC_ClearPendingIRQ( USBFS_IRQn );
@@ -320,29 +268,93 @@ static void flash_irq_unmask(void)
     NVIC_EnableIRQ( USBPD_IRQn );
 }
 
-/* 整 256B 块编程(words = 块完整目标内容); 调用方已解锁 */
-static void flash_program_block(uint32_t blk, const uint32_t *words)
+/* 操作完成后等待控制器恢复(此时已可安全取指, 但数据访问仍稍候) */
+static void flash_settle(void)
 {
     uint32_t i;
 
-    FLASH->CTLR &= (X035_CR_OPTER_Reset & X035_CR_PAGE_ER_Reset);
-    FLASH->CTLR |= X035_CR_PAGE_PG;
-    FLASH->CTLR |= X035_CR_BUF_RST;
-    flash_wait_idle();
-
-    for (i = 0u; i < FLASH_PROG_WORDS; i++) {
-        *(volatile uint32_t *)blk = words[ i ];     /* 写地址即装填缓冲 */
-        FLASH->CTLR |= X035_CR_BUF_LOAD;
-        flash_wait_idle();
-        blk += 4u;
+    for (i = 0u; i < 1000u; i++) {              /* ≈20us @48MHz */
+        __NOP();
     }
+}
 
-    FLASH->ADDR = blk - FLASH_PROG_BLOCK;
-    FLASH->CTLR |= X035_CR_STRT_Set;
-    flash_start_delay();
-    flash_wait_idle();
-    FLASH->CTLR &= ~X035_CR_PAGE_PG;
-    flash_settle();
+/* ---- RAM 驻留擦写核心: 整函数拷贝到 RAM 后经函数指针执行 ----
+ * 硬约束: 函数体内只允许 实参/立即数/局部变量 —— 不得引用任何静态
+ * 数据、字符串常量或其他函数(拷贝到任意地址后这类引用全部失效)。 */
+static void __attribute__((noinline, section(".flashopram")))
+flash_op_in_ram(uint32_t op, uint32_t fbase, uint32_t addr,
+                uint32_t nwords, const uint32_t *words)
+{
+    volatile uint32_t *keyr     = (volatile uint32_t *)(fbase + X035_REG_KEYR);
+    volatile uint32_t *modekeyr = (volatile uint32_t *)(fbase + X035_REG_MODEKEYR);
+    volatile uint32_t *statr    = (volatile uint32_t *)(fbase + X035_REG_STATR);
+    volatile uint32_t *ctlr     = (volatile uint32_t *)(fbase + X035_REG_CTLR);
+    volatile uint32_t *addr_r   = (volatile uint32_t *)(fbase + X035_REG_ADDR);
+    uint32_t i;
+
+    *keyr = X035_FLASH_KEY1;
+    *keyr = X035_FLASH_KEY2;
+
+    if (op == 0u) {                             /* 1KB 页擦除 */
+        *ctlr &= (0xFFFFFFDFu & 0xFFFDFFFFu);   /* 清 OPTER / PAGE_ER */
+        *ctlr |= 0x00000002u;                   /* PER */
+        *addr_r = addr;
+        *ctlr |= 0x00000040u;                   /* STRT */
+        while ((*statr & 0x01u) != 0u) { }
+        *ctlr &= 0xFFFFFFFDu;
+    } else {                                    /* 256B 快编程 */
+        *modekeyr = X035_FLASH_KEY1;            /* 快编程模式解锁 */
+        *modekeyr = X035_FLASH_KEY2;
+        *ctlr &= (0xFFFFFFDFu & 0xFFFDFFFFu);
+        *ctlr |= 0x00010000u;                   /* PAGE_PG */
+        *ctlr |= 0x00080000u;                   /* BUF_RST */
+        while ((*statr & 0x01u) != 0u) { }
+        for (i = 0u; i < nwords; i++) {
+            *(volatile uint32_t *)addr = words[ i ];    /* 写地址即装填缓冲 */
+            *ctlr |= 0x00040000u;               /* BUF_LOAD */
+            while ((*statr & 0x01u) != 0u) { }
+            addr += 4u;
+        }
+        *addr_r = addr - (nwords * 4u);
+        *ctlr |= 0x00000040u;                   /* STRT */
+        while ((*statr & 0x01u) != 0u) { }
+        *ctlr &= ~0x00010000u;
+    }
+    *ctlr |= 0x00000080u;                       /* 重新上锁 */
+}
+
+/* 区段结束哨兵: 与上函数同段相邻, 用于取拷贝长度 */
+static void __attribute__((noinline, section(".flashopram")))
+flash_op_in_ram_end(void) { }
+
+static uint32_t g_flashop_buf[ 128 ];           /* 512B RAM 例程区 */
+static bool     g_flashop_ready = false;
+
+static void flash_ram_prepare(void)
+{
+    uint32_t len = (uint32_t)(uintptr_t)flash_op_in_ram_end -
+                   (uint32_t)(uintptr_t)flash_op_in_ram;
+    const uint32_t *src = (const uint32_t *)(uintptr_t)flash_op_in_ram;
+    uint32_t *dst = g_flashop_buf;
+    uint32_t i;
+
+    for (i = 0u; i < ((len + 3u) / 4u); i++) {
+        dst[ i ] = src[ i ];
+    }
+    __asm__ __volatile__ ("fence.i" ::: "memory");  /* 写指令内存后必须同步 */
+    g_flashop_ready = true;
+}
+
+typedef void (*flash_op_fn_t)(uint32_t op, uint32_t fbase, uint32_t addr,
+                              uint32_t nwords, const uint32_t *words);
+
+static void flash_ram_run(uint32_t op, uint32_t addr,
+                          uint32_t nwords, const uint32_t *words)
+{
+    if (!g_flashop_ready) {
+        flash_ram_prepare();
+    }
+    ((flash_op_fn_t)(void *)g_flashop_buf)( op, (uint32_t)FLASH, addr, nwords, words );
 }
 
 bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
@@ -379,8 +391,7 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
     }
 
     PORT_CRITICAL_ENTER();
-    flash_irq_mask( );                          /* PFIC 级屏蔽(擦写窗口内禁止取指) */
-    flash_unlock_both( );                       /* KEYR + MODEKEYR 两级解锁 */
+    flash_irq_mask( );                          /* PFIC 级屏蔽 */
 
     while (done < len) {
         uint32_t abs    = PORT_FLASH_AREA_BASE + offset + done;
@@ -397,13 +408,12 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
         for (i = 0u; i < chunk; i++) {
             m[ inner + i ] &= src[ done + i ];  /* 1→0 合并 */
         }
-        flash_program_block(blk, merge);
+        flash_ram_run( 1u, blk, FLASH_PROG_WORDS, merge );
 
         /* 回读校验(0x0 别名): 不符(含 0→1 违约)按故障截断, 如实上报短写 */
         for (i = 0u; i < chunk; i++) {
             if (*(volatile uint8_t *)(PORT_FLASH_AREA_BASE_RD + offset + done + i) !=
                 m[ inner + i ]) {
-                FLASH->CTLR |= X035_CR_LOCK_Set;
                 PORT_CRITICAL_EXIT();
                 flash_irq_unmask( );
                 return done;
@@ -412,7 +422,6 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
         done += chunk;
     }
 
-    FLASH->CTLR |= X035_CR_LOCK_Set;            /* 重新上锁 */
     PORT_CRITICAL_EXIT();
     flash_irq_unmask( );
     return done;
@@ -422,6 +431,7 @@ bool port_flash_erase_sector(uint32_t sector_index)
 {
     bool ok = false;
     uint32_t addr;
+    uint32_t i;
 
     if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
         return false;
@@ -429,22 +439,15 @@ bool port_flash_erase_sector(uint32_t sector_index)
     addr = PORT_FLASH_AREA_BASE + sector_index * PORT_FLASH_SECTOR_SIZE;
 
     PORT_CRITICAL_ENTER();
-    flash_irq_mask( );                          /* PFIC 级屏蔽(擦写窗口内禁止取指) */
-    /* 对照实验(实机#8): 直接调用 vendor FLASH_ErasePage —— 其内部序列为
-     * 官方参考(仅 KEYR 解锁, 不用 MODEKEYR; 自带 WaitForLastOperation)。
-     * 此前手写序列多做了 MODEKEYR 快速模式解锁 —— 该解锁只属于
-     * ROM_WRITE/ROM_ERASE 快编程路径, 用于普通 PER 擦除可能把控制器
-     * 带入异常模式, 是本轮前后的最大嫌疑差异。 */
-    FLASH_Unlock();
-    ok = (FLASH_ErasePage( addr ) == FLASH_COMPLETE);
-    FLASH_Lock();
+    flash_irq_mask( );                          /* PFIC 级屏蔽 */
+    flash_ram_run( 0u, addr, 0u, NULL );
     flash_settle( );
-    ok = ok && ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
+    ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
     /* 回读验证(0x0 别名): 首 16B 应全 0xFF, 把"假擦除"变可观测 */
     if (ok) {
-        uint32_t i;
         for (i = 0u; i < 16u; i++) {
-            if (*(volatile uint8_t *)(PORT_FLASH_AREA_BASE_RD + (addr - PORT_FLASH_AREA_BASE) + i) != 0xFFu) {
+            if (*(volatile uint8_t *)(PORT_FLASH_AREA_BASE_RD +
+                                      sector_index * PORT_FLASH_SECTOR_SIZE + i) != 0xFFu) {
                 ok = false;
                 break;
             }
