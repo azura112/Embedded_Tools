@@ -32,6 +32,7 @@
 #define PORT_CH32X035_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,6 +45,9 @@ extern volatile uint8_t Tim_Ms_Cnt;
  * 须在首个 et_sched_register() 之前调用(注册时刻锚定首轮周期)。
  * 依赖 main() 已先行调用 NVIC_PriorityGroupConfig(与 V1.7 顺序一致)。 */
 void port_ch32x035_tick_init(void);
+
+/* flash 擦写中断门控总开关(见 .c 注释): 启动期自检关闭, 运行期保持开启 */
+void port_flash_irq_gate_set(bool on);
 
 #ifdef __cplusplus
 }

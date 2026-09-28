@@ -82,6 +82,48 @@ static uint8_t        pdo_restored = 0;     /* 本次连接是否已恢复 */
 #define KV_KEY_BACKLIGHT    2u
 
 /*********************************************************************
+ * @fn      App_KV_BootTest
+ *
+ * @brief   启动期 flash 自检(仅由 'q' 置 RAM 标志后复位触发): 在 UART
+ *          初始化之后、任何中断使能之前执行擦写 —— 零中断上下文, 用于
+ *          最终判定"擦写本身"与"并发中断"哪个是病根。此窗口 port 的中断
+ *          门控自动关闭(port_flash_irq_gate_set(false))。
+ *
+ * @return  none
+ */
+static void App_KV_BootTest( void )
+{
+    static const uint8_t pat[ 8 ] = { 'B', 'T', '0', '1', 0x5A, 0xA5, 0x00, 0xFF };
+    uint8_t rd[ 8 ];
+    uint8_t i, ok = 1;
+    uint32_t n;
+
+    printf( "kvboot: erase s0\r\n" );
+    if( !port_flash_erase_sector( 0u ) )
+    {
+        printf( "kvboot: erase FAIL\r\n" );
+        return;
+    }
+    port_flash_read( 0u, rd, 8u );
+    for( i = 0u; i < 8u; i++ )
+    {
+        if( rd[ i ] != 0xFFu ) ok = 0;
+    }
+    printf( "kvboot: erase %s\r\n", ok ? "PASS(FF)" : "FAIL(not FF)" );
+    if( !ok ) return;
+    printf( "kvboot: write 8B\r\n" );
+    n = port_flash_write( 0u, pat, 8u );
+    printf( "kvboot: write n=%u\r\n", (unsigned)n );
+    port_flash_read( 0u, rd, 8u );
+    ok = 1;
+    for( i = 0u; i < 8u; i++ )
+    {
+        if( rd[ i ] != pat[ i ] ) ok = 0;
+    }
+    printf( "kvboot: write %s\r\n", ok ? "PASS" : "FAIL" );
+}
+
+/*********************************************************************
  * @fn      App_KV_SelfTest
  *
  * @brief   V1.9 诊断命令 'k': 逐级 flash 自检(每步打印, 崩溃点即最后
@@ -363,6 +405,13 @@ static void App_Command( uint8_t cmd )
             Rep_Printf("SWEEP,pdo,target_mV,vbus_mV,contract_mV\r\n");
             break;
 
+        /* 'q': 置 RAM 标志并复位, 下轮开机在零中断上下文执行 flash 自检 */
+        case 'q':
+            Rep_Printf("arming kv boot test, rebooting...\r\n");
+            *(volatile uint32_t *)0x200044A0u = 0x005174E5u;
+            NVIC_SystemReset( );
+            break;
+
         /* 'k': flash/kv 逐级自检(安全引导下唯一触碰 flash 的入口) */
         case 'k':
             Trace_Push( 101u );
@@ -461,7 +510,7 @@ static void App_Command( uint8_t cmd )
                 Rep_Printf("Commands: n=next PDO, 1-8=select PDO, b=backlight, s=status,\r\n"
                            "          a=auto-sweep all PDOs (CSV report)\r\n"
                            "PD test:  r=hard reset, e=soft reset, x=half-current req,\r\n"
-                           "          z=over-current req (300%%, expect Reject), k=kv test\r\n"
+                           "          z=over-current req (300%%, expect Reject), k=kv test, q=kv boot test\r\n"
                            "LCD tune: o=orientation(0-7), c=BGR, , . < > =shift offsets, ?=help\r\n");
             }
             break;
@@ -832,6 +881,16 @@ int main(void)
     SystemCoreClockUpdate();
     Delay_Init();
     USART_Printf_Init(115200);
+
+    /* 零中断上下文的 flash 自检(仅 'q' 置位后的一轮开机执行) */
+    if( *(volatile uint32_t *)0x200044A0u == 0x005174E5u )
+    {
+        *(volatile uint32_t *)0x200044A0u = 0u;
+        port_flash_irq_gate_set( false );       /* 此刻尚无任何中断, 门控关闭 */
+        App_KV_BootTest( );
+        port_flash_irq_gate_set( true );
+    }
+
     UART_Cmd_Init( );       /* 打开 USART1 接收: 命令通道在 COM16(V1.8 起) */
 
     ET_LOGI( "boot", "rst iwdg=%u sft=%u wwdg=%u lpw=%u por=%u pin=%u",

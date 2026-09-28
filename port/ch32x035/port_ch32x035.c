@@ -283,8 +283,20 @@ static inline __attribute__((always_inline)) void flash_unlock_both(void)
  * ISR 体内)。凡"代码在 flash 里"的中断源都必须在此窗口内从 PFIC 关闭:
  * TIM1(时基)/USART1(命令 RX)/USBFS/USBPD。开机能到达任何 flash 操作
  * 的前提是四者均已初始化, 故直接无条件 关→操作→开。 */
+/* 中断门控总开关: 启动期(尚未使能任何中断)做 flash 自检时关闭 ——
+ * 避免 unmask 把四个中断提前打开。运行期必须保持开启。 */
+static bool g_flash_irq_gate = true;
+
+void port_flash_irq_gate_set(bool on)
+{
+    g_flash_irq_gate = on;
+}
+
 static void flash_irq_mask(void)
 {
+    if (!g_flash_irq_gate) {
+        return;
+    }
     NVIC_DisableIRQ( TIM1_UP_IRQn );
     NVIC_DisableIRQ( USART1_IRQn );
     NVIC_DisableIRQ( USBFS_IRQn );
@@ -293,6 +305,9 @@ static void flash_irq_mask(void)
 
 static void flash_irq_unmask(void)
 {
+    if (!g_flash_irq_gate) {
+        return;
+    }
     /* 先清屏蔽期间积压的 pending: 否则解除屏蔽瞬间 ISR 立即取指 ——
      * 若恰逢控制器尚未完全恢复, 取指读到垃圾即非法指令(实机#5/#6 教训) */
     NVIC_ClearPendingIRQ( TIM1_UP_IRQn );
