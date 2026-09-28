@@ -228,7 +228,6 @@ bool port_wdt_disable(void)
 
 #define FLASH_PROG_BLOCK        256u    /* 快编程块 */
 
-extern void Trace_Push(uint32_t id);            /* ch32x035_it.c: RAM 轨迹(诊断) */
 #define FLASH_PROG_WORDS        (FLASH_PROG_BLOCK / 4u)
 
 #define X035_SR_BSY             ((uint32_t)0x00000001)
@@ -294,28 +293,17 @@ flash_op_in_ram(uint32_t op, uint32_t fbase, uint32_t addr,
     volatile uint32_t *statr    = (volatile uint32_t *)(fbase + X035_REG_STATR);
     volatile uint32_t *ctlr     = (volatile uint32_t *)(fbase + X035_REG_CTLR);
     volatile uint32_t *addr_r   = (volatile uint32_t *)(fbase + X035_REG_ADDR);
-    extern volatile uint32_t hf_scratch[ 48 ];          /* it.c: .noinit 暂存 */
-    volatile uint32_t *probe    = &hf_scratch[ 41 ];    /* [41]=步骤 [42]=STATR */
     uint32_t i;
-
-    probe[ 0 ] = 1u;                            /* 进入例程 */
     *keyr = X035_FLASH_KEY1;
     *keyr = X035_FLASH_KEY2;
-    probe[ 0 ] = 2u;                            /* 解锁完成 */
 
     if (op == 0u) {                             /* 1KB 页擦除 */
         *ctlr &= (0xFFFFFFDFu & 0xFFFDFFFFu);   /* 清 OPTER / PAGE_ER */
         *ctlr |= 0x00000002u;                   /* PER */
-        probe[ 0 ] = 3u;
         *addr_r = addr;
-        probe[ 0 ] = 4u;                        /* ADDR 已写 */
         *ctlr |= 0x00000040u;                   /* STRT */
-        probe[ 0 ] = 5u;                        /* STRT 已写 */
         while ((*statr & 0x01u) != 0u) { }
-        probe[ 1 ] = *statr;                    /* 等待结束后的 STATR 快照 */
-        probe[ 0 ] = 6u;                        /* BSY 已清 */
         *ctlr &= 0xFFFFFFFDu;
-        probe[ 0 ] = 7u;                        /* PER 已复位 */
     } else {                                    /* 256B 快编程 */
         *modekeyr = X035_FLASH_KEY1;            /* 快编程模式解锁 */
         *modekeyr = X035_FLASH_KEY2;
@@ -335,7 +323,6 @@ flash_op_in_ram(uint32_t op, uint32_t fbase, uint32_t addr,
         *ctlr &= ~0x00010000u;
     }
     *ctlr |= 0x00000080u;                       /* 重新上锁 */
-    probe[ 0 ] = 8u;                            /* 已上锁 */
 }
 
 /* 区段结束哨兵: 与上函数同段相邻, 用于取拷贝长度 */
@@ -454,13 +441,9 @@ bool port_flash_erase_sector(uint32_t sector_index)
     addr = PORT_FLASH_AREA_BASE + sector_index * PORT_FLASH_SECTOR_SIZE;
 
     PORT_CRITICAL_ENTER();
-    Trace_Push( 120u );                         /* 进入擦除函数 */
     flash_irq_mask( );                          /* PFIC 级屏蔽 */
-    Trace_Push( 121u );
     flash_ram_run( 0u, addr, 0u, NULL );
-    Trace_Push( 123u );                         /* RAM 例程已返回(擦除完成) */
     flash_settle( );
-    Trace_Push( 124u );
     ok = ((FLASH->STATR & X035_SR_WRPRTERR) == 0u);
     /* 回读验证(0x0 别名): 首 16B 应全 0xFF, 把"假擦除"变可观测 */
     if (ok) {
@@ -472,9 +455,7 @@ bool port_flash_erase_sector(uint32_t sector_index)
             }
         }
     }
-    Trace_Push( 125u );                         /* 验证完成 */
     PORT_CRITICAL_EXIT();
     flash_irq_unmask( );
-    Trace_Push( 126u );
     return ok;
 }

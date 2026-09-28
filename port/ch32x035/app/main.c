@@ -144,31 +144,21 @@ static void App_KV_SelfTest( void )
     uint32_t n;
     uint8_t i, ok = 1;
 
-    Trace_Push( 103u );
     Rep_Printf("kv1 erase s0\r\n");
-    Trace_Push( 105u );
     if( !port_flash_erase_sector( 0u ) ) { Rep_Printf("kv FAIL erase0\r\n"); return; }
-    Trace_Push( 106u );
     Rep_Printf("kv2 erase s1\r\n");
-    Trace_Push( 107u );
     if( !port_flash_erase_sector( 1u ) ) { Rep_Printf("kv FAIL erase1\r\n"); return; }
-    Trace_Push( 108u );
     Rep_Printf("kv3 write 8B\r\n");
-    Trace_Push( 109u );
     n = port_flash_write( 0u, pat, 8u );
-    Trace_Push( 110u );
     if( n != 8u ) { Rep_Printf("kv FAIL write=%u\r\n", (unsigned)n); return; }
     Rep_Printf("kv4 readback\r\n");
-    Trace_Push( 111u );
     port_flash_read( 0u, rdbk, 8u );
-    Trace_Push( 112u );
     for( i = 0; i < 8u; i++ )
     {
         if( rdbk[ i ] != pat[ i ] ) ok = 0;
     }
     if( !ok ) { Rep_Printf("kv FAIL verify\r\n"); return; }
     Rep_Printf("kv5 et_kv init+set+get\r\n");
-    Trace_Push( 113u );
     if( !et_kv_init( &app_kv, &app_kv_layout ) )
     {
         if( !et_kv_format( &app_kv, &app_kv_layout ) ||
@@ -177,7 +167,6 @@ static void App_KV_SelfTest( void )
             Rep_Printf("kv FAIL et init\r\n"); return;
         }
     }
-    Trace_Push( 114u );
     if( !et_kv_set( &app_kv, KV_KEY_TARGET_PDO, &kv_pdo_saved, 1u ) )
     {
         Rep_Printf("kv FAIL et set\r\n"); return;
@@ -351,7 +340,6 @@ static void App_Cancel_Sweep( void )
  */
 static void App_Command( uint8_t cmd )
 {
-    Trace_Push( 0x400u | cmd );                 /* 命令入口(0x46B=k 0x471=q) */
     switch( cmd )
     {
         /* KEY0 / 'n': cycle the target PDO voltage */
@@ -416,9 +404,7 @@ static void App_Command( uint8_t cmd )
 
         /* 'k': flash/kv 逐级自检(安全引导下唯一触碰 flash 的入口) */
         case 'k':
-            Trace_Push( 101u );
             App_Cancel_Sweep( );
-            Trace_Push( 102u );
             App_KV_SelfTest( );
             break;
 
