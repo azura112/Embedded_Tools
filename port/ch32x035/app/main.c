@@ -408,7 +408,7 @@ static void App_Command( uint8_t cmd )
         /* 'q': 置 RAM 标志并复位, 下轮开机在零中断上下文执行 flash 自检 */
         case 'q':
             Rep_Printf("arming kv boot test, rebooting...\r\n");
-            *(volatile uint32_t *)0x200044A0u = 0x005174E5u;
+            *(volatile uint32_t *)0x200020A0u = 0x005174E5u;
             NVIC_SystemReset( );
             break;
 
@@ -883,9 +883,9 @@ int main(void)
     USART_Printf_Init(115200);
 
     /* 零中断上下文的 flash 自检(仅 'q' 置位后的一轮开机执行) */
-    if( *(volatile uint32_t *)0x200044A0u == 0x005174E5u )
+    if( *(volatile uint32_t *)0x200020A0u == 0x005174E5u )
     {
-        *(volatile uint32_t *)0x200044A0u = 0u;
+        *(volatile uint32_t *)0x200020A0u = 0u;
         port_flash_irq_gate_set( false );       /* 此刻尚无任何中断, 门控关闭 */
         App_KV_BootTest( );
         port_flash_irq_gate_set( true );
@@ -899,12 +899,15 @@ int main(void)
 
     /* 上一轮 HardFault 现场 + 轨迹(mcause/mepc/最后检查点, RAM 跨复位保留) */
     {
-        volatile uint32_t *hf = (volatile uint32_t *)0x20004400u;
+        volatile uint32_t *hf = (volatile uint32_t *)0x20002000u;
         if( hf[ 0 ] == 0xC0DEF00Du )
         {
             uint32_t h = hf[ 3 ], i;
+            volatile uint32_t *probe = (volatile uint32_t *)0x20002090u;
             ET_LOGE( "hf", "mcause=%08x mepc=%08x",
                      (unsigned)hf[ 1 ], (unsigned)hf[ 2 ] );
+            ET_LOGE( "hf", "probe0=%08x statr=%08x",
+                     (unsigned)probe[ 0 ], (unsigned)probe[ 1 ] );
             printf( "hf trace:" );
             for( i = 0u; i < 32u; i++ )
             {

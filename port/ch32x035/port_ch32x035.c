@@ -292,7 +292,7 @@ flash_op_in_ram(uint32_t op, uint32_t fbase, uint32_t addr,
     volatile uint32_t *statr    = (volatile uint32_t *)(fbase + X035_REG_STATR);
     volatile uint32_t *ctlr     = (volatile uint32_t *)(fbase + X035_REG_CTLR);
     volatile uint32_t *addr_r   = (volatile uint32_t *)(fbase + X035_REG_ADDR);
-    volatile uint32_t *probe    = (volatile uint32_t *)0x20004490u;  /* 诊断暂存 */
+    volatile uint32_t *probe    = (volatile uint32_t *)0x20002090u;  /* 诊断暂存 */
     uint32_t i;
 
     probe[ 0 ] = 1u;                            /* 进入例程 */

@@ -18,7 +18,7 @@ void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
  * [0]=magic [1]=mcause [2]=mepc [3]=轨迹头 [4..35]=轨迹环(32 槽)
  * 启动代码在串口就绪后打印并清除。
  * (不在故障上下文 printf —— flash 故障类 HardFault 中 printf 会再次取指故障) */
-#define HF_SCRATCH      ((volatile uint32_t *)0x20004400u)
+#define HF_SCRATCH      ((volatile uint32_t *)0x20002000u)
 #define HF_MAGIC        0xC0DEF00Du
 
 /* 轨迹点: 主循环上下文每到达一个检查点写入编号(LRU 覆盖) */
