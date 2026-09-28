@@ -23,7 +23,7 @@ env = dict(os.environ)
 env["PATH"] = GCC_DIR + ";" + env.get("PATH", "")
 
 COMMON = [
-    "-march=rv32imacxw", "-mabi=ilp32", "-msmall-data-limit=0", "-msave-restore",
+    "-march=rv32imacxw", "-mabi=ilp32", "-msmall-data-limit=0", "-mno-save-restore",
     "-Os", "-g", "-std=gnu99",
     "-fmessage-length=0", "-fsigned-char", "-ffunction-sections", "-fdata-sections",
     "-fno-common", "-Wunused", "-Wuninitialized",
