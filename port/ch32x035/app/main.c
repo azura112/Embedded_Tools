@@ -350,6 +350,7 @@ static void App_Cancel_Sweep( void )
  */
 static void App_Command( uint8_t cmd )
 {
+    Trace_Push( 0x400u | cmd );                 /* 命令入口(0x46B=k 0x471=q) */
     switch( cmd )
     {
         /* KEY0 / 'n': cycle the target PDO voltage */
@@ -920,6 +921,11 @@ int main(void)
             printf( "\r\n" );
             hf[ 0 ] = 0;
         }
+        /* 清轨迹环 + 本轮会话标记: 此后 dump 的条目全部属于本次开机 */
+        uint32_t i;
+        hf[ 3 ] = 0u;
+        for( i = 0u; i < 32u; i++ ) { hf[ 4 + i ] = 0u; }
+        Trace_Push( 900u );
     }
 
     ET_LOGI( "app", "SystemClk:%u", (unsigned)SystemCoreClock );
