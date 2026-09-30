@@ -21,3 +21,7 @@ build/
 # Python 工具缓存 (tools/*.py 自测/导入产生)
 __pycache__/
 *.pyc
+
+# 会话/环境产物 (v2.15 G0-2, CO-3(v2.14); 目录内容保留原地, 仅不入仓)
+.dsh-acl-report/
+.workbuddy/
