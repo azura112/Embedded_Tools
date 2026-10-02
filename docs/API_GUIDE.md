@@ -1,6 +1,6 @@
 # Embedded_Tools API 指南
 
-> 适用版本：v2.19.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
+> 适用版本：v2.20.0（**API 冻结版本**——公开面自 v2.0 起冻结，MINOR 只追加；演进规则与 `--diff` 机检见 [API_STABILITY.md](API_STABILITY.md)） ｜ 语言标准：C99 ｜ 目标环境：裸机前后台循环（兼容任意 MCU）
 
 ---
 
