@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.22.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.22开发交付__非代码清欠与复测脚本化.md](v2.22开发交付__非代码清欠与复测脚本化.md)**（v2.21 勘误收敛 + ⑧复测脚本化[gatecheck.sh] + ch32x035 条件窗口[不可达挂账] + 表格行清偿；非代码清欠版，无 g474 板侧窗口）
+> 当前版本：**v2.23.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[v2.23开发交付__引用机检闭环与纪律块重组.md](v2.23开发交付__引用机检闭环与纪律块重组.md)**（gatecheck --emit/--verify 引用机检闭环 + ⑧引用纪律/判据形态入模板 + 纪律块重组 + v2.20–v2.22 三版勘误批；治理版，无板侧窗口）
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**
 
@@ -190,7 +190,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **配方可执行载体**（v2.3，v2.5 扩至五例）：`make ex` 一键跑五个自检式示例（闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
-- **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.21.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
+- **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.22.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85% × ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 22/22）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
