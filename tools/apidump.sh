@@ -12,7 +12,7 @@
 #   sh tools/apidump.sh --check                # 与已入库清单比对(**行尾归一后**), 漂移非零
 #   sh tools/apidump.sh --snapshot <清单文件>  # 固化冻结基线 (v2.1 P0-1)
 #   sh tools/apidump.sh --diff [基线清单]      # 与基线比对: 纯新增=绿 (默认
-#                                              #   docs/API_INVENTORY_v2.21.md)
+#                                              #   docs/API_INVENTORY_v2.22.md)
 #
 # --check 的行尾口径 (v2.6-r2 G0′-1, `CO-1(v2.6)`):
 #   本仓 `core.autocrlf=true` 且无 `.gitattributes` → 入库清单在工作树被检出为 **CRLF**,
@@ -224,7 +224,7 @@ if [ "${1:-}" = "--snapshot" ]; then
 fi
 
 if [ "${1:-}" = "--diff" ]; then
-    BASE="${2:-docs/API_INVENTORY_v2.21.md}"    # 滚动规则: 默认 = 最近已发布 MINOR 快照 (v2.22 P0-2 按模板⑥口径: P0 期切上一发布 MINOR = v2.21)
+    BASE="${2:-docs/API_INVENTORY_v2.22.md}"    # 滚动规则: 默认 = 最近已发布 MINOR 快照 (v2.23 P0-2 按模板⑥口径: P0 期切上一发布 MINOR = v2.22; 履历: v2.22 P0-2 切 v2.21)
     if [ ! -f "$BASE" ]; then
         echo "apidump: FAIL —— 冻结基线不存在: $BASE (先 --snapshot 归档)"; exit 1
     fi
