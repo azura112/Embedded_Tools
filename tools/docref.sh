@@ -62,10 +62,13 @@ fi
 
 DOC="${1:-}"
 if [ -z "$DOC" ]; then
-    DOC=$(ls v${VMM}开发交付*.md 2>/dev/null | head -1)
+    DOC=$(ls v${VMM}开发交付*.md 2>/dev/null | head -1)      # 平铺优先(v2.24 及历史布局, 参数调用与旧版行为零变化)
+    if [ -z "${DOC:-}" ]; then
+        DOC=$(ls versions/v${VMM}/DELIVERY*.md 2>/dev/null | head -1)   # v2.25 起 versions/ 布局 (v2.25 P1-1①)
+    fi
 fi
 if [ -z "${DOC:-}" ] || [ ! -f "$DOC" ]; then
-    echo "docref: FAIL —— 未找到当前版本交付文档 v${VMM}开发交付*.md (可用参数显式指定)"
+    echo "docref: FAIL —— 未找到当前版本交付文档 v${VMM}开发交付*.md / versions/v${VMM}/DELIVERY*.md (可用参数显式指定)"
     exit 1
 fi
 
@@ -183,7 +186,7 @@ if [ "$END_SHA" != "$HEAD_SHA" ]; then
         benign=1
         for f in $cfiles; do
             case "$f" in
-                *评审记录*.md|*实机记录*.md|v[0-9]*开发计划*.md|v[0-9]*开发交付*.md|docs/评审记录模板.md|docs/开发计划模板.md|docs/v3-candidates.md) ;;
+                *评审记录*.md|*实机记录*.md|v[0-9]*开发计划*.md|v[0-9]*开发交付*.md|docs/评审记录模板.md|docs/开发计划模板.md|docs/v3-candidates.md|versions/*/PLAN*.md|versions/*/DELIVERY*.md|versions/*/REVIEW*.md) ;;   # v2.25 P1-1②: versions/ 三件套镜像平铺模式(不用裸 versions/*——REVIEW 冻结面与登记义务不放宽)
                 *) benign=0; break ;;
             esac
         done

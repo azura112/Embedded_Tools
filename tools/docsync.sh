@@ -292,7 +292,8 @@ assert_grep "README.md"           "497"                 "README 用例数终值�
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
-for f in v[0-9]*开发交付*.md; do  # v2.0 起 glob 兼容双位数版本(原 v1.* 会静默漏掉 v2 交付文档)
+for f in v[0-9]*开发交付*.md versions/*/DELIVERY*.md; do  # v2.0 起 glob 兼容双位数版本; v2.25 P1-3①: versions/ 布局并入
+    [ -f "$f" ] || continue                     # v2.25: 空 glob 匹配(字面量)跳过——既有输入行为零变化
     if ! grep -q "覆盖率" "$f"; then
         echo "FAIL 交付复现表缺覆盖率行: $f"
         FAIL=$((FAIL + 1))
@@ -408,6 +409,9 @@ assert_grep "README.md"                  "每版交付后产出评审记录"    
 if [ -n "$V" ]; then
     VMM2=$(echo "$V" | cut -d. -f1,2)
     doc2=$(ls v${VMM2}开发交付*.md 2>/dev/null | head -1)
+    if [ -z "$doc2" ]; then
+        doc2=$(ls versions/v${VMM2}/DELIVERY*.md 2>/dev/null | head -1)   # v2.25 P1-3②: versions/ 布局(平铺优先)
+    fi
     if [ -z "$doc2" ]; then
         echo "FAIL [评审记录] 缺当前版本交付文档 v${VMM2}开发交付*.md"; FAIL=$((FAIL + 1))
     elif grep -Eq "评审记录" "$doc2"; then

@@ -68,11 +68,12 @@ fi
 
 # ---------- 机读取值 ----------
 # (b) 双口径 diffstat —— 规格化 "N files / M / K" (与 §7.4⑧ 行文形态一致)
-fmt_stat() {  # $1 = range; $2 = 可选 pathspec
-    if [ $# -ge 2 ]; then
-        s=$(git diff --shortstat "$1" -- "$2")
+fmt_stat() {  # $1 = range; $2.. = 可选 pathspecs (v2.25 P1-2②: 双排除并列)
+    range="$1"; shift
+    if [ $# -ge 1 ]; then
+        s=$(git diff --shortstat "$range" -- "$@")
     else
-        s=$(git diff --shortstat "$1")
+        s=$(git diff --shortstat "$range")
     fi
     f=$(printf '%s' "$s" | sed -n 's/^ *\([0-9][0-9]*\) files\? changed.*/\1/p')
     i=$(printf '%s' "$s" | sed -n 's/.*, \([0-9][0-9]*\) insertion.*/\1/p')
@@ -81,14 +82,16 @@ fmt_stat() {  # $1 = range; $2 = 可选 pathspec
     printf '%s files / %s / %s' "$f" "$i" "$d"
 }
 EXCL=":(exclude)v${V}开发交付__*.md"
+EXCL2=":(exclude)versions/v${V}/DELIVERY*.md"      # v2.25 P1-2②: versions/ 布局排除并列
 B_FULL=$(fmt_stat "${SNAP}..HEAD")
-B_SELF=$(fmt_stat "${SNAP}..HEAD" "$EXCL")
+B_SELF=$(fmt_stat "${SNAP}..HEAD" "$EXCL" "$EXCL2")
 
 # (d) 全集逐文档 docref 判定清单 + 分类计数
 ok_n=0; unreg_n=0; lag_n=0; nodecl_n=0; other_n=0
 detail=""
-for f in v2*.md; do
-    case "$f" in *开发交付*) ;; *) continue ;; esac
+for f in v2*.md versions/*/DELIVERY*.md; do     # v2.25 P1-2①: versions/ 布局并入全集
+    [ -f "$f" ] || continue                     # v2.25: 空 glob 匹配(字面量)跳过——既有输入行为零变化
+    case "$f" in *开发交付*|versions/*/DELIVERY*) ;; *) continue ;; esac
     out=$(sh tools/docref.sh "$f" 2>&1 | grep -E '^docref: (OK|FAIL)' | head -1)
     case "$out" in
         *OK*)          cls="OK";              ok_n=$((ok_n+1)) ;;
@@ -109,8 +112,9 @@ A_HIST=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' CHANGELOG.md | sort | uniq -c | s
 
 # token —— 修订登记散文行 @token 计数 (提取管线与 docref.sh P1-2 逐字同源)
 TOK=""
-for f in v2*.md; do
-    case "$f" in *开发交付*) ;; *) continue ;; esac
+for f in v2*.md versions/*/DELIVERY*.md; do     # v2.25 P1-2③: versions/ 布局并入扫描
+    [ -f "$f" ] || continue                     # v2.25: 空 glob 匹配(字面量)跳过
+    case "$f" in *开发交付*|versions/*/DELIVERY*) ;; *) continue ;; esac
     n=$(grep -vE '^[[:space:]]*\|' "$f" | awk 'BEGIN{inf=0} /^```/{inf=!inf; next} !inf' \
         | grep '修订登记' | grep -oE '@[0-9a-f]{7,40}' | wc -l)
     if [ "$n" -gt 0 ]; then
@@ -121,7 +125,7 @@ TOK=$(printf '%s' "$TOK" | sed 's/ $//')
 
 # ---------- 片段行 (固定锚 [gatecheck:emit]; emit 生成 / verify 对账) ----------
 L_B1="[gatecheck:emit] (b) 全量 = ${B_FULL}"
-L_B2="[gatecheck:emit] (b) 自排除 = ${B_SELF} (口径 = -- '${EXCL}')"
+L_B2="[gatecheck:emit] (b) 自排除 = ${B_SELF} (口径 = -- '${EXCL} ${EXCL2}')"
 L_D="[gatecheck:emit] (d) ${D_SUM}"
 L_A="[gatecheck:emit] (a) CHANGELOG [${V}.0] 节日期 = ${A_SECTION}; 全文日期计数 = ${A_HIST}"
 L_T="[gatecheck:emit] 登记 token = ${TOK:-（无登记 token）}"
