@@ -413,7 +413,7 @@ if [ -n "$V" ]; then
         doc2=$(ls versions/v${VMM2}/DELIVERY*.md 2>/dev/null | head -1)   # v2.25 P1-3②: versions/ 布局(平铺优先)
     fi
     if [ -z "$doc2" ]; then
-        echo "FAIL [评审记录] 缺当前版本交付文档 v${VMM2}开发交付*.md"; FAIL=$((FAIL + 1))
+        echo "FAIL [评审记录] 缺当前版本交付文档 v${VMM2}开发交付*.md / versions/v${VMM2}/DELIVERY*.md"; FAIL=$((FAIL + 1))
     elif grep -Eq "评审记录" "$doc2"; then
         echo "ok   交付文档引用评审记录或声明缺失(P0-4)"; PASS=$((PASS + 1))
     else
@@ -523,9 +523,12 @@ assert_grep    "README.md"                "核验清单六项"   "README checkli
 if [ -n "$V" ]; then
     VMM=$(echo "$V" | cut -d. -f1,2)          # 交付文档名按 主.次 (如 v2.1开发交付__...)
     doc=$(ls v${VMM}开发交付*.md 2>/dev/null | head -1)
+    if [ -z "$doc" ]; then
+        doc=$(ls versions/v${VMM}/DELIVERY*.md 2>/dev/null | head -1)   # v2.25 P1-3② 同型扩展: versions/ 布局(平铺优先)——P1-3 锚点清单漏本定位面, 偏差登记
+    fi
     expect=$((PASS + 1))            # 本断言本身计入总数 → 文档声明值须等于 expect
     if [ -z "$doc" ]; then
-        echo "FAIL [自指] 缺当前版本交付文档 v${VMM}开发交付*.md"
+        echo "FAIL [自指] 缺当前版本交付文档 v${VMM}开发交付*.md / versions/v${VMM}/DELIVERY*.md"
         FAIL=$((FAIL + 1))
     else
         line=$(grep -E '^[[:space:]]*[>|]?[[:space:]]*本版 docsync' "$doc" 2>/dev/null | head -1)
