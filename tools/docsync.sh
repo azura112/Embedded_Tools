@@ -516,6 +516,32 @@ assert_grep    "docs/开发计划模板.md"     "基线滚动"       "计划模�
 assert_grep    "docs/评审记录模板.md"     "基线滚动复核项" "评审记录模板含基线滚动复核节(v2.8 P0-4)"
 assert_grep    "README.md"                "核验清单六项"   "README checklist 第 10 条与模板项数一致(六项)"
 
+# ---- v2.26-r2 G0-T6 (CO-1(v2.26) 机制裁决): 占位符入终态拦截 ----
+# 背景: v2.25/v2.26 连续两版交付 §6 出现字面占位符入终态(同族第三实例链:
+#   v2.24 陈旧值 → v2.25 占位符 → v2.26 占位符)——v3 池条目"⑧ 封闭清单外
+#   散文占位符入终态拦截"经 v2.26 评审 T-6 裁决升格落地(连续两版同型失误)。
+# 形态: 当前版本交付文档(含 rN 轮)反向扫描——裸方括号占位符不得出现;
+#   表格行与 ``` 围栏内行豁免(判据引用/红原文证据形态, 与登记提取管线同款
+#   过滤, 防自指误伤), 反斜杠转义判据引用形态天然不命中。
+# 位置注记: 本节必须位于文末[自指]断言之前——[自指] expect = PASS+1 且自指
+#   断言须保持"最后一个断言"(行首声明 = 末行 pass 总数的不变量)。
+# 门自证可红: 在当前版本交付文档散文行写入裸占位符 → 本节 FAIL。
+if [ -n "$V" ]; then
+    VMM_PH=$(echo "$V" | cut -d. -f1,2)
+    for phf in v${VMM_PH}开发交付*.md versions/v${VMM_PH}/DELIVERY*.md; do
+        [ -f "$phf" ] || continue                     # 空 glob 匹配(字面量)跳过——沿覆盖率行循环同款守卫
+        ph_cnt=$(grep -vE '^[[:space:]]*\|' "$phf" | awk 'BEGIN{inf=0} /^```/{inf=!inf; next} !inf' \
+                 | grep -cE '\[PENDING(-[A-Z]+)?\]')
+        if [ "${ph_cnt:-0}" -eq 0 ]; then
+            echo "ok   交付文档占位符拦截: $phf 零裸占位符 (v2.26-r2 G0-T6, CO-1(v2.26))"
+            PASS=$((PASS + 1))
+        else
+            echo "FAIL 交付文档占位符拦截: $phf 命中 ${ph_cnt} 处裸占位符 (占位符入终态——v2.25/v2.26 同族, T-6 拦截)"
+            FAIL=$((FAIL + 1))
+        fi
+    done
+fi
+
 # ---- v2.1 P0-2 自指断言: 交付文档声明的 docsync 计数 = 本轮实测(含本断言) ----
 # 约定(README checklist #8): 当前版本交付文档须有一行 **行首**(允许 markdown 引用/表格
 #   前缀 > 或 |)以 "本版 docsync" 开头, 形如 "> 本版 docsync：**186/186**";
