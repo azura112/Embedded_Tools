@@ -727,11 +727,11 @@ int main(void)
               300000.0 * 256.0);
     report_mb("ringbuf block 256B (cap 4000 non-POW2)", bench_rb_block_nonpow2,
               300000.0 * 256.0);
-    report_mb("crc16-ccitt (4KB x512; table iff ET_CRC_TABLE=1)",
+    report_mb("crc16-ccitt (4KB x8192; table iff ET_CRC_TABLE=1)",
               bench_crc16, 8192.0 * 4096.0);
-    report_mb("crc16-modbus (4KB x512; table iff ET_CRC_TABLE=1)",
+    report_mb("crc16-modbus (4KB x2048; table iff ET_CRC_TABLE=1)",
               bench_crc16_modbus, 2048.0 * 4096.0);
-    report_mb("crc32 (4KB x512; table iff ET_CRC_TABLE=1)", bench_crc32, 2048.0 * 4096.0);
+    report_mb("crc32 (4KB x2048; table iff ET_CRC_TABLE=1)", bench_crc32, 2048.0 * 4096.0);
     report_mb("xmodem eff. payload 128B blocks", bench_xmodem, 80000.0 * 128.0);
     report_ops("kv set+get (32B val, host flash)", bench_kv, 4500.0);
     report_ns("filter movavg update", bench_filter, 30000000.0);
