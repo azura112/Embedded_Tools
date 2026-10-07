@@ -195,8 +195,8 @@ assert_grep "docs/API_GUIDE.md"   "ET_SMAP_KEY_MAX"           "API_GUIDE 配置�
 assert_grep "docs/bench.md"       "smap str get"              "bench 含 smap 查找行(P3-2)"
 assert_grep "protocol/et_crc.c"   "s_crc32_tbl"               "et_crc CRC32 查表路径(P3-1)"
 assert_grep "tools/docbuild.sh"   "docbuild"                  "docbuild 脚本存在(P1-3)"
-assert_grep "port/stm32f103/README.md" "```docbuild"          "f103 README docbuild 定界"
-assert_grep "port/stm32g474/README.md"  "```docbuild"         "g474 README docbuild 定界"
+assert_grep "port/stm32f103/README.md" '```docbuild'          "f103 README docbuild 定界"      # v2.26 P0-6: 双引号→单引号——原反引号被命令替换致 grep 空模式恒真(v2.4 起存量), 复位为真判定(CO-3 评审条件/HC-7 显式授权)
+assert_grep "port/stm32g474/README.md"  '```docbuild'         "g474 README docbuild 定界"      # 同上
 assert_grep ".github/workflows/ci.yml"  "docbuild"            "CI 含 docbuild job"
 assert_grep "README.md"           "数字回刷纪律"              "README checklist 第 7 条(P1-4)"
 assert_grep "tools/pack_image.py" "ETBI"                      "ETBI 打包工具存在(走单3配套)"
