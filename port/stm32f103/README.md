@@ -129,6 +129,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.24 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7~v2.23 行逐值相同（本版无库内代码改动，构建实测回填） |
 | v2.25 | 23884 | 24 | 740 | 默认裁剪构建；**功能版**（bench 相对比值化[M1-①]——`tools/bench.c` 为 host 基准工具不进 port 构建，库面零改动，`apidump --diff` 对 v2.24 基线 0/0）：versions/ 目录迁移与门适配批；text +4 B 为版本宏常量折叠差回摆（v2.24 行 23880，v2.22/v2.23 行 23884；构建实测回填） |
 | v2.25 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7~v2.24 行逐值相同（本版无库内代码改动，构建实测回填） |
+| v2.26 | 23884 | 24 | 740 | 默认裁剪构建；**维护版**（v2.25 评审 T-1..T-6 勘误收敛 + AC-6 判据稳健化——bench 标签为 host 工具面不进 port 构建，库面零改动，`apidump --diff` 对 v2.25 基线 0/0）；与 v2.22–v2.25 行逐值相同（本版构建实测回填） |
+| v2.26 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7~v2.25 行逐值相同（本版构建实测回填） |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
