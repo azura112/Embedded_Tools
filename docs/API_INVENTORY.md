@@ -6,7 +6,7 @@
 
 ## et_config.h
 
-### 宏 (51)
+### 宏 (55)
 
 - `ET_ASSERT(cond) ((void)0)`
 - `ET_CRC_TABLE 0`
@@ -16,6 +16,8 @@
 - `ET_MEDFILT_WIN_MAX 15`
 - `ET_MEMPOOL_ALIGN ((uint32_t)sizeof(void *))`
 - `ET_MEMPOOL_STRICT 1`
+- `ET_METRICS_KEY_MAX 16u`
+- `ET_METRICS_MAX 16u`
 - `ET_MODULE_ATCMD 1`
 - `ET_MODULE_BOOTCTL 1`
 - `ET_MODULE_BYTES 1`
@@ -33,6 +35,7 @@
 - `ET_MODULE_MAP 1`
 - `ET_MODULE_MEDFILT 1`
 - `ET_MODULE_MEMPOOL 1`
+- `ET_MODULE_METRICS 1`
 - `ET_MODULE_MODBUS 1`
 - `ET_MODULE_PID 1`
 - `ET_MODULE_QUEUE 1`
@@ -48,6 +51,7 @@
 - `ET_MODULE_WDT 1`
 - `ET_MODULE_XMODEM 1`
 - `ET_RINGBUF_POW2 0`
+- `ET_SCHED_MISS_TOL_MS 2u`
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
@@ -365,6 +369,38 @@
 - `ET_LOG_LEVEL_TRACE 0`
 - `ET_LOG_LEVEL_WARN 3`
 - `ET_LOG_MAX_LEVEL ET_LOG_LEVEL_TRACE`
+
+## debug/et_metrics.h
+
+### 函数声明 (17)
+
+- `bool et_metrics_get(const et_metrics_t *m, const char *key, uint32_t *out)`
+- `bool et_metrics_init(et_metrics_t *m, et_metrics_slot_t *slots, uint32_t cap)`
+- `bool et_metrics_iter(const et_metrics_t *m, uint32_t idx, const char **key, uint32_t *val, uint8_t *kind)`
+- `bool et_metrics_link_hist(et_metrics_t *m, const char *key, void *hist)`
+- `bool et_metrics_observe(et_metrics_t *m, const char *key, uint32_t v)`
+- `bool et_metrics_register_counter(et_metrics_t *m, const char *key)`
+- `bool et_metrics_register_gauge(et_metrics_t *m, const char *key)`
+- `uint32_t et_features_format(char *buf, uint32_t buf_cap)`
+- `uint32_t et_metrics_count(const et_metrics_t *m)`
+- `uint32_t et_metrics_format(const et_metrics_t *m, char *buf, uint32_t buf_cap)`
+- `void et_features_cmd(char *args, void *user)`
+- `void et_metrics_add_n(et_metrics_t *m, const char *key, uint32_t n)`
+- `void et_metrics_bind(et_metrics_t *m)`
+- `void et_metrics_dump_cmd(char *args, void *user)`
+- `void et_metrics_inc(et_metrics_t *m, const char *key)`
+- `void et_metrics_reset(et_metrics_t *m)`
+- `void et_metrics_set(et_metrics_t *m, const char *key, uint32_t v)`
+
+### 类型 (2)
+
+- `et_metrics_slot_t`
+- `et_metrics_t`
+
+### 宏 (2)
+
+- `ET_METRIC_COUNTER 0u`
+- `ET_METRIC_GAUGE 1u`
 
 ## debug/et_selftest.h
 
@@ -695,13 +731,16 @@
 
 ## sys/et_sched.h
 
-### 函数声明 (7)
+### 函数声明 (10)
 
 - `bool et_sched_register(et_task_t *t, et_task_fn fn, void *arg, uint32_t period_ms)`
 - `bool et_sched_unregister(et_task_t *t)`
 - `port_tick_ms_t et_sched_next_due(void)`
 - `void et_sched_poll_once(void)`
 - `void et_sched_reset(void)`
+- `void et_sched_task_miss(const et_task_t *t, uint32_t *miss_cnt)`
+- `void et_sched_task_miss_reset(et_task_t *t)`
+- `void et_sched_task_set_tolerance(et_task_t *t, uint32_t tol_ms)`
 - `void et_sched_task_stats(const et_task_t *t, uint32_t *last_ms, uint32_t *max_ms)`
 - `void et_sched_task_stats_reset(et_task_t *t)`
 

@@ -48,6 +48,7 @@
   - [8.2 et_assert 断言](#82-et_assert-断言)
   - [8.3 et_shell 行式交互壳](#83-et_shell-行式交互壳)
   - [8.4 et_selftest 板上自测组件](#84-et_selftest-板上自测组件-v17)
+  - [8.5 et_metrics 运行指标注册表](#85-et_metrics-运行指标注册表-v227)
 - [9. port 平台适配契约](#9-port-平台适配契约)
 - [10. 配置项参考](#10-配置项参考)
 - [11. 典型组合配方](#11-典型组合配方)
@@ -59,6 +60,7 @@
   - [11.12 任务耗时分布诊断](#1112-任务耗时分布诊断et_sched_task_stats--et_histv23)
   - [11.13 kv 参数暴露为保持寄存器](#1113-kv-参数暴露为保持寄存器et_modbus--et_kvv24)
   - [11.14 主站轮询多从站(与 et_sched 协作)](#1114-主站轮询多从站与-et_sched-协作v25)
+  - [11.15 运行指标登记与板侧自描述](#1115-运行指标登记与板侧自描述et_metrics--atfeaturesv227)
 
 ---
 
@@ -609,6 +611,19 @@ while (1) {
 | `void et_sched_reset(void)` | 🏠MAIN | 注销全部 |
 | `void et_sched_task_stats(t, &last_ms, &max_ms)` (v2.2) | 读 | 任务执行耗时：上次 / 注册以来最长（毫秒时基分辨率，亚毫秒任务报 0；输出指针可空） |
 | `void et_sched_task_stats_reset(t)` (v2.2) | 🏠MAIN | 清零该任务耗时统计（不影响调度；重注册即重新起算） |
+| `void et_sched_task_miss(t, &miss_cnt)` (v2.27) | 读 | 周期失准次数：实际间隔 > `period_ms + tol_ms` 时每补跑计一次；未注册报 0，输出指针可空 |
+| `void et_sched_task_miss_reset(t)` (v2.27) | 🏠MAIN | 清零该任务 miss 计数（不影响调度与耗时统计） |
+| `void et_sched_task_set_tolerance(t, tol_ms)` (v2.27) | 🏠MAIN | 设置该任务判定容差；注册时置 `ET_SCHED_MISS_TOL_MS` 默认值，传 0 = 严格判「实际间隔 > period_ms」 |
+
+**失准计数口径（v2.27，REQ-9）**：`et_sched_poll_once` 在**重锚定之前**用「本次实际间隔 elapsed」判定，
+`elapsed > period_ms + tol_ms` 才计一次——恰好按周期到点（elapsed == period）**不计**，落在容差内**不计**。
+一次补跑**至多计一次**：主循环停转 10 个周期也只 +1，不逐周期累计。
+**已知边界（REQ-9 非目标原文承接）**：① 主循环停转期间的漏检属已知边界——本计数回答"有没有失准、发生了几次"，
+不回答"一共错过了几个周期"（后者需时基差值换算，且与"不补跑积压"的调度策略冲突）；
+② 计数只观测，**不改变调度行为**（补跑一次 + 重锚的语义与 v2.2 前逐字一致）；
+③ 与 `last_ms`/`max_ms` 的语义差别：耗时 = **任务函数本身**执行多久，miss = **相邻两次运行的间隔**是否超标——
+主循环被别处阻塞时耗时可能为 0 而 miss 仍在涨，两者必须一起看（读数配方见 11.15）；
+④ 容差是每任务属性，注册时置默认宏，个别任务可用 setter 覆写。
 
 ⚠️ 与 stimer 不同，本模块**全部 API 仅限主循环**——因此内部零临界区。ISR 与调度任务的交互请走 `et_event` 或 `et_queue`。
 
@@ -1452,6 +1467,46 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 - **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
 - **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
 
+### 8.5 et_metrics 运行指标注册表 (v2.27)
+
+把散在 10+ 个模块里的运行读数收拢成**命名指标表**，板上一条 `AT+METRICS` 读全，`AT+FEATURES` 自证烧的是哪个版本、哪些模块被裁剪。定容、零动态内存、多实例；库**不强制**改任何既有模块，登记动作由应用侧做。
+
+| 函数 | 上下文 | 说明 |
+|---|---|---|
+| `bool et_metrics_init(m, slots, cap)` | 🏠MAIN | 句柄 + 调用方槽数组（形态同 `et_smap_init`），整表清零；cap ≥ 1 |
+| `bool et_metrics_register_counter(m, key)` | 🏠MAIN | 登记计数器（只增语义，行尾 `c`）；值起算 0 |
+| `bool et_metrics_register_gauge(m, key)` | 🏠MAIN | 登记仪表（可覆写语义，行尾 `g`） |
+| `bool et_metrics_link_hist(m, key, hist)` | 🏠MAIN | 给仪表挂 `et_hist_t*`（传 NULL 解绑）；形参取 `void*` 是刻意的——本头不依赖 `ET_MODULE_HIST` |
+| `void et_metrics_inc(m, key)` | 🔒ISR-safe | 自增 1；键不存在静默返回 |
+| `void et_metrics_add_n(m, key, n)` | 🔒ISR-safe | 加 n |
+| `void et_metrics_set(m, key, v)` | 🔒ISR-safe | 置值（仪表语义） |
+| `bool et_metrics_get(m, key, &out)` | 🔒ISR-safe | **未登记如实返回 false 且 out = 0**；out 可空仅测存在性 |
+| `bool et_metrics_observe(m, key, v)` | 🏠MAIN | 置值 + 若挂接直方图则同时入桶（多字更新，故不标 ISR-safe） |
+| `uint32_t et_metrics_count(m)` | 🏠MAIN | 有效指标数 |
+| `bool et_metrics_iter(m, idx, &key, &val, &kind)` | 🏠MAIN | 按**登记顺序**迭代；idx 越界 false；输出指针均可空 |
+| `void et_metrics_reset(m)` | 🏠MAIN | 值清零，**登记与挂接保留**，`dropped` 一并清零 |
+| `uint32_t et_metrics_format(m, buf, cap)` | 🏠MAIN | **dump 的唯一渲染源**（板上与 host 单测同一函数）；返回写入字节数（不含 NUL） |
+| `void et_metrics_bind(m)` | 🏠MAIN | 告知 dump 命令读哪一份注册表（库内只存只读句柄，存储仍归调用方） |
+| `void et_metrics_dump_cmd(args, user)` | 🏠MAIN | 预置 handler（`AT+METRICS`）；`user` = `et_shell_t*`，NULL 时走日志面 |
+| `uint32_t et_features_format(buf, cap)` | 🏠MAIN | 裁剪/特性自描述渲染：版本三件 + 开关逐行 0/1（表在编译期构建） |
+| `void et_features_cmd(args, user)` | 🏠MAIN | 预置 handler（`AT+FEATURES`）；user/输出通道同上 |
+
+- **渲染形态**（逐字，LF 结尾，无空行）：`METRICS <count>/<cap> drop=<dropped>` 表头 + 每指标一行 `  <key>=<val> <c|g>`；
+  `FEATURES v<主.次.补> (maj=… min=… pat=…) sw=<开关数>` 表头 + 每开关一行 `  <MODULE>=<0|1>`；
+- **拒绝语义**：空键 / 超长（> `ET_METRICS_KEY_MAX`）/ 重名 / 满表 → 返回 false 并 `dropped++`，
+  **不覆盖任何既有指标**（`dropped` 出现在 dump 表头，现场一眼可见"登记有没有掉"）；
+- **存储形态**：自建定容线性表，键**内嵌于槽**（非复用 `core/et_smap`）——指标量级为个位数到数十，
+  线性查找足够，且 dump 顺序 = 登记顺序（渲染可预期）；
+- **ISR-safe 前提**：`inc/add_n/set/get` 为单字（32 位）读写，前提是**同一指标由单一上下文写**
+  （与 `core/et_ringbuf.h` / `sys/et_wdt.h` 同族声明）。两上下文写同一键属数据竞争，本模块不代加锁；
+- **非目标**：不做掉电保持（交 `et_kv`）、不做浮点/均值聚合（交 `et_stats`）、不做动态订阅或广播；
+- **边界**：`AT+FEATURES` 报的是**编译期开关值**，不是"运行时链接了没"——`.c` 未移出编译列表而开关置 0 时，
+  报 0 且对应模块 API 不存在（头文件内容被 `#if` 屏蔽）；模块数 ≠ 开关数（35 模块 / 32 开关，
+  差因 = `et_xmodem_tx` 共享 `ET_MODULE_XMODEM`、`et_modbus_master` 共享 `ET_MODULE_MODBUS`、`et_assert` 无开关）；
+- **登记义务**：新增 `ET_MODULE_*` 开关必须同步登记进 `debug/et_metrics.c` 的特性表——
+  `sh tools/docsync.sh` 断言"表行数 == `et_config.h` 开关数"，漏登记即红；
+- 用法与板侧走单见 [11.15 运行指标登记与板侧自描述](#1115-运行指标登记与板侧自描述et_metrics--atfeaturesv227)。
+
 ### 9.1 已验证平台
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
@@ -1484,6 +1539,10 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 | `ET_MODULE_MAP` | 1 | 定容映射（v1.8，core） |
 | `ET_MODULE_SMAP` | 1 | 定容字符串键映射（v1.9，core） |
 | `ET_SMAP_KEY_MAX` | 16 | et_smap 键长上限（字节，不含 NUL）；`-D` 覆盖需同步扩池预算 |
+| `ET_MODULE_METRICS` | 1 | 运行指标注册表（v2.27，debug）：置 0 后 `debug/et_metrics.c` 不参与编译，`AT+METRICS`/`AT+FEATURES` 两命令面随之消失 |
+| `ET_METRICS_KEY_MAX` | 16 | et_metrics 指标键长上限（字节，不含 NUL；键内嵌于槽）；超长/空键登记被拒并计 `dropped`，不静默截断 |
+| `ET_METRICS_MAX` | 16 | et_metrics **默认槽数建议值**（实际容量 = `init` 时调用方提供的数组长度）；同时用于 dump 命令的缓冲预算——绑定实例 cap 大于此值时渲染可能截断（口径见 8.5） |
+| `ET_SCHED_MISS_TOL_MS` | 2 | et_sched 周期失准判定默认容差 ms（v2.27，REQ-9）：实际间隔 > `period_ms + 本值` 才计一次 miss；按任务可用 `et_sched_task_set_tolerance()` 覆写 |
 | `ET_SELFTEST_MAX_EXTRA` | 4 | et_selftest 动态注册套件槽位数 |
 | `ET_CRC_TABLE` | 0 | 查表加速：CRC16-CCITT(512B 表) / CRC16-MODBUS(512B 表, v2.2 扩展) / CRC32/IEEE(1KB 表) 同开关，静态表驻只读段；默认位算法零 RAM |
 | `ET_CRC_TABLE_SECTION` | 未定义 | 查表放置段(如 `.crc_flash`)，仅 GCC/Clang 生效 |
@@ -2025,3 +2084,102 @@ for (;;) {
 ⑤ **库不提供**：从站表、优先级、轮询调度、告警策略 —— 这些是应用职责（HC-4）。
 
 **可执行载体**：主站单事务全路径自检 = [`examples/ex_modbus_master.c`](../examples/ex_modbus_master.c)（内置模拟从站，`make ex`）；PC 侧从站仿真器 = [`tools/modbus_master.py --slave`](../tools/modbus_master.py)。
+
+---
+
+### 11.15 运行指标登记与板侧自描述（et_metrics × AT+FEATURES，v2.27）
+
+**要解决的问题**：现场排障时读数散在各模块（sched 的 last/max 与 miss、modbus 的 crc_err、kv 的 erase_cnt、
+selftest 的报告……），要么逐个敲命令，要么回工程里对编译配置。本配方把两件事一次收口：
+① 一条 `AT+METRICS` 读出全部**命名指标**；② 一条 `AT+FEATURES` 自证烧的是哪个版本、哪些开关为 0。
+
+```c
+#include "et_metrics.h"
+#include "et_sched.h"
+#include "et_hist.h"
+
+/* 1) 注册表存储由调用方持有(零动态内存)，容量 = 数组长度 */
+#define APP_METRICS 8u
+static et_metrics_slot_t g_mslots[APP_METRICS];
+static et_metrics_t      g_metrics;
+static uint32_t          g_loop_bins[4];
+static et_hist_t         g_loop_hist;
+
+/* 2) 调度任务(周期 20ms) + 指标登记 */
+static et_task_t t_loop;
+
+static void loop_task(void *arg)
+{
+    uint32_t last, max, miss;
+
+    (void)arg;
+    /* ... 本任务实际工作 ... */
+
+    /* 桥接: 既有模块的 stats → 命名指标(HC-9 —— 联动只在应用侧做，
+     * sys/et_sched 不 include debug/et_metrics.h，依赖方向保持单向向下) */
+    et_sched_task_stats(&t_loop, &last, &max);
+    et_sched_task_miss(&t_loop, &miss);
+    et_metrics_observe(&g_metrics, "loop_last_ms", last);   /* 仪表 + 入桶 */
+    et_metrics_set(&g_metrics, "loop_max_ms", max);
+    if (miss != 0u){
+        et_metrics_set(&g_metrics, "loop_miss", miss);      /* 只存最新值 */
+    }
+}
+
+void app_metrics_setup(void)
+{
+    (void)et_metrics_init(&g_metrics, g_mslots, APP_METRICS);
+    (void)et_metrics_register_counter(&g_metrics, "rx_frames");
+    (void)et_metrics_register_counter(&g_metrics, "rx_crc_err");
+    (void)et_metrics_register_gauge(&g_metrics, "loop_last_ms");
+    (void)et_metrics_register_gauge(&g_metrics, "loop_max_ms");
+    (void)et_metrics_register_gauge(&g_metrics, "loop_miss");
+    (void)et_hist_init(&g_loop_hist, g_loop_bins, 4u, 0, 30);
+    (void)et_metrics_link_hist(&g_metrics, "loop_last_ms", &g_loop_hist);
+
+    /* ISR 侧只做自增(前提: 该键由单一上下文写) */
+    /*   void USART1_IRQHandler(void){ et_metrics_inc(&g_metrics, "rx_frames"); } */
+
+    (void)et_sched_register(&t_loop, loop_task, NULL, 20u);
+    et_metrics_bind(&g_metrics);        /* 命令面绑定要 dump 的那一份注册表 */
+}
+```
+
+命令表注册（库不持有命令表，沿 `{"HELP", et_shell_help_cmd}` 先例）：
+
+```c
+static const et_atcmd_entry_t g_atcmds[] = {
+    { "VER",      cmd_ver,        "print version"        },
+    { "HELP",     et_shell_help_cmd, "list commands"     },
+    { "METRICS",  et_metrics_dump_cmd, "dump named metrics + hist" },
+    { "FEATURES", et_features_cmd,     "modules + version self-describe" },
+};
+/* et_atcmd_init(...) 的 user 传 &g_shell → 两命令经 et_shell_puts 输出 */
+```
+
+板上读数形态（示意值；v2.27 G474 实测逐行读数见 `移植stm32实机记录.md` §17）：
+
+```
+AT+METRICS
+METRICS 5/8 drop=0
+  rx_frames=1043 c
+  rx_crc_err=2 c
+  loop_last_ms=7 g
+  loop_max_ms=18 g
+  loop_miss=1 g
+
+AT+FEATURES
+FEATURES v2.27.0 (maj=2 min=27 pat=0) sw=32
+  RINGBUF=1
+  ...
+  SELFTEST=0
+  ...
+  METRICS=1
+```
+
+**注意**：① `dropped` 非 0 = 有登记被拒（满表/重名/空键/超长），先扩容量再查键名，
+别把"指标不见了"误判成"模块没跑"；② dump 顺序 = 登记顺序，写脚本对账时可靠；
+③ `et_metrics_bind()` 上例最后一次调用才是有效绑定（中间那句 `bind(NULL)` 只是演示解绑语义，
+实际工程写一次即可）；④ miss 计数回答"有没有失准"，不回答"错过了几个周期"（口径与边界见 4.2）；
+⑤ `AT+FEATURES` 的 0/1 是**编译期开关值**——`SELFTEST=0` 是发布默认裁剪态的如实上报，不是异常；
+⑥ 板上不加 selftest 套件（v2.27 裁决，沿 et_hist/et_medfilt 先例），本模块的板上验证由这两条命令直接承载。

@@ -10,14 +10,14 @@
 │  应用层 (examples/、用户固件)                                       │
 ├────────────────────────────────────────────────────────────────────┤
 │  debug/   et_shell(交互壳)  et_log(日志)  et_assert(断言钩子)        │
-│           et_selftest(板上自测, 22 套件)                            │
+│           et_selftest(板上自测, 22 套件)  et_metrics(运行指标+自描述)│
 ├────────────────────────────────────────────────────────────────────┤
 │  drivers/ et_key(按键)  et_led(LED)  et_spwm(软 PWM)                │
 │  storage/ et_kv(掉电参数)  et_bootctl(安全升级 A/B)                  │
 ├────────────────────────────────────────────────────────────────────┤
 │  protocol/et_crc(校验)  et_bytes(字节序)  et_frame(帧)              │
 │           et_atcmd(AT 命令)  et_xmodem/_tx(固件传输)  et_modbus(RTU) │
-│  sys/     et_stimer  et_sched(任务调度+耗时统计)  et_event          │
+│  sys/     et_stimer  et_sched(任务调度+耗时/失准统计)  et_event      │
 │           et_softclock(日历)  et_wdt(看门狗)                        │
 ├────────────────────────────────────────────────────────────────────┤
 │  core/    et_ringbuf  et_queue  et_mempool  et_list  et_map  et_smap│
@@ -71,7 +71,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 
 ## 3. 模块选型表（按场景查）
 
-| 你要… | 用 | 搭配/备注（34 模块按场景查） |
+| 你要… | 用 | 搭配/备注（35 模块按场景查） |
 |---|---|---|
 | 中断与主循环传字节 | `et_ringbuf` | SPSC 无锁，ISR-safe 写 |
 | 传"消息"而非字节流 | `et_queue` | 同款无锁技巧 |
@@ -101,6 +101,8 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 | CRC 校验 | `et_crc` | `ET_CRC_TABLE=1` 查表加速 |
 | 日志/断言 | `et_log` / `et_assert` | 失败钩子可落 kv |
 | 一条命令全模块冒烟 | `et_selftest` | 22 套件，板上可跑 |
+| 一条命令读全部命名指标 | `et_metrics` | v2.27：定容登记表 + 可选直方图挂接，`AT+METRICS` dump |
+| 板上自证版本与裁剪面 | `et_metrics`(`AT+FEATURES`) | v2.27：32 个开关逐行 0/1 + 版本三件，未启用如实报 0 |
 
 ## 4. 验证金字塔（质量门怎么咬合）
 
@@ -109,7 +111,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 22/22)
       host 单测  (497 用例 × 2 几何 + 1K 变体 + Tab 形态)
      配方载体    (make ex: 五例自检式示例, CI 常设)
-    机制门       (docsync 347 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
+    机制门       (docsync 370 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
 ```
 
 层级关系：**下层红，上层必红**；示例（配方载体）用公开 API 编写——API 升级即编译错，

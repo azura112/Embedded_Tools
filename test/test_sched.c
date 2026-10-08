@@ -381,6 +381,160 @@ static void sc_stats_reregister_restarts(void)
     ET_CHECK_U32_EQ(0u, max);
 }
 
+/* ---- v2.27 周期失准计数(REQ-9)用例: 虚拟时基推进, 逐值确定性 ---- */
+
+static void sc_miss_exact_period_not_counted(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    /* 恰好按周期到点: elapsed == period_ms, 不属失准 */
+    port_host_tick_advance(10u);
+    et_sched_poll_once();
+    port_host_tick_advance(10u);
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(2u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(0u, miss);
+}
+
+static void sc_miss_within_tolerance_not_counted(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    /* 默认容差 ET_SCHED_MISS_TOL_MS = 2ms: 11/12ms 落在容差内不计 */
+    port_host_tick_advance(11u);
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(1u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(0u, miss);
+
+    port_host_tick_advance((uint32_t)(10u + ET_SCHED_MISS_TOL_MS));  /* 边界: 恰好等于 period+tol */
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(2u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(0u, miss);
+}
+
+static void sc_miss_beyond_tolerance_counted(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    port_host_tick_advance((uint32_t)(10u + ET_SCHED_MISS_TOL_MS + 1u));   /* 超容差 1ms → 计 */
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(1u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(1u, miss);
+
+    port_host_tick_advance((uint32_t)(10u + ET_SCHED_MISS_TOL_MS + 1u));   /* 再超 → 累计 */
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(2u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(2u, miss);
+}
+
+static void sc_miss_stall_counts_once_not_per_missed_period(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    port_host_tick_advance(100u);         /* 主循环停转: 名义错过 10 个周期 */
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(1u, g_run_a);         /* 调度行为零改动: 仍只补跑一次 */
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(1u, miss);            /* 一次补跑至多计一次(已知边界口径) */
+
+    port_host_tick_advance(10u);          /* 重锚后恢复节奏: 不误计 */
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(2u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(1u, miss);
+}
+
+static void sc_miss_reset_and_tolerance(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    port_host_tick_advance(13u);
+    et_sched_poll_once();
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(1u, miss);
+
+    et_sched_task_miss_reset(&t);         /* 计数清零, 调度状态不动 */
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(0u, miss);
+    ET_CHECK(t.in_list);
+    port_host_tick_advance(10u);
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(2u, g_run_a);
+
+    et_sched_task_set_tolerance(&t, 0u);  /* 容差收紧到 0: 超一点即计 */
+    port_host_tick_advance(11u);
+    et_sched_poll_once();
+    ET_CHECK_U32_EQ(3u, g_run_a);
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(1u, miss);
+}
+
+static void sc_miss_reregister_restarts(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+    et_sched_task_set_tolerance(&t, 50u);
+    port_host_tick_advance(61u);
+    et_sched_poll_once();
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(1u, miss);
+
+    ET_CHECK(et_sched_unregister(&t));
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));    /* 重注册: 计数与容差回默认 */
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(0u, miss);
+    port_host_tick_advance((uint32_t)(10u + ET_SCHED_MISS_TOL_MS));
+    et_sched_poll_once();
+    et_sched_task_miss(&t, &miss);
+    ET_CHECK_U32_EQ(0u, miss);            /* 容差已从 50 复位为默认 2, 边界值仍不计 */
+}
+
+static void sc_miss_null_safety(void)
+{
+    static et_task_t t;
+    uint32_t miss = 99u;
+
+    setup();
+    ET_CHECK(et_sched_register(&t, cb_run_a, NULL, 10u));
+
+    et_sched_task_miss(NULL, &miss);                      /* NULL 任务: 如实报 0 */
+    ET_CHECK_U32_EQ(0u, miss);
+    et_sched_task_miss(&t, NULL);                         /* NULL 输出: 不取该项 */
+    et_sched_task_miss_reset(NULL);
+    et_sched_task_set_tolerance(NULL, 5u);
+    /* 未注册任务: 查询报 0, 设置容差不影响任何在表任务 */
+    {
+        static et_task_t un;
+        uint32_t         v = 7u;
+
+        et_sched_task_miss(&un, &v);
+        ET_CHECK_U32_EQ(0u, v);
+    }
+}
+
 const et_test_case_t *test_sched_cases(size_t *count)
 {
     static const et_test_case_t tbl[] = {
@@ -403,6 +557,13 @@ const et_test_case_t *test_sched_cases(size_t *count)
         {"sched.stats_reset",          sc_stats_reset},
         {"sched.stats_independent",    sc_stats_multi_task_independent},
         {"sched.stats_reregister",     sc_stats_reregister_restarts},
+        {"sched.miss_exact_zero",      sc_miss_exact_period_not_counted},
+        {"sched.miss_in_tolerance",    sc_miss_within_tolerance_not_counted},
+        {"sched.miss_beyond_counted",  sc_miss_beyond_tolerance_counted},
+        {"sched.miss_stall_once",      sc_miss_stall_counts_once_not_per_missed_period},
+        {"sched.miss_reset_tol",       sc_miss_reset_and_tolerance},
+        {"sched.miss_reregister",      sc_miss_reregister_restarts},
+        {"sched.miss_null_safety",     sc_miss_null_safety},
     };
     *count = sizeof(tbl) / sizeof(tbl[0]);
     return tbl;

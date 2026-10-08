@@ -442,6 +442,42 @@ assert_grep "docs/bench.md"       "v2.5.0"                  "bench 文档含 v2.
 assert_grep "docs/API_GUIDE.md"   "32 位参数"               "API_GUIDE 11.13 补 32 位组合说明(P3-3)"
 assert_grep "移植stm32实机记录.md" "v2.5.0"                 "实机记录含 v2.5 板侧章节(P2)"
 
+# ---- v2.27 P1 库面功能批 (REQ-6 et_metrics / REQ-9 sched 失准计数 / REQ-8 AT+FEATURES) ----
+# 形态沿 v2.3 et_hist 新模块先例(纯新增断言块, 既有断言零改动; HC-7 授权面)。
+assert_grep "et_config.h"              "ET_MODULE_METRICS"           "et_config 含 METRICS 开关(P1-1)"
+assert_grep "et_config.h"              "ET_METRICS_KEY_MAX"          "et_config 含 metrics 键上限(P1-1)"
+assert_grep "et_config.h"              "ET_SCHED_MISS_TOL_MS"        "et_config 含 sched 失准容差宏(P1-2)"
+assert_grep "Makefile"                 "debug/et_metrics.c"          "Makefile 含 et_metrics 源(P1-1)"
+assert_grep "Makefile"                 "test/test_metrics.c"         "Makefile 含 test_metrics(P1-1)"
+assert_grep "test/test_main.c"         "test_metrics_cases"          "test_main 注册 metrics 套件(P1-1)"
+assert_grep "debug/et_metrics.c"       "et_metrics_format"           "metrics 渲染唯一源在档(P1-1)"
+assert_grep "debug/et_metrics.c"       "et_features_format"          "特性自描述渲染在档(P1-3)"
+assert_grep "debug/et_metrics.h"       "ISR-safe"                    "metrics 逐 API 并发标注在档(HC-9)"
+assert_grep "sys/et_sched.h"           "et_sched_task_miss"          "et_sched 失准查询 API(P1-2)"
+assert_grep "sys/et_sched.h"           "et_sched_task_set_tolerance" "et_sched 容差 setter(签名零改, HC-6)"
+assert_grep "test/test_sched.c"        "sched.miss_beyond_counted"   "sched 失准用例在档(P1-2)"
+assert_no_grep "sys/et_sched.c"        "et_metrics.h"                "sched 不含 metrics(依赖单向向下, HC-9)"
+assert_grep "README.md"                "et_metrics"                  "README 特性表: metrics(P1-1)"
+assert_grep "docs/API_GUIDE.md"        "8.5 et_metrics"              "API_GUIDE: metrics 章节(P1-1)"
+assert_grep "docs/API_GUIDE.md"        "11.15"                       "API_GUIDE: 指标登记与自描述配方(P1-1/P1-3)"
+assert_grep "docs/API_GUIDE.md"        "ET_METRICS_KEY_MAX"          "API_GUIDE 配置表: metrics 键上限(P1-1)"
+assert_grep "docs/API_GUIDE.md"        "ET_SCHED_MISS_TOL_MS"        "API_GUIDE 配置表: sched 容差(P1-2)"
+assert_grep "docs/API_GUIDE.md"        "miss_cnt"                    "API_GUIDE 4.2 失准计数口径(P1-2)"
+assert_grep "docs/architecture.md"     "et_metrics"                  "architecture 选型表含 metrics(P1-1)"
+assert_grep "docs/architecture.md"     "FEATURES"                    "architecture 含板侧自描述面(P1-3)"
+# 特性表与开关数对账(REQ-8 原文的数字失实面: 34 是模块数, 开关数实测 31→本版 32):
+#   et_metrics.c 的 ET_FEAT(...) 表行数必须 == et_config.h 的 ^#define ET_MODULE_ 行数。
+# 门自证可红: 新增一个 ET_MODULE_* 开关而不在此表登记 → 本节 FAIL。
+feat_rows=$(grep -c '^    ET_FEAT(' debug/et_metrics.c)
+sw_rows=$(grep -c '^#define ET_MODULE_' et_config.h)
+if [ "${feat_rows:-0}" -eq "${sw_rows:-0}" ]; then
+    echo "ok   特性表与开关数一致 ($feat_rows ↔ et_config.h AT+FEATURES 面, P1-3)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL 特性表行数 ${feat_rows:-?} ≠ et_config.h 开关数 ${sw_rows:-?} (新增开关未登记入 AT+FEATURES, P1-3)"
+    FAIL=$((FAIL + 1))
+fi
+
 # ---- v2.6 P0-2 跨文档计数一致性 (CO-3/CO-4 漏刷的根因根治, HC-4) ----
 # 单一来源 = README(交付时回刷的唯一权威); architecture 机制门行与 API_GUIDE 的
 # 对应数字必须**与实测/README 一致**, 而非各自写死。v2.5 的 examples 数(architecture

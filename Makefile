@@ -41,7 +41,7 @@ ALGO_SRC    := algorithm/et_filter.c algorithm/et_medfilt.c algorithm/et_pid.c a
 SYS_SRC     := sys/et_stimer.c sys/et_sched.c sys/et_event.c sys/et_softclock.c sys/et_wdt.c
 PROTO_SRC   := protocol/et_crc.c protocol/et_bytes.c protocol/et_frame.c protocol/et_atcmd.c protocol/et_xmodem.c protocol/et_xmodem_tx.c protocol/et_modbus.c protocol/et_modbus_master.c
 DRIVERS_SRC := drivers/et_key.c drivers/et_led.c drivers/et_spwm.c
-DEBUG_SRC   := debug/et_log.c debug/et_assert.c debug/et_shell.c debug/et_selftest.c
+DEBUG_SRC   := debug/et_log.c debug/et_assert.c debug/et_shell.c debug/et_selftest.c debug/et_metrics.c
 STORAGE_SRC := storage/et_kv.c storage/et_bootctl.c
 PORT_SRC    := port/host/port_host.c
 LIB_SRC     := $(CORE_SRC) $(ALGO_SRC) $(SYS_SRC) $(PROTO_SRC) $(DRIVERS_SRC) $(DEBUG_SRC) $(STORAGE_SRC)
@@ -52,7 +52,7 @@ TEST_SRC := test/et_test.c test/test_ringbuf.c test/test_queue.c test/test_mempo
             test/test_crc.c test/test_bytes.c test/test_frame.c test/test_atcmd.c test/test_xmodem.c test/test_modbus.c test/test_modbus_master.c test/test_shell.c test/test_shell_hist.c \
             test/test_key.c test/test_led.c test/test_spwm.c \
             test/test_log.c test/test_assert.c test/test_kv.c test/test_bootctl.c test/test_wdt.c \
-            test/test_selftest.c test/test_map.c test/test_smap.c test/test_shell_tab.c test/test_xmodem_tx.c test/test_main.c
+            test/test_selftest.c test/test_map.c test/test_smap.c test/test_shell_tab.c test/test_xmodem_tx.c test/test_metrics.c test/test_main.c
 
 DEMO_SRC := examples/posix_demo.c
 

@@ -129,6 +129,9 @@ extern "C" {
 #ifndef ET_MODULE_LOG
 #define ET_MODULE_LOG           1   /* debug: 分级日志                  */
 #endif
+#ifndef ET_MODULE_METRICS
+#define ET_MODULE_METRICS       1   /* debug: 运行指标注册表(v2.27)     */
+#endif
 
 /* ===================== et_ringbuf ===================== */
 /* 容量保证为 2 的幂时置 1, 取模运算优化为位与; 容量非 2 的幂必须为 0 */
@@ -170,6 +173,27 @@ extern "C" {
 /* 直方图桶数上限(uint8 索引); 桶数组由调用方按实际 bin_count 分配 */
 #ifndef ET_HIST_BIN_MAX
 #define ET_HIST_BIN_MAX         255
+#endif
+
+/* ===================== et_sched (v2.27 失准计数) ===================== */
+/* 周期失准判定默认容差 ms: 实际间隔 > period_ms + 本值 才计一次 miss。
+ * 取 2ms 的理由: 时基粒度 1ms 且 poll_once 每圈重取时基, 1 tick 的相位抖动
+ * 属正常(不算失准), 留 2 tick 余数吸收之; 需更严/更宽按任务用
+ * et_sched_task_set_tolerance() 覆写(传 0 = 严格判 > period_ms)。 */
+#ifndef ET_SCHED_MISS_TOL_MS
+#define ET_SCHED_MISS_TOL_MS    2u
+#endif
+
+/* ===================== et_metrics (v2.27) ===================== */
+/* 注册表默认槽数建议值(实际容量 = init 时调用方提供的数组长度, 本值只用于
+ * 文档示例与 dump 缓冲预算: 每槽最坏一行 32 字节) */
+#ifndef ET_METRICS_MAX
+#define ET_METRICS_MAX          16u
+#endif
+/* 指标键名长度上限(不含 NUL); 超长/空键注册被拒(不静默截断, 沿 et_smap 口径)。
+ * 与 ET_SMAP_KEY_MAX 同量级(默认 16), 独立命名以免与 core 层耦合 */
+#ifndef ET_METRICS_KEY_MAX
+#define ET_METRICS_KEY_MAX      16u
 #endif
 
 /* ===================== flash 参数区几何 (port 契约, 见 port.h) ===================== */

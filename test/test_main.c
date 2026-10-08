@@ -18,6 +18,7 @@ extern const et_test_case_t *test_pid_cases(size_t *count);
 extern const et_test_case_t *test_stats_cases(size_t *count);
 extern const et_test_case_t *test_stimer_cases(size_t *count);
 extern const et_test_case_t *test_sched_cases(size_t *count);
+extern const et_test_case_t *test_metrics_cases(size_t *count);
 extern const et_test_case_t *test_event_cases(size_t *count);
 extern const et_test_case_t *test_crc_cases(size_t *count);
 extern const et_test_case_t *test_bytes_cases(size_t *count);
@@ -85,6 +86,7 @@ static const et_suite_t g_suites[] = {
     { "proto/xmodem_tx", test_xmodem_tx_cases },
     { "debug/shhist", test_shell_hist_cases },
     { "debug/shell_tab", test_shell_tab_cases },
+    { "debug/metrics",  test_metrics_cases   },
 };
 
 int main(void)

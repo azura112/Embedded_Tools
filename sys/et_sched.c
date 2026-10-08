@@ -25,6 +25,9 @@ bool et_sched_register(et_task_t *t, et_task_fn fn, void *arg, uint32_t period_m
     t->fn        = fn;
     t->arg       = arg;
     t->period_ms = period_ms;
+    t->tol_ms    = ET_SCHED_MISS_TOL_MS; /* 失准容差默认值(v2.27, REQ-9);
+                                             个别任务需更宽/更严用 set_tolerance 覆写 */
+    t->miss_cnt  = 0u;                  /* 失准计数随注册重新起算(v2.27, 同 v2.2 耗时口径) */
     t->last_run  = port_tick_get_ms();  /* 从注册时刻起算第一个周期 */
     t->last_ms   = 0u;                  /* 耗时统计随注册重新起算(v2.2) */
     t->max_ms    = 0u;
@@ -90,6 +93,19 @@ void et_sched_poll_once(void)
         }
         if (hit == NULL) {
             break;
+        }
+
+        {
+            /* 失准计数(v2.27, REQ-9): 判定用"重锚前的实际间隔", 调度行为零改动;
+             * 口径 = 实际间隔 > period_ms + tol_ms 才计一次(恰好到点不计)。
+             * 写成差值形式而非 period+tol 求和: 避免两数相加回绕成小值而漏计
+             * (tol_ms 由调用方设定, 不受 period_ms < 2^31 约束保护)。 */
+            uint32_t elapsed = (uint32_t)(now - hit->last_run);
+
+            if ((elapsed > hit->period_ms) &&
+                ((uint32_t)(elapsed - hit->period_ms) > hit->tol_ms)) {
+                hit->miss_cnt++;
+            }
         }
 
         hit->last_run = now;            /* 重锚定, 错过的周期不补跑 */
@@ -170,6 +186,37 @@ void et_sched_task_stats_reset(et_task_t *t)
     }
     t->last_ms = 0u;
     t->max_ms  = 0u;
+}
+
+void et_sched_task_miss(const et_task_t *t, uint32_t *miss_cnt)
+{
+    uint32_t v = 0u;
+
+    ET_ASSERT(t != NULL);
+    if (t != NULL) {
+        v = t->miss_cnt;
+    }
+    if (miss_cnt != NULL) {
+        *miss_cnt = v;
+    }
+}
+
+void et_sched_task_miss_reset(et_task_t *t)
+{
+    ET_ASSERT(t != NULL);
+    if (t == NULL) {
+        return;
+    }
+    t->miss_cnt = 0u;
+}
+
+void et_sched_task_set_tolerance(et_task_t *t, uint32_t tol_ms)
+{
+    ET_ASSERT(t != NULL);
+    if (t == NULL) {
+        return;
+    }
+    t->tol_ms = tol_ms;
 }
 
 #endif /* ET_MODULE_SCHED */
