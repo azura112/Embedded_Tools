@@ -131,6 +131,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.25 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7~v2.24 行逐值相同（本版无库内代码改动，构建实测回填） |
 | v2.26 | 23884 | 24 | 740 | 默认裁剪构建；**维护版**（v2.25 评审 T-1..T-6 勘误收敛 + AC-6 判据稳健化——bench 标签为 host 工具面不进 port 构建，库面零改动，`apidump --diff` 对 v2.25 基线 0/0）；与 v2.22–v2.25 行逐值相同（本版构建实测回填） |
 | v2.26 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7~v2.25 行逐值相同（本版构建实测回填） |
+| v2.27 | 25600 | 24 | 1512 | 默认裁剪构建；**功能版**（第 35 模块 `debug/et_metrics` + `et_sched` 失准计数）：text **+1716 B** / bss **+772 B** = 新模块全量入 ELF（demo 未调用，本 port 构建无 gc-sections，沿 v2.1 行同因口径）——bss 增量与命令面共用缓冲 `g_io_buf`(768) + 只读句柄(4) 逐值吻合；`miss_cnt`/`tol_ms` 为 `et_task_t` 字段追加（demo 不实例化调度任务，零增量）（构建实测回填） |
+| v2.27 | 38044 | 24 | 3792 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+1704 B** / bss **+776 B**（同因，自测套件数维持 22——本版不加板上套件，裁决见 v2.27 计划 §1.3）（构建实测回填） |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）

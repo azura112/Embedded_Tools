@@ -845,7 +845,8 @@ ch32x035 板经 WCH-Link（COM16）在位，项目本体 `D:\code\mounriver-stud
 | 版本确认 | `AT+VER` | `[166005][I][at] ver=2.10.0 boot=6` | **板上 = 2.10.0** ✓ `CO-5(v2.8)` 闭环 |
 | 形态 1 CRLF | `AT+MBRD 0 4
 ` | `MBRD reg=0 qty=4 st=2 val=0 n=4 exc=0 t=7ms` + `MBSTAT req=1 resp=1 … disc=0` | **`disc=0`** ✓ |
-| 形态 2 仅 CR | `AT+MBRD 0 4` | `MBSTAT req=2 resp=2 … crc=0 mismatch=0 late=0 disc=0` | **`disc=0`** ✓ |
+| 形态 2 仅 CR | `AT+MBRD 0 4
+` | `MBSTAT req=2 resp=2 … crc=0 mismatch=0 late=0 disc=0` | **`disc=0`** ✓ |
 | 形态 3 仅 LF | `AT+MBRD 0 4
 ` | `MBSTAT req=3 resp=3 … disc=0` | **`disc=0`** ✓ |
 | 残留物证 | `AT+MBRAW` | `MBRAW n=13 first=11 3 8 0 0 0 1 0` —— 事务首字节 = **0x11**（真请求头，非 0x0A；v2.7 实验 A 为 `first=a`） | 残留消除物证 ✓ |
@@ -858,3 +859,50 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 2. **`CO-7(v2.8)` 闭环**：三形态（CRLF/CR/LF）`disc` **全 0**（严于 AC-7 的双形态要求），`MBRAW` 首字节物证与 §15.4 实验 A 的 `first=a` 形成修复前后对照；库内 `et_modbus` 统计口径零变化（修法为板侧私有接口层）。
 3. **v2.9 挂账双项一次清偿**：本节即实机证据，`v2.9开发交付…-r2.md` 的 AC-6/AC-7 更正自此有真实闭环记录承接。
 4. 走单局限（如实）：`val=0`（从站仿真寄存器初值）、单次事务压力形态——与 §15.3"单次突发才是真实压力形态"结论一致；事务成功率覆盖（重发/异常路径）属库内 host 33 例矩阵职责，本走单不重复。
+
+## 17. v2.27 G474 板侧同步窗口——全要素走单与跨 16 版债清偿（2026-10-08）
+
+> 对应 `versions/v2.27/PLAN.md` P2-1…P2-4（`M3-①②③④`），按 §16.2 常设规程**全要素最小集**执行。
+> 板侧工程与证据目录均在**库外**（不在本仓 git）：工程 `D:\code\STM32CubeMX\G474VET6_ET_TEST\`，
+> 证据 `D:\code\STM32CubeMX\G474VET6_ET_TESTuild2.27-evidence\`（八件，见下表）。
+> 板上命令表条目数 = 开工实测 **18 项**（`AT+VER/BOOTINFO/RXSTAT/SELFTEST/SELFSTOR/WDTEST/SIMUPGRADE/UPGRADE/`
+> `PIDSET/PIDRUN/PIDOUT/MBCFG/MBRD/MBWR/MBSTAT/MBSLAVE/MBRAW/HELP`），本版后 = **20 项**（+`METRICS`/`FEATURES`）。
+
+### 17.1 规程逐步读数（每步一件落盘证据）
+
+| step | 内容 | 落盘证据 | 结果 |
+|---|---|---|---|
+| step 0 重做同步 | 库侧 `dev/v2.27` 七目录 + `et_config.h` + `port/port.h` 全量重拷 `Core/et/`（`et_port/`、`et_demo.c/h` 私有不动） | `diff_rq.txt`（七目录 + 两文件**全 OK**，含开工时点与生成时刻双份） | 板侧 `et_config.h` = **MINOR 27**（开工实测 = **10** → 跨 **16 版**同步债本次清偿；`debug/` 目录实测含 `et_metrics.c/.h`） |
+| step 0 私有 demo 改动 | `Core\Src\et_demo.c`：`et_metrics_t` 静态实例 + 12 槽 + `et_hist` 挂接 + 20ms 心跳任务（`et_sched_register`/`et_sched_poll_once`）+ 既有模块 stats 桥接（`et_modbus_stats`/`et_modbus_master_stats`/`et_sched_task_stats`/`et_sched_task_miss`）+ 命令表 `METRICS`/`FEATURES` 两行 + `et_metrics_bind` | 板侧私有文件（构建输入即此版本） | 落地；**依赖方向按 HC-9 在应用侧联动**——`sys/et_sched` 不含 `debug/et_metrics.h`（库内 docsync 反向断言同在） |
+| 重建 | `cmake --build --preset Debug`（69 目标全重建） | `build.log`（**warning/error 计数 0**） | RAM **8048 B** / FLASH **86404 B**（16.48%）——跨 16 版 API 漂移**未暴露构建红**（16 版债的真实风险由此解除） |
+| 烧前版本串机检（HC-10②） | python 字节扫描目标 ELF 的 `\d+\.\d+\.\d+` 串集合 | `version_check.txt`：`版本串集合: ['13.3.1', '2.27.0', '2.42.0', '4.4.0']`，断言 **PASS** | 集合含 **2.27.0**；其余 = 工具链/HAL 串干扰项（沿 v2.10 `['2.10.0','2.42.0']` 排除口径逐条标注）——**机检过后才烧录** |
+| 端口重新枚举（勿凭记录直连） | `serial.tools.list_ports` 全量 | `ports.txt` | **G474 = COM12**（`USB-Enhanced-SERIAL CH343`，VID:PID=1A86:55D3，SER=5AE7117074）在位且单路；**COM16 = WCH-Link 不在位** → ch32x035 挂账续期（§17.4） |
+| 烧录 | `STM32_Programmer_CLI`（**v2.19.0**，CubeCLT 1.18.0）`-c port=SWD -w build/Debug/G474VET6_ET_TEST.elf -v -rst` | `flash.log`：`Erasing [0 42]` → `Download verified successfully` → `MCU Reset` | 烧录成功；**注**：首次连接报 `No debug probe detected`（瞬态，探针枚举面实测 `STM32 STLink` VID_0483:3748 Status=OK），重试即连（ST-LINK SN 52FF6C067087535043161267 / FW V2J47S7 / 3.23V / Device ID 0x469）——如实登记，不写成"一次通过" |
+
+### 17.2 串口走单读数（原始全文 = `walk_output.txt`，摘要 = `walk_summary.md`；驱动 `walk.py` 不入库，沿 §16.4 形态）
+
+| 走单项 | 板上读数（原文摘录） | 判定 |
+|---|---|---|
+| 版本确认 `AT+VER` | `[157398][I][at] ver=2.27.0 boot=30` | **板上 = 2.27.0** ✓（HC-10③：版本宏回刷先于烧录，走单证据取自不含下一版代码的提交） |
+| **新增** `AT+FEATURES` | `FEATURES v2.27.0 (maj=2 min=27 pat=0) sw=32` + 32 行 `  MODULE=0/1` | **M3-③** ✓ 版本三件 + **32** 开关逐行在档；`SELFTEST=1` 系板侧构建启用（`AT+SELFTEST` 实跑相印证），库内发布默认 0——编译期如实上报非硬编码 |
+| 板上自测 `AT+SELFTEST` | `start (22 suites)` … `SELFTEST: 22/22 PASS` → `[at] ALL PASS` | **22 套件维持** ✓（本版不加板上套件，§1.3 裁决；`22/22` 字面六处零滚动命中） |
+| 形态 1 CRLF `AT+MBRD 0 4
+` | `MBRD reg=0 qty=4 st=2 val=1 n=4 exc=0 t=2ms` + `MBSTAT req=1 resp=1 exc_n=0 to=0 retry=0 crc=0 mismatch=0 late=0 `**`disc=0`** | **`disc=0`** ✓ |
+| 形态 2 仅 CR `AT+MBRD 0 4` | 同上 + `MBSTAT req=2 resp=2 … `**`disc=0`** | **`disc=0`** ✓ |
+| 形态 3 仅 LF `AT+MBRD 0 4
+` | 同上 + `MBSTAT req=3 resp=3 … `**`disc=0`** | **`disc=0`** ✓（三形态 = §16.4 实跑表行口径，规程条文 `:816` 的"两形态"措辞不改写历史文本，见 §17.3 注记） |
+| **新增** `AT+METRICS` | `METRICS 11/12 drop=0` / `hb_runs=8012 c` / `loop_last_ms=0 g` / `loop_max_ms=0 g` / `loop_p99_ms=0 g` / **`loop_miss=2 g`** / `rx_bytes=22` / `rx_ore=0` / `mb_crc_err=0` / `mb_discarded=0` / `mbm_timeouts=0` / `mbm_late=0` | **M3-①②** ✓ —— 命名指标一条命令读全；`loop_miss=2` 为**失准计数的板上第一手数据**（20ms 心跳在 `AT+SELFTEST`/`AT+MBRD` 阻塞期累积，与"一次补跑至多计一次"口径一致）；`drop=0` = 登记面零丢弃 |
+| UART 健康 `AT+RXSTAT` | `rx=167 ore=0 last=58 53 54 41 54 d a 52` | 无溢出/错误 ✓ |
+| PC 侧从站仿真计数 | `served=3 crc_err=0 mismatch=0` | 三形态各一事务，与板上 `req=1/2/3` 逐值对齐 ✓ |
+
+### 17.3 登记与注记
+
+- **跨 16 版同步债清偿**：板侧 `Core/et/et_config.h` 开工实测 MINOR = **10**（§16.1 记录与本次实测一致），现 = **27**；`diff -rq` 七目录 + 两文件全 OK（**实测登记**，非凭记录断言，`:806` 明文）。自此 `port/stm32g474/README.md` 的"维持 v2.10.0 同步态"散文声称**改写为 v2.27.0 同步态实测**（v2.25/v2.26 两行加时点态注记，不改写历史语义）。
+- **三形态口径**：本版按 §16.4 实跑表的**三形态**（CRLF / 仅 CR / 仅 LF）执行并逐行登记；§16.2 规程条文 `:816` 的"两形态"措辞属历史文本，**不改写**（其结论行 `:853` 已记"严于 AC-7 双形态要求"）。
+- **`log` 套件的板面噪声**：`AT+SELFTEST` 输出内嵌修饰面验证的可打印串（`<?jd>` 等）系既有的"只验生效性不校内容"边界（`CO-11(v2.7)`），非本版新现象。
+- **走单局限（如实）**：`rx_bytes=22`/`mb_*` 均为**本次会话内**累计值（掉电即清，et_metrics 不做掉电保持——非目标承接）；心跳 20ms 的 `loop_last_ms=0` 属亚毫秒报 0 的既定口径（`et_sched` 时基分辨率），不代表任务未跑（`hb_runs=8012` 为反证）。
+
+### 17.4 其余两板（本版零操作，挂账续期）
+
+- **ch32x035**：`COM16`（WCH-Link）本次枚举**不在位** → 常设条目 v2.27 行 = 挂账续期，触发仍为 WCH-Link 枚举在位（工程本体零触碰）。
+- **f103**：真机缺板维持挂账；本版 port 侧改动由 `make test`/Renode 仿真门与 ARM 交叉编译零警告门覆盖（体积行见 `port/stm32f103/README.md` v2.27 两行）。
