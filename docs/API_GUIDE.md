@@ -1450,7 +1450,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 ### 8.4 et_selftest 板上自测组件 (v1.7)
 
-验证金字塔封顶：PC 单测(497) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
+验证金字塔封顶：PC 单测(520) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
 
 | 函数 | 上下文 | 说明 |
 |---|---|---|
@@ -1463,7 +1463,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 - **报告**：结构化事件回调 `et_selftest_report_fn(user, evt, suite, num)`——BEGIN/SUITE_PASS/SUITE_FAIL/SUITE_SKIP/CHECK_FAIL(带行号)/DONE；组件内不做格式化，接 et_log 或 shell 由应用决定；
 - **22 内建套件**（v2.2 起 +pid/stats/bytes，v2.7 起 +modbus/log）：ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
-- **覆盖边界**：冒烟非对等 host 497 用例，掉电注入类 host-only 用例不移植；**板上 `log` 套件只验修饰面"生效性"（输出字符数符合预期），不校字符内容**——内容级断言（格式化字节逐值比对）由 host 30 例承担（`test/test_log.c`），板上不做（v2.8 P3-1，`CO-11(v2.7)` 边界明示；内容级板上断言需 `port.h` 捕获钩子属公开契约变更，评估结论见 `docs/v3-candidates.md`「v2.8 复评记录」，本版不实现）；
+- **覆盖边界**：冒烟非对等 host 520 用例，掉电注入类 host-only 用例不移植；**板上 `log` 套件只验修饰面"生效性"（输出字符数符合预期），不校字符内容**——内容级断言（格式化字节逐值比对）由 host 30 例承担（`test/test_log.c`），板上不做（v2.8 P3-1，`CO-11(v2.7)` 边界明示；内容级板上断言需 `port.h` 捕获钩子属公开契约变更，评估结论见 `docs/v3-candidates.md`「v2.8 复评记录」，本版不实现）；
 - **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
 - **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
 
@@ -1511,7 +1511,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 497 用例（1K 变体 498） | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 520 用例（1K 变体 521） | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
 | STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 
@@ -1525,7 +1525,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
-| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / HIST / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / MODBUS / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
+| `ET_MODULE_RINGBUF / QUEUE / MEMPOOL / LIST / FILTER / MEDFILT / PID / STATS / HIST / FSM / STIMER / SCHED / EVENT / WDT / SOFTCLOCK / CRC / BYTES / FRAME / ATCMD / XMODEM / MODBUS / KV / BOOTCTL / KEY / LED / SPWM / SHELL / LOG / METRICS` | 1 | 模块开关：置 0 后对应 `.c` 不参与编译（头文件内容亦被屏蔽） |
 | `ET_HIST_BIN_MAX` | 255 | et_hist 桶数上限（uint8 索引；桶数组由调用方按实际 bin_count 分配） |
 | `ET_MEDFILT_WIN_MAX` | 15 | et_medfilt 窗口容量上限（init 强制奇数窗 3~此值；栈排序缓冲随此值增大） |
 | `ET_RINGBUF_POW2` | 0 | 容量恒为 2 的幂时置 1（取模优化为位与） |

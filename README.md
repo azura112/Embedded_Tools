@@ -57,7 +57,7 @@
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   ├── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
 │   └── ch32x035/      # CH32X035G8U6 参考移植（PD 测试板/Qingke RISC-V2A，python build.py，不入 CI/sizecheck；flash 三件套含 RAM 驻留擦写核心，实机#3–#16）
-├── test/              # 迷你框架 + 497 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 33 + modbus_master 32 + sched 19 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8）
+├── test/              # 迷你框架 + 520 个单元用例（bootctl 掉电矩阵 24 + kv 35 + modbus 33 + modbus_master 32 + sched 26 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8 + metrics 16）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -179,11 +179,11 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，497 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步）。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，520 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步/命名指标登记与渲染/调度失准计数）。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（497 例，另 1K 变体 498 例、shell Tab 开启形态 504 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（520 例，另 1K 变体 521 例、shell Tab 开启形态 527 例）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **host 零警告门**（v2.6 P2-1）：`make WERROR=1 test` / `make WERROR=1 ex`（CI 的 Linux 与 Windows 两个 job 同用 `-Werror`）——把"只有 ARM 交叉编译有零警告门"扩到 host 侧；
 - **内存检查门**（v2.5 起，v2.6 扩变体）：`make test-asan` + `make test-asan-1k`（ASan 覆盖默认几何与 1K 块变体），CI 常设；

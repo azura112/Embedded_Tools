@@ -109,7 +109,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 ```
         板上自测 (et_selftest 22 套件, AT+SELFTEST)
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 22/22)
-      host 单测  (497 用例 × 2 几何 + 1K 变体 + Tab 形态)
+      host 单测  (520 用例 × 2 几何 + 1K 变体 + Tab 形态)
      配方载体    (make ex: 五例自检式示例, CI 常设)
     机制门       (docsync 370 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
 ```

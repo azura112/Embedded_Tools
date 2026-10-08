@@ -116,7 +116,7 @@ arm-none-eabi-objcopy -O binary build/stm32g474_demo.elf build/stm32g474_demo.bi
 
 | 项 | 状态 |
 |---|---|
-| host 回归 | ✅ **497** 例 ALL PASS × 双几何（1K 498 / Tab 504；含 kv/bootctl 8B 槽适配后的掉电矩阵） |
+| host 回归 | ✅ **520** 例 ALL PASS × 双几何（1K 521 / Tab 527；含 kv/bootctl 8B 槽适配后的掉电矩阵） |
 | ARM 编译 | ✅ 零警告（GNU Tools for STM32 13.3.rel1） |
 | 板上自测 | ✅ 库化版 **22 套件**：`AT+SELFTEST` → **`SELFTEST: 22/22 PASS`**、`AT+SELFSTOR` → `STORAGE SELFTEST PASS`（2026-09-25，实机记录 §15）；工程私有版 13/13 为 v1.6 历史记录 |
 | **真机实测** | ✅ **G474VET6 上板通过**（boot #n 跨上电递增、AT 交互、AT+SELFTEST 13/13）——经 CubeMX/HAL 集成版 port（同 port.h 契约,HAL_GetTick/HAL_FLASH 实现）完成,记录见 `D:\code\STM32CubeMX\G474VET6_ET_TEST\移植stm32实机记录.md`;**本目录裸机 port 本体未单独上板** |

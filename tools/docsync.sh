@@ -286,9 +286,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "497"             "getting-started 用例数与实测一致(v2.7 回刷)"
+assert_grep "docs/getting-started.md" "520"             "getting-started 用例数与实测一致(v2.7 回刷, v2.27 随新增 23 例滚动)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "497"                 "README 用例数终值回刷(v2.7)"
+assert_grep "README.md"           "520"                 "README 用例数终值回刷(v2.7, v2.27 随新增 21 例滚动)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
