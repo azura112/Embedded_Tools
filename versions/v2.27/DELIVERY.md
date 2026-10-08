@@ -44,12 +44,13 @@
 
 记录范围：**`snap-2.27-start`（= `fb7bbd9` = 入仓批）`..v2.27`**（终点冻结为 tag 符号 `v2.27`）。
 
-`git diff --stat snap-2.27-start..v2.27` = （终态回填，实测以 §7.4⑧ (b) 片段行为准——本行 1:1 回填，禁重打）
+`git diff --stat snap-2.27-start..v2.27` = **0 files changed, 0 insertions(+), 0 deletions(-)**（占位形态：本行由定稿链 C7b **1:1 回填**实测三数，行数不变——⑧ (b) 两口径随之稳定；口径 = 全量含本文档，自排除并列值见 §7.4⑧ 片段行）
 
 ```
-（本提交）v2.27 P3-5(C7): 定稿链——⑧ 机读片段 1:1 回填 + verify 对账留痕 + §4 SHA 实测回填
-（C6，SHA 见下方 1:1 回填）v2.27 P3-3(C6): 登记链收口
-（C5，SHA 见下方 1:1 回填）v2.27 P3-4(C5): versions/v2.27/DELIVERY.md 落仓 + v3-candidates「v2.27 复评记录」节
+（本提交 = C7b）v2.27 P3-5(C7b): 定稿链末笔——⑧ 五锚行与 §4 三数/C7a SHA 1:1 回填 + verify 对账与终态门批次留痕
+（C7a = 本笔，SHA 由 C7b 1:1 回填）v2.27 P3-5(C7a): §4 声明行形态归位（占位三数）+ 定稿链两笔入清单（本笔起行数与 (b) 稳定）
+682d02f v2.27 P3-3(C6): 登记链收口(纯登记)——七档各 +1 登记行（docref 实测点名面, 复测 OK×7）+ DELIVERY-r2.md 修订登记 token
+4a59ef1 v2.27 P3-4(C5): versions/v2.27/DELIVERY.md 落仓 + v3-candidates「v2.27 复评记录」节(17 行同源) + CHANGELOG 日期校正
 792f0bd v2.27 P3-2(b)(C4): 数字回刷其余数值段
 56d05d8 v2.27 P2(C3): G474 板侧窗口批
 df56eaf v2.27 P3-2(a)+P3-1①②(C2): 版本宏段回刷与基线滚动
