@@ -139,11 +139,11 @@ sh tools/gatecheck.sh 2.28 --verify versions/v2.28/DELIVERY.md   # 期望 exit 0
 
 （下方五行为 emit 回填位，取值命令原文见上行；本档写作时不预抄任何机读值——回填由定稿批以 1:1 行内替换完成，行数与本文件行数不变）
 
-[gatecheck:emit] (b) 全量 = 0 files / 0 / 0
-[gatecheck:emit] (b) 自排除 = 0 files / 0 / 0 (口径 = -- placeholder)
-[gatecheck:emit] (d) 全集 0 份 → OK 0 / 未登记实质变更 0 / 自指滞后 0 / 缺声明行 0 / 其他 0
-[gatecheck:emit] (a) CHANGELOG [2.28.0] 节日期 = 2026-01-01; 全文日期计数 = placeholder
-[gatecheck:emit] 登记 token = placeholder
+[gatecheck:emit] (b) 全量 = 33 files / 1802 / 39
+[gatecheck:emit] (b) 自排除 = 32 files / 1620 / 39 (口径 = -- ':(exclude)v2.28开发交付__*.md :(exclude)versions/v2.28/DELIVERY*.md')
+[gatecheck:emit] (d) 全集 34 份 → OK 8 / 未登记实质变更 14 / 自指滞后 3 / 缺声明行 9 / 其他 0
+[gatecheck:emit] (a) CHANGELOG [2.28.0] 节日期 = 2026-10-10; 全文日期计数 = 2026-09-29×5 2026-10-01×3 2026-09-25×3 2026-09-24×3 2026-09-12×3 2026-10-02×2 2026-09-30×2 2026-09-27×2 2026-09-09×2 2026-09-06×2 2026-10-10×1 2026-10-09×1 2026-10-07×1 2026-10-06×1 2026-10-05×1 2026-10-04×1 2026-10-03×1 2026-09-26×1 2026-09-19×1 2026-09-11×1 2026-09-08×1 2026-09-07×1 2026-09-05×1
+[gatecheck:emit] 登记 token = v2.10开发交付__挂账清偿与板侧闭环.md=22 v2.11开发交付__勘误批与轨道收口.md=3 v2.12开发交付__勘误清偿与判据自洽.md=4 v2.18开发交付__碰撞面根治实施与记法机制化.md=4 v2.19开发交付__勘误更正与时点纪律收口.md=5 v2.20开发交付__定稿后复测机制与基线口径明示.md=58 v2.21开发交付__勘误收敛与封闭枚举.md=53 v2.22开发交付__非代码清欠与复测脚本化.md=49 v2.23开发交付__引用机检闭环与纪律块重组.md=46 v2.24开发交付__勘误收敛与verify时点固化.md=40 v2.9开发交付__模板口径澄清与板侧同步窗口-r2.md=1 v2.9开发交付__模板口径澄清与板侧同步窗口.md=54 versions/v2.25/DELIVERY.md=34 versions/v2.26/DELIVERY-r2.md=1 versions/v2.26/DELIVERY.md=29 versions/v2.27/DELIVERY-r2.md=3 versions/v2.27/DELIVERY.md=24
 
 （以上五行由 `--emit` 逐字回填，回填笔为严格 1:1 行内替换 ⇒ 本文件行数与 (b) 双口径锚值不随之变动）
 
