@@ -369,7 +369,11 @@ static void mt_features_truncation(void)
 
 static void mt_count_and_null_safety(void)
 {
-    uint32_t v;
+    uint32_t        v;
+    et_metrics_t    bad;        /* 构造态: 句柄非空 + slots==NULL + cap>0(未经 init) */
+    char            obuf[32];
+    et_hist_t       oh;
+    static uint32_t hbins[4];
 
     setup();
     ET_CHECK_U32_EQ(0u, et_metrics_count(NULL));
@@ -381,6 +385,24 @@ static void mt_count_and_null_safety(void)
     et_metrics_add_n(NULL, "a", 1u);
     et_metrics_set(NULL, "a", 1u);
     ET_CHECK_U32_EQ(0u, et_metrics_count(&g_m));
+
+    /* v2.28 P1-1(`CO-7(v2.27)`): 构造态句柄的守卫逐 API 一致(早退/拒绝, 不解引用空槽表) */
+    bad.slots   = NULL;
+    bad.cap     = 4u;
+    bad.count   = 2u;
+    bad.dropped = 0u;
+    ET_CHECK_U32_EQ(0u, et_metrics_format(&bad, obuf, sizeof(obuf)));
+    ET_CHECK(!et_metrics_iter(&bad, 0u, NULL, NULL, NULL));
+    ET_CHECK(!et_metrics_register_counter(&bad, "x"));
+    ET_CHECK(!et_metrics_get(&bad, "x", &v));
+    ET_CHECK(!et_metrics_observe(&bad, "x", 1u));
+    (void)et_hist_init(&oh, hbins, 4u, 0, 3);
+    ET_CHECK(!et_metrics_link_hist(&bad, "x", &oh));
+    et_metrics_inc(&bad, "x");                     /* 不得崩溃, 亦不得写越界 */
+    et_metrics_reset(&bad);
+    obuf[0] = '\0';
+    ET_CHECK(et_metrics_format(&g_m, obuf, sizeof(obuf)) > 0u);   /* 对照: 已 init 的空表照渲染头行 */
+    ET_CHECK(obuf[0] != '\0');
 }
 
 /* ---- 命令面执行路径: 两 handler 经 atcmd + shell 真跑(注册形态 = {"NAME", fn, help}) ---- */

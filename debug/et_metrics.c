@@ -320,6 +320,13 @@ uint32_t et_metrics_format(const et_metrics_t *m, char *buf, uint32_t buf_cap)
     if ((buf == NULL) || (buf_cap == 0u)) {
         return 0u;
     }
+    /* v2.28 P1-1(`CO-7(v2.27)`): 句柄非空而槽表为空 = 未经 init 的构造态。同族
+       iter/reset 的守卫形态是 (m == NULL) || (m->slots == NULL), 而本函数原形态在
+       m != NULL 分支直接遍历 m->slots ⇒ 空指针解引用。守卫语义与同族一致 = 早退
+       返回 0(不写缓冲、不渲染头行); 签名与返回值语义不变(HC-6: apidump --diff 0/0/0)。 */
+    if ((m != NULL) && (m->slots == NULL)) {
+        return 0u;
+    }
     s.buf = buf;
     s.cap = buf_cap;
     s.pos = 0u;
