@@ -124,7 +124,11 @@ void et_metrics_dump_cmd(char *args, void *user);
 /* 命令面绑定: 告知 dump 命令要读哪一份注册表(🏠MAIN; 传 NULL 解绑)。
  * 库内只存一份**只读句柄**, 存储仍归调用方 —— 多实例并行时其余实例经 API
  * 直读或自备包装函数(形态见 docs/API_GUIDE.md §11.15); 单静态绑定面的先例
- * 同 sys/et_sched.c 的文件静态任务表。 */
+ * 同 sys/et_sched.c 的文件静态任务表。
+ * 生命周期契约(v2.27 发版后补注): 本函数只存指针、不拷贝内容, 故句柄与其
+ * slots 数组**必须比绑定使用期活得更久** —— 栈上句柄须在出作用域前显式
+ * `et_metrics_bind(NULL)` 解绑, 否则 dump 命令经留存指针读到越域对象。
+ * 推荐用法 = 文件作用域静态对象(板侧 demo 与 test/test_metrics.c 皆此形态)。 */
 void et_metrics_bind(et_metrics_t *m);
 
 /* 预置命令处理函数: 编译期裁剪自描述(AT+FEATURES, REQ-8)。

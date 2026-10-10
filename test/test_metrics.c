@@ -454,28 +454,29 @@ static bool mt_contains(const char *hay, const char *needle)
 
 static void mt_dump_cmd_through_shell(void)
 {
+    /* 换绑定实例的句柄与槽表: 生命周期须覆盖绑定使用期, 故声明在函数作用域
+       (v2.27 发版后 CI 补丁: 原置于内层块作用域, 块外经 AT+METRICS 读到越域栈对象
+        —— Linux ASAN 判 stack-use-after-scope, MinGW 无 ASAN 故本地静默通过) */
+    et_metrics_slot_t other[2];
+    et_metrics_t      m2;
+
     cmd_fresh();
     cmd_feed("AT+METRICS\r");
     ET_CHECK(mt_contains(g_out, "METRICS 2/4 drop=0"));
     ET_CHECK(mt_contains(g_out, "  rx=1 c"));
     ET_CHECK(mt_contains(g_out, "  ms=9 g"));
 
-    /* 换绑定实例: dump 跟着换(单绑定面只服务被绑定的那一份) */
-    {
-        et_metrics_slot_t other[2];
-        et_metrics_t      m2;
+    ET_CHECK(et_metrics_init(&m2, other, 2u));
+    (void)et_metrics_register_counter(&m2, "only");
+    et_metrics_bind(&m2);
 
-        ET_CHECK(et_metrics_init(&m2, other, 2u));
-        (void)et_metrics_register_counter(&m2, "only");
-        et_metrics_bind(&m2);
-    }
     g_out_len = 0u;
     g_out[0]  = '\0';
     cmd_feed("AT+METRICS\r");
     ET_CHECK(mt_contains(g_out, "METRICS 1/2 drop=0"));
     ET_CHECK(!mt_contains(g_out, "rx=1"));
 
-    /* 未绑定: 如实报 unbound, 不静默 */
+    /* 未绑定: 如实报 unbound, 不静默(句柄出作用域前解绑, 与头文件生命周期契约一致) */
     et_metrics_bind(NULL);
     g_out_len = 0u;
     g_out[0]  = '\0';
