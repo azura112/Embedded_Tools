@@ -208,6 +208,12 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | 覆盖率 | `gcovr --fail-under-line 85` | 行覆盖 ≥85% |
 | 移植文档可执行 | `sh tools/docbuild.sh` | port README 的 ```docbuild 块原样执行 |
 
+**板侧上位机脚本面（非 CI 门，v2.28 P3-2）**：`tools/board_window.py`（REQ-5 板侧窗口一键化：端口枚举 → 同步 →
+构建 → 烧前版本串机检 → 烧录 → 走单捕获 → 证据落盘，三模式 `--dry-run` / `--check-only` / `--full`）与既有的
+`tools/xmodem_send.py` / `tools/modbus_master.py` 依赖 **Python 3 + pyserial**（本机实测 Python 3.12.4 + pyserial 3.5，
+验证命令 `python -c "import serial.tools.list_ports"`）。**脚本退出码不等于板侧绿**（HC-8①形态）：板侧判据只看
+证据目录里的 `walk_output.txt` / `walk_summary.md` 原文行。CI 不跑任何 `tools/*.py`（`.github/workflows/*` 零 diff）。
+
 **本机（Windows / MinGW）检出边界 —— 如实声明，未执行者不得按通过计**：
 
 - `make test-asan` / `make test-asan-1k` **本机不可执行**：MinGW-w64 gcc 不带 `libasan`；clang 17 的 ASan 运行时在本机 Windows 初始化失败（v2.5 D-2、v2.6 CO-13）。内存类缺陷在本机**只能靠 Linux CI 前置拦截**。

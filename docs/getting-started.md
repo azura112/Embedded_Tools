@@ -14,6 +14,13 @@
 | ARM 交叉 | GNU Tools for STM32 13.3.rel1 | `arm-none-eabi-gcc --version` |
 | 烧录 | STM32CubeProgrammer CLI + ST-LINK | `STM32_Programmer_CLI --version` |
 | (可选) 构建 | MinGW-w64 的 `mingw32-make` | `mingw32-make --version` |
+| 板侧上位机脚本（v2.28 P3-2 显式声明） | **Python 3.12.4** + **pyserial 3.5** | `python -c "import serial.tools.list_ports"` |
+
+**板侧脚本依赖面（v2.28 P0/P3-2，`REQ-5` 派生 + README 清单⑥ 环境注记纪律）**：`tools/board_window.py`（板侧窗口一键化）、
+`tools/xmodem_send.py`、`tools/modbus_master.py`、`tools/pack_image.py`（打包面仅标准库）均需 Python 3 + **pyserial**
+（前三件用 `serial` / `serial.tools.list_ports`）。本机实测 = Python **3.12.4** + pyserial **3.5**；
+此前该依赖只载于 v1.6/v1.8 历史交付档的环境注记，现役 README/docs 零声明 ⇒ 本版补齐（依赖未声明即成失实声称）。
+这些脚本**不进 CI**（`.github/workflows/*` 零 `tools/*.py`，实测）——板侧动作依赖物理在位，CI 无探针不可跑。
 
 Windows Git Bash 下没有 `make` 也能用 `mingw32-make`; 或直接照 README 的纯 gcc 命令。
 

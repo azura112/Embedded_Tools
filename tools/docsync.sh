@@ -200,6 +200,7 @@ assert_grep "port/stm32g474/README.md"  '```docbuild'         "g474 README docbu
 assert_grep ".github/workflows/ci.yml"  "docbuild"            "CI 含 docbuild job"
 assert_grep "README.md"           "数字回刷纪律"              "README checklist 第 7 条(P1-4)"
 assert_grep "tools/pack_image.py" "ETBI"                      "ETBI 打包工具存在(走单3配套)"
+assert_grep "tools/board_window.py" "dry-run"              "板侧窗口一键脚本入库(REQ-5/M3-⑤, v2.28 P3-1)"
 assert_grep "port/stm32f103/README.md" "v1.9"                 "体积表含 v1.9 行(f103)"
 assert_grep "port/stm32g474/README.md"  "18088"               "体积表 v1.9 行(g474)"
 assert_grep "port/stm32f103/README.md"  "25352"               "体积表 v1.9 行(f103, selftest)"
