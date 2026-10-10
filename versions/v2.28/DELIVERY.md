@@ -70,6 +70,7 @@ f348239 P2-1/P2-2/P2-4 + P2-3 受阻申报: 实机记录 §18 + g474 同步态�
 e647bee P4-1: API_INVENTORY_v2.27.md worktree 真生成 + BASE 两处切 v2.27 + 复读 0/0/0
 14d8f12 P4-2(b) 一: 两 port v2.28 体积行实测 + README 基线名 x2 + CHANGELOG [2.28.0]
 91f8493 P4-2(b) 二: CHANGELOG 自触发裸控制符即时复原（偏差 2）
+8966b4d P4-4: versions/v2.28/DELIVERY.md 落仓 + architecture 机制门行 373→375（docsync 三方一致收口）
 （定稿链末笔 = 本提交，SHA 自指不列；⑧ 片段 1:1 回填 + verify 留痕）
 ```
 
