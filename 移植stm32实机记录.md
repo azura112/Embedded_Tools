@@ -808,7 +808,7 @@ tx: 11 03 03 E8 00 02 46 EB → rx: 11 03 04 00 00 00 00 EB F2                [m
 - **烧前版本串机检（HC-5）**：对**目标 ELF** 做版本串机检（`strings` 或等价法，输出留存入走单），
   核对 = 预期版本串 **"2.10.0"**；**机检不过不得烧录**。
 - **文件级声明落盘留痕（HC-4）**：同步面 sha256、`diff -rq` 全 OK 输出、构建日志三件**给持久落盘路径**
-  （板侧工程 `build2.10-evidence\` 下，非 gitignore 临时区）；无落盘留痕的声明视同未声明。
+  （板侧工程 `build\v2.10-evidence\` 下，非 gitignore 临时区）；无落盘留痕的声明视同未声明。
 - **登记落稿前自指矛盾自查（CO-2c）**：同一事实在同文档内的多处表述（§15.4 / §16.x / 交付文档）
   逐条对读，不得互斥（v2.9 :771/:772 教训）。
 - **烧录与走单**：`STM32_Programmer_CLI -c port=SWD -w … -v -rst`（可用 v2.19.0 CLI：`/d/software/STM32CubeCLT_1.18.0/`）；
@@ -828,7 +828,7 @@ ch32x035 板经 WCH-Link（COM16）在位，项目本体 `D:\code\mounriver-stud
 > —— **G474 = COM12**（`USB-Enhanced-SERIAL CH343`，VID:PID=1A86:55D3）；COM16 = WCH-Link（ch32x035 通道）。
 > v2.10 计划 §6 预写"串口 COM16"与实测不符，按计划自身"以描述实测为准"规则取 **COM12**（偏差登记见 v2.10 交付文档）。
 
-**执行链（全部落盘 `D:\code\STM32CubeMX\G474VET6_ET_TESTuild2.10-evidence\`，HC-4 落盘留痕）**：
+**执行链（全部落盘 `D:\code\STM32CubeMX\G474VET6_ET_TEST\build\v2.10-evidence\`，HC-4 落盘留痕）**：
 
 | step | 内容 | 落盘证据 | 结果 |
 |---|---|---|---|
@@ -843,12 +843,9 @@ ch32x035 板经 WCH-Link（COM16）在位，项目本体 `D:\code\mounriver-stud
 | 走单项 | 命令行形态 | 板上读数（原文摘录） | 判定 |
 |---|---|---|---|
 | 版本确认 | `AT+VER` | `[166005][I][at] ver=2.10.0 boot=6` | **板上 = 2.10.0** ✓ `CO-5(v2.8)` 闭环 |
-| 形态 1 CRLF | `AT+MBRD 0 4
-` | `MBRD reg=0 qty=4 st=2 val=0 n=4 exc=0 t=7ms` + `MBSTAT req=1 resp=1 … disc=0` | **`disc=0`** ✓ |
-| 形态 2 仅 CR | `AT+MBRD 0 4
-` | `MBSTAT req=2 resp=2 … crc=0 mismatch=0 late=0 disc=0` | **`disc=0`** ✓ |
-| 形态 3 仅 LF | `AT+MBRD 0 4
-` | `MBSTAT req=3 resp=3 … disc=0` | **`disc=0`** ✓ |
+| 形态 1 CRLF | `AT+MBRD 0 4\r\n` | `MBRD reg=0 qty=4 st=2 val=0 n=4 exc=0 t=7ms` + `MBSTAT req=1 resp=1 … disc=0` | **`disc=0`** ✓ |
+| 形态 2 仅 CR | `AT+MBRD 0 4\r` | `MBSTAT req=2 resp=2 … crc=0 mismatch=0 late=0 disc=0` | **`disc=0`** ✓ |
+| 形态 3 仅 LF | `AT+MBRD 0 4\n` | `MBSTAT req=3 resp=3 … disc=0` | **`disc=0`** ✓ |
 | 残留物证 | `AT+MBRAW` | `MBRAW n=13 first=11 3 8 0 0 0 1 0` —— 事务首字节 = **0x11**（真请求头，非 0x0A；v2.7 实验 A 为 `first=a`） | 残留消除物证 ✓ |
 | UART 健康 | `AT+RXSTAT` | `rx=157 ore=0 last=54 41 54 d a 52 58 53`（= `AT
 RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错误 ✓ |
@@ -864,7 +861,7 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 
 > 对应 `versions/v2.27/PLAN.md` P2-1…P2-4（`M3-①②③④`），按 §16.2 常设规程**全要素最小集**执行。
 > 板侧工程与证据目录均在**库外**（不在本仓 git）：工程 `D:\code\STM32CubeMX\G474VET6_ET_TEST\`，
-> 证据 `D:\code\STM32CubeMX\G474VET6_ET_TESTuild2.27-evidence\`（八件，见下表）。
+> 证据 `D:\code\STM32CubeMX\G474VET6_ET_TEST\build\v2.27-evidence\`（八件，见下表）。
 > 板上命令表条目数 = 开工实测 **18 项**（`AT+VER/BOOTINFO/RXSTAT/SELFTEST/SELFSTOR/WDTEST/SIMUPGRADE/UPGRADE/`
 > `PIDSET/PIDRUN/PIDOUT/MBCFG/MBRD/MBWR/MBSTAT/MBSLAVE/MBRAW/HELP`），本版后 = **20 项**（+`METRICS`/`FEATURES`）。
 
@@ -886,11 +883,9 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 | 版本确认 `AT+VER` | `[157398][I][at] ver=2.27.0 boot=30` | **板上 = 2.27.0** ✓（HC-10③：版本宏回刷先于烧录，走单证据取自不含下一版代码的提交） |
 | **新增** `AT+FEATURES` | `FEATURES v2.27.0 (maj=2 min=27 pat=0) sw=32` + 32 行 `  MODULE=0/1` | **M3-③** ✓ 版本三件 + **32** 开关逐行在档；`SELFTEST=1` 系板侧构建启用（`AT+SELFTEST` 实跑相印证），库内发布默认 0——编译期如实上报非硬编码 |
 | 板上自测 `AT+SELFTEST` | `start (22 suites)` … `SELFTEST: 22/22 PASS` → `[at] ALL PASS` | **22 套件维持** ✓（本版不加板上套件，§1.3 裁决；`22/22` 字面六处零滚动命中） |
-| 形态 1 CRLF `AT+MBRD 0 4
-` | `MBRD reg=0 qty=4 st=2 val=1 n=4 exc=0 t=2ms` + `MBSTAT req=1 resp=1 exc_n=0 to=0 retry=0 crc=0 mismatch=0 late=0 `**`disc=0`** | **`disc=0`** ✓ |
-| 形态 2 仅 CR `AT+MBRD 0 4` | 同上 + `MBSTAT req=2 resp=2 … `**`disc=0`** | **`disc=0`** ✓ |
-| 形态 3 仅 LF `AT+MBRD 0 4
-` | 同上 + `MBSTAT req=3 resp=3 … `**`disc=0`** | **`disc=0`** ✓（三形态 = §16.4 实跑表行口径，规程条文 `:816` 的"两形态"措辞不改写历史文本，见 §17.3 注记） |
+| 形态 1 CRLF `AT+MBRD 0 4\r\n` | `MBRD reg=0 qty=4 st=2 val=1 n=4 exc=0 t=2ms` + `MBSTAT req=1 resp=1 exc_n=0 to=0 retry=0 crc=0 mismatch=0 late=0 `**`disc=0`** | **`disc=0`** ✓ |
+| 形态 2 仅 CR `AT+MBRD 0 4\r` | 同上 + `MBSTAT req=2 resp=2 … `**`disc=0`** | **`disc=0`** ✓ |
+| 形态 3 仅 LF `AT+MBRD 0 4\n` | 同上 + `MBSTAT req=3 resp=3 … `**`disc=0`** | **`disc=0`** ✓（三形态 = §16.4 实跑表行口径，规程条文 `:816` 的"两形态"措辞不改写历史文本，见 §17.3 注记） |
 | **新增** `AT+METRICS` | `METRICS 11/12 drop=0` / `hb_runs=8012 c` / `loop_last_ms=0 g` / `loop_max_ms=0 g` / `loop_p99_ms=0 g` / **`loop_miss=2 g`** / `rx_bytes=22` / `rx_ore=0` / `mb_crc_err=0` / `mb_discarded=0` / `mbm_timeouts=0` / `mbm_late=0` | **M3-①②** ✓ —— 命名指标一条命令读全；`loop_miss=2` 为**失准计数的板上第一手数据**（20ms 心跳在 `AT+SELFTEST`/`AT+MBRD` 阻塞期累积，与"一次补跑至多计一次"口径一致）；`drop=0` = 登记面零丢弃 |
 | UART 健康 `AT+RXSTAT` | `rx=167 ore=0 last=58 53 54 41 54 d a 52` | 无溢出/错误 ✓ |
 | PC 侧从站仿真计数 | `served=3 crc_err=0 mismatch=0` | 三形态各一事务，与板上 `req=1/2/3` 逐值对齐 ✓ |
