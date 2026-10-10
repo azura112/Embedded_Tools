@@ -478,6 +478,41 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ---- v2.28 P0-4 (CO-9(v2.27)-②): API_GUIDE §10 开关枚举行 ↔ et_config.h 开关集合对账 ----
+# 动机: v2.27 只闭了「AT+FEATURES 表行数 ↔ 开关数」一半(数量相等), 集合成员无机检 ——
+#   文档 §10 少列或多列一个 ET_MODULE_*, 数量门照样绿。本块做**逐名集合比对**:
+#   连写行 `ET_MODULE_A / B / C` 展开为三名, 独立行 `ET_MODULE_X` 原样取, 与头文件
+#   ^#define ET_MODULE_* 全集比对, 缺失/多余均红。
+# 纯新增检查面, 判定语义零变更(HC-7); 门自证可红: 临时树删一个枚举行 → 本块 FAIL。
+doc_sw=$(sed -n '/^## 10\. 配置项参考/,/^## 11\./p' docs/API_GUIDE.md \
+         | awk '{
+               line = $0
+               while (match(line, /`ET_MODULE_[A-Z0-9_]+( \/ [A-Z0-9_]+)*`/)) {
+                 seg = substr(line, RSTART + 1, RLENGTH - 2)
+                 line = substr(line, RSTART + RLENGTH)
+                 n = split(seg, tk, " / ")
+                 for (j = 1; j <= n; j++) {
+                   gsub(/^[[:space:]]+/, "", tk[j])
+                   if (j == 1) print tk[j]
+                   else print "ET_MODULE_" tk[j]
+                 }
+               }
+               while (match(line, /ET_MODULE_[A-Z0-9_]+/)) {
+                 print substr(line, RSTART, RLENGTH)
+                 line = substr(line, RSTART + RLENGTH)
+               }
+             }' | sort -u | tr '\n' ' ')
+hdr_sw=$(grep -oE '^#define ET_MODULE_[A-Z0-9_]+' et_config.h | sed 's/#define //' | sort -u | tr '\n' ' ')
+if [ -n "${doc_sw}" ] && [ "${doc_sw}" = "${hdr_sw}" ]; then
+    echo "ok   API_GUIDE §10 开关集合 == et_config.h ET_MODULE_* 集合 ($(echo ${doc_sw} | wc -w) 名逐名一致, P0-4)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL API_GUIDE §10 开关集合与 et_config.h 不一致 (缺失=文档有/头文件无 或 头文件有/文档无):"
+    echo "  doc = [${doc_sw:-解析失败}]"
+    echo "  hdr = [${hdr_sw:-}]"
+    FAIL=$((FAIL + 1))
+fi
+
 # ---- v2.6 P0-2 跨文档计数一致性 (CO-3/CO-4 漏刷的根因根治, HC-4) ----
 # 单一来源 = README(交付时回刷的唯一权威); architecture 机制门行与 API_GUIDE 的
 # 对应数字必须**与实测/README 一致**, 而非各自写死。v2.5 的 examples 数(architecture
