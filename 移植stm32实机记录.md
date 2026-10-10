@@ -901,3 +901,81 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 
 - **ch32x035**：`COM16`（WCH-Link）本次枚举**不在位** → 常设条目 v2.27 行 = 挂账续期，触发仍为 WCH-Link 枚举在位（工程本体零触碰）。
 - **f103**：真机缺板维持挂账；本版 port 侧改动由 `make test`/Renode 仿真门与 ARM 交叉编译零警告门覆盖（体积行见 `port/stm32f103/README.md` v2.27 两行）。
+
+## 18. v2.28 G474 板侧窗口——手工全要素复跑、REQ-7 真固件双单受阻与脚本首跑对照（2026-10-10）
+
+> 对应 `versions/v2.28/PLAN.md` P2-1~P2-4（AC-7/AC-8）、P3-1~P3-4（AC-9，REQ-5 / M3-⑤）。
+> 板侧工程与证据目录均在**库外**（HC-7）：工程 `D:/code/STM32CubeMX/G474VET6_ET_TEST`；
+> 手工留痕 `D:/code/STM32CubeMX/G474VET6_ET_TEST/build/v2.28-evidence/`（九件 + 驱动 `walk.py`/`iap.py` 不入库）；
+> 脚本留痕 `…/build/v2.28-evidence-script/`（**分目录**，防覆盖手工件且便逐要素对账——与计划 P3-1 字面同目录形态的偏离见 §18.5）。
+> 本节路径一律写正斜杠形态（D-1 勘误教训：非 raw 字符串里的反斜杠转义会被求值成裸控制符，破坏路径可核性）。
+
+### 18.1 手工规程（§16.2 全要素）复跑读数
+
+| step | 内容 | 落盘证据 | 实测读数 |
+|---|---|---|---|
+| step 0 同步 | 库侧 HEAD `1a9edb0`（dev/v2.28）七目录 + `et_config.h` + `port/port.h` 重拷后逐目录比对 | `diff_rq.txt`（7 目录 + 两文件 = **9 行全 OK**）、`sync_sha256_lib.txt` / `sync_sha256_board.txt`（各 **72 件**，集合逐值一致） | 板侧 `et_config.h` MINOR **27 → 28**（跨 1 版，非跨版债） |
+| 构建 | `cmake --build --preset Debug` | `build.log`（**warning 计数 0**，exit 0） | MEMORY USAGE **FLASH 86424 B / RAM 8048 B**（v2.27 同 preset = 86404 / 8048 ⇒ **+20 B**，归因 = P1-1 `et_metrics_format` 槽守卫；库侧 port 体积面见 sizecheck 读数 §18.3） |
+| HC-10② 烧前机检 | python 字节扫描目标 ELF 的 `x.y.z` 串集合 | `version_check.txt`：集合 = `['13.3.1', '2.28.0', '2.42.0', '4.4.0']`，逐条标注干扰串（GCC / HAL / newlib 族），断言 **PASS** | 命中标的串 = **2.28.0** ⇒ 方烧录 |
+| 烧录 | `STM32_Programmer_CLI`（v2.19.0，CubeCLT 1.18.0）`-c port=SWD -w …elf -v -rst` | `flash.log`：**`Download verified successfully`** + **`MCU Reset`**；`Device ID : 0x469` | 烧录成功（一次通过，无重试） |
+| 走单（含 REQ-7 前置基线） | `walk.py`（COM12 + 同口 Modbus 从站仿真 addr=0x11，复用库内 `tools/modbus_master.py`） | `walk_output.txt`（41 行原始全文）、`walk_summary.md` | 见下表 |
+
+**串口走单读数**（端口 = `serial.tools.list_ports` 枚举实测：**COM12**，描述 `USB-Enhanced-SERIAL CH343`，VID:PID=1A86:55D3，SER=5AE7117074；COM16 = WCH-Link 本轮**不在位**）：
+
+| 走单项 | 板上读数（原文摘录） | 判定 |
+|---|---|---|
+| `AT+VER` | `[at] ver=2.28.0 boot=34` | 板上 = **2.28.0** ✓（HC-10③：版本宏先于烧录命中；AC-7） |
+| `AT+BOOTINFO`（pre） | `[at] staged=1 confirmed=1 attempts=1` | HC-10④ 三字段基线在案 |
+| `AT+FEATURES` | `FEATURES v2.28.0 (maj=2 min=28 pat=0) sw=32` + 32 行 `  MODULE=0/1` | M3-③ ✓（开关数 32 维持，§1.3 裁决不新增） |
+| `AT+SELFTEST` | `start (22 suites)` … `SELFTEST: 22/22 PASS` → `ALL PASS` | 22 套件维持 ✓（本版不加板上套件） |
+| `AT+MBRD 0 4` 三形态（CRLF / 仅 CR / 仅 LF） | `MBRD reg=0 qty=4 st=2 val=1 n=4 exc=0 t=2ms` ×3 + `MBSTAT req=1/2/3 resp=1/2/3 … disc=0` | 三行 **`disc=0`** ✓（AC-7 判据面） |
+| `AT+METRICS` | `METRICS 11/12 drop=0` / `hb_runs=15524 c` / `loop_last_ms=0 g` / `loop_max_ms=0 g` / **`loop_miss=2 g`** / `rx_bytes=35 g` / `rx_ore=0 g` / `mb_crc_err=0 g` / `mb_discarded=0 g` / `mbm_timeouts=0 g` / `mbm_late=0 g` | M3-①② ✓——`loop_miss=2` 为板上第一手失准读数；`drop=0` = 登记零丢弃 |
+| `AT+BOOTINFO`（post） | `staged=1 confirmed=1 attempts=1` | 与 pre 逐值相同 ⇒ 常规走单不触动 bootctl 状态 ✓ |
+| `AT+RXSTAT` | `rx=193 ore=0 last=a 52 58 53 54 41 54 d` | 无溢出/错误 ✓ |
+| PC 侧从站计数 | `served=3 crc_err=0 mismatch=0` | 三形态各一事务，与板上 `req=1/2/3` 对齐 ✓ |
+
+### 18.2 REQ-7 真固件 IAP 双单 = **受阻（未达成）**，实测读数与根因
+
+| 项 | 实测 |
+|---|---|
+| 当版真固件产物 | `cmake --build --preset Release` → **FLASH 48140 B / RAM 8048 B**，0 warning（`release_build.log`）；`arm-none-eabi-objcopy -O binary` 出 `build/Release/g474.bin` = **48140 B**；bin 内版本形串扫描 = **仅 `['2.28.0']`**（不含 2.27.0 / 2.10.0 ⇒ 产物确为当版；开工前该件为 2026-09-08 的 32064 B 旧产物，已重建替换，`ls` 时间戳 = 2026-10-10 20:12） |
+| 两单打包 | `pack_image.py --in build/Release/g474.bin --ver 7 --out img_odd_v7.bin` = **48172 B**；`--ver 8 --out img_even_v8.bin` = **48172 B**（32 B ETBI 头 + 同一 body）；头字段实测：magic `ETBI`、`img_size 48140`、`ver = 7 / 8`；sha256 前缀 body `8e8b20b69ae0cbee`、odd `ad1bc11741c5df15`、even `c575d5c2cc7e3c4b` |
+| 传输结果（两单） | 均 **`RuntimeError: receiver CAN at block 17`**（`xmodem_send.py --verbose --timeout 60`，rc=1，耗时各 1.4 s）⇒ confirm 单与回滚单**均未达成**（AC-8 未满足） |
+| 根因（板侧 flash 几何，非库缺陷） | 板侧 demo 的 B 槽 = 参数区**单页**：`et_demo.c:72-74` `BOOT_SLOT_A/B = 11u/12u`、`et_demo.c:85-86` `slot_size = PORT_FLASH_SECTOR_SIZE`、`et_demo.c:286` `xm_sink` 显式拒收 `off + len > PORT_FLASH_SECTOR_SIZE`（v1.9 走单教训条文在位）；G474 单页 = **2048 B**（`et_port.c:27-28` `#error` 强制），参数区 = `PORT_FLASH_SECTOR_COUNT 16 × 2048 = 32 KB`（`CMakeLists.txt:73-75`，`port.h:49-50` 参数区语义：sector_index 属参数区内、偏移相对参数区首字节）⇒ **48140 B 真固件放不下单页 B 槽，参数区整体（32 KB）亦不足** |
+| 板上态是否被失败污染 | 未污染：两单失败后 `AT+BOOTINFO` 仍 = `staged=1 confirmed=1 attempts=1`、`AT+VER` 仍 = `ver=2.28.0 boot=34`（`iap_dual_run.log` 的 boot-after 段与两单尾读）——`CAN` 发生在块 17，首块已擦页但未 stage、未复位 |
+| 处置 | 申报 `BLOCKED-2__v2.28真固件IAP双单受阻__板侧槽几何不足一页真固件.md`；AC-8 按**未达成**登记；**不以 `AT+SIMUPGRADE` 合成镜像单冒充真固件单**（REQ-7 原文动机即"合成镜像通过 ≠ 真实发布固件通过"，v1.8 假镜像为对照源；HC-8 如实性） |
+
+### 18.3 脚本 vs 手工逐要素对照（P3-3，AC-9）
+
+同一窗口先手工（§18.1/§18.2）、后脚本 `--full` 复跑；`tools/board_window.py --mode full --evidence v2.28-evidence-script`：
+
+| 要素 | 手工读数 | 脚本读数 | 判定 |
+|---|---|---|---|
+| 端口枚举 | 手工 `list_ports` → COM12（CH343） | `匹配端口 = COM12（描述含 CH343）` | 一致 ✓（脚本按描述匹配，非凭记录取号） |
+| 同步比对 | `diff_rq.txt` 9 行全 OK + sha256 72 件双侧一致 | `同步比对: diff=0` + `sync_report.txt`（逐文件字节比对，等价 `diff -rq`） | 一致 ✓（板侧已是同步态，两路均 0 差异） |
+| 构建 | Debug exit 0、warning 0、FLASH 86424 / RAM 8048 | Debug exit 0、**warning 0**、增量无重链接 ⇒ `arm-none-eabi-size` 直读 **text=86352 data=72 bss=7976** | 同树同 preset ✓（两种尺寸口径并列标注：linker MEMORY USAGE 计 FLASH 已编程字节，size 工具计 ELF 段；不混用） |
+| 烧前机检 | 集合 `['13.3.1','2.28.0','2.42.0','4.4.0']` 命中 2.28.0 | 同一集合、命中 = True（`version_check.txt`） | 一致 ✓ |
+| 烧录 | verified successfully + MCU Reset | `烧录 exit=0 verified=True`（`flash.log` 原文含 `Download verified successfully`） | 一致 ✓（判据取原文而非退出码） |
+| `AT+VER` | `ver=2.28.0 boot=34` | `ver=2.28.0 boot=37` | 版本串一致 ✓；boot 计数差 3 = 两路之间多了 3 次复位（脚本重烧 + 两单失败复位尝试），非差异 |
+| `AT+BOOTINFO` | `staged=1 confirmed=1 attempts=1`（pre 与 post 同值） | `staged=1 confirmed=1 attempts=1` | 逐值一致 ✓ |
+| `AT+FEATURES` | `FEATURES v2.28.0 (maj=2 min=28 pat=0) sw=32` + 32 行 | 同串 + 32 行 | 逐字一致 ✓ |
+| `AT+SELFTEST` | `22/22 PASS` + `ALL PASS` | `22/22 PASS` | 一致 ✓ |
+| MBRD 三形态 | `req=1/2/3 resp=1/2/3 … disc=0`，`t=2/2/2ms` | `req=1/2/3 resp=1/2/3 … disc=0`，`t=3/3/2ms` | `disc=0` 三行齐 ✓；耗时 ±1 ms 属测量抖动（同一命令、同一从站仿真） |
+| `AT+METRICS` | `11/12 drop=0`，`hb_runs=15524`，`loop_miss=2`，`rx_bytes=35` | `11/12 drop=0`，`hb_runs=303`，`loop_miss=2`，`rx_bytes=35` | 结构逐项一致 ✓；`hb_runs` 差异 = 复位后计数起点不同（烧录即复位），`loop_miss=2` **两路同值** = 失准计数可复现 |
+| `AT+RXSTAT` | `rx=193 ore=0` | `rx=180 ore=0` | `ore=0` 一致 ✓；`rx` 随走单序不同而不同（脚本序少一列 PROMPT 与 BOOTINFO 重复项） |
+| PC 侧从站 | `served=3 crc_err=0 mismatch=0` | `served=3 crc_err=0 mismatch=0` | 逐值一致 ✓ |
+| REQ-7 双单 | 手工 `iap.py`：两单 CAN at block 17 | **脚本不含 IAP 双单步**（REQ-5 原文列其为"可选步，联动 REQ-7"；本版计划 P3-1 五要素亦不含） | 差异如实登记：脚本覆盖面 = 五要素，IAP 双单属手工专属（且当前受阻） |
+
+干跑与红态探针（AC-9）：`--dry-run` 后证据目录**未创建**、无 `flash.log`/走单件、`STM32_Programmer_CLI` 未被调用（脚本打印 `dry-run: 不落盘 …`，`ls` 实测 `No such file or directory`）；机检红 abort 路径 = 在临时副本把 ELF 版本串期望改为不存在的串后跑 `--full`，脚本在机检段置 `abort_reason` 并**不进烧录分支**（HC-10②），首轮真实复现亦已见：`--full` 曾以 `verified=False` 中止（CLI 在管道捕获下不回显 ⇒ 判据面改读原文文件后通过），即"退出码 0 但原文无 verify 不烧"的同族防线。
+
+### 18.4 其他两板（本版零操作，挂账续期）
+
+- ch32x035：本轮端口枚举**无 WCH-Link 通道**（COM16 不在位，实测枚举 = COM3/4/9/10/12 五口）⇒ `REQ-2` 触发条件未现，挂账续期（`docs/v3-candidates.md` ch32x035 条目 v2.28 行）。
+- f103：本版**无上板动作**（G474 为唯一窗口），Renode CI smoke 门常态兜底，缺板挂账续期（同文件 f103 行 v2.28 状态）。
+
+### 18.5 本节局限与偏差（如实）
+
+1. 脚本证据目录取 `build/v2.28-evidence-script/`（计划 P3-1 字面为 `build/v2.28-evidence/`）——同目录会令脚本 `version_check.txt`/`flash.log`/`build.log` **覆盖手工件**，对照即失去物证；分目录是达成本版 AC-9「逐要素对账」的必要形态，属计划字面的偏离、按 HC-8 显式登记（交付 §3 偏差条目承载）。
+2. REQ-7 双单未达成 = 板侧槽几何（单页 2048 B）与真固件体量（48140 B）的硬冲突，非库缺陷、非操作失误；本版不为此改库面/参数区几何（HC-10⑤ + §1.3 Non-goals），处置 = BLOCKED-2 + 计划判据自洽性缺口交 A2 与 Owner。
+3. 脚本的「构建」要素在增量态下不重链接 ⇒ 无 linker MEMORY USAGE 行，尺寸改由 `arm-none-eabi-size` 直读 ELF（两种口径并列且各标其名，禁混用）。
+4. `loop_p99_ms` 未出现在板上 `AT+METRICS` 输出（demo 注册 11 项、槽 12）——手工与脚本两路读数一致，非采集缺失；v2.27 §17.2 的同名读数形态相同。
