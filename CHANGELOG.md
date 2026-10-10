@@ -6,6 +6,30 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.28.0] — 2026-10-10 · **v2.28 — 板侧窗口一键化、真固件升级链判定与自测内存防线（功能版）**
+
+### Added
+- **`tools/board_window.py`（REQ-5 / ROADMAP M3-⑤）**：G474 板侧窗口一键化五要素（端口枚举按描述匹配 → 同步逐文件比对 → `cmake --preset` 构建 → **烧前 ELF 版本串机检（不过即 abort，绝不烧录）** → SWD 烧录 + 串口走单捕获）+ 证据目录同构落盘；三模式 `--dry-run` / `--check-only` / `--full`；纯上位机层，不入 port 构建、不入 CI（HC-9）。
+- **依赖显式声明**：Python 3.12.4 + pyserial 3.5 入 `docs/getting-started.md` §0 与 README 门禁/边界区（此前该依赖仅载于 v1.6/v1.8 历史交付档注记，现役文档零声明）。
+
+### Changed
+- **库面唯一改动 = `et_metrics_format` 的 `slots == NULL` 守卫**（`CO-7(v2.27)`-P，本版唯一 CO-P）：句柄非空而槽表为空时早退返回 0，与同族 `m_find`/`iter`/`reset` 守卫语义一致；签名与返回值语义不变（`apidump --diff` 对 v2.27 基线 = 新增 0 / 修改删除 0，判据形态 **0/0/0**）；`debug/et_metrics.h` 补 `et_metrics_bind` 生命周期契约注记。
+- **口径文档化两处**（`CO-8(v2.27)`，语义零改动）：`observe` 挂 hist 的 `uint32 → int32` 窄化（≥ 2^31 落 **under** 桶）、`format`/`features_format` 截断提示为**必要非充分**判据（恰好填满 `cap-1` 时假阳性）。
+- **机制门**：`docsync` 新增「`API_GUIDE ## 10` 开关枚举行 ↔ `et_config.h` 开关集合」**逐名对账**断言（补 v2.27 只闭数量一半的后半，K=1）+ `tools/board_window.py` 工具存在性断言（K=2）；终态断言数 **375**（新 N 公式 `上版实测 + 交付文档 + rN + CHANGELOG 链 + K ± 占位符拦截面` 的首例自证，公式补项见 README 清单⑧）。
+- **行尾归一（`CO-6(v2.27)`，Owner 裁决）**：`.gitattributes` 入库（`* text=auto eol=lf` + 九类扩展名强制 LF + 二进制声明面），工作树 78 个 `w/crlf` 归零、index 侧 **零 blob 改写**；幻影 ` M` 探针（`git status` 与 `git diff` 差集 = ∅，且全量 `utime` 刷 stat 后仍 ∅）。
+- **条文五处**（`CO-4`/`CO-5`/`RC-1`/`RC-2` + `CO-6` 过渡条文）：登记行 carve-out、结构体字段追加的允许面↔义务交叉引用、`templates/DELIVERY.md` 偏差表**五列对齐**、连写串判据作用域与门内历史注释豁免、工作区洁净判据以 `git diff` 为准。
+- **基线滚动**：`docs/API_INVENTORY_v2.27.md` 归档（worktree 于 tag `v2.27` = `a02f98a` 真生成，461 项，与 v2.26 归档逐段 diff = 28 项新增同一集合）；`apidump.sh` 默认 BASE 切 v2.27（**两处实测**口径）。
+
+### Fixed
+- **自测内存防线与文档复原**：`metrics.dump_cmd_through_shell` 的换绑句柄由块作用域上移到函数作用域（Linux ASan 判 `stack-use-after-scope`，v2.27 发版后补丁 P-1 = `5d33d2f`）；四件已发布文档的裸转义控制符复原（证据目录路径串 `build…-evidence\` 与三形态走单行的 `
+` / `` / `
+` 字面量，v2.28 D-1 = `19a72c8`）——全仓裸控制符复扫 0 命中、`实机记录` 由 git 判二进制转文本态。
+
+### 挂账与受阻（禁静默）
+- **REQ-7 真固件 IAP 双单 = 受阻未达成**（`BLOCKED-2`）：当版真固件 48140 B vs 板侧 B 槽 = 参数区单页 2048 B（参数区全体 16 × 2048 = 32 KB），两单传输均 `receiver CAN at block 17`；板上态未受污染（`staged/confirmed/attempts` 与 `ver` 逐值不变）；不以合成镜像单冒充真固件单。解阻三径（板侧分区改造 v2.29 / 变更判据需 Owner 批准 / 撤条）交 A2 与 Owner。
+- ch32x035（REQ-2）本版零操作：端口枚举实测无 WCH-Link（COM16 不在位）；f103（REQ-3）缺板挂账续期，Renode CI smoke 门常态兜底。
+- 跨版链维持：`CO-8(v2.8)-P` / `CO-4(v2.8)-M` / `CO-9(v2.8)-M` / `CO-7(v2.7)-M` / v3 池（本版新增 `CO-9(v2.27)`-① [自指] fail 计数与诊断行数机制一条）。
+
 ## [2.27.0] — 2026-10-09 · **v2.27 — 运行指标注册表、调度失准计数与板侧自描述（功能版）**
 
 功能版（出口 A，全量档，服务 M3-①②③④）：板上自证与可观测性主题批——新模块 `et_metrics`（**第 35 模块**）把散在 10+ 个模块的运行读数收拢成**定容命名指标注册表**（u32 计数器/仪表 + 可选 `et_hist` 挂接），`AT+METRICS` 一条命令 dump；`et_sched` 新增**周期失准计数**（实际间隔 > `period_ms + 容差` 每补跑计一次，调度行为零改动）；`AT+FEATURES` **编译期裁剪自描述**（32 个模块开关逐行 0/1 + 版本三件，未启用如实报 0）；G474 板侧同步债（库内 26 ↔ 板侧 10，跨 16 版）随本版全要素窗口一次清偿。公开面纯追加（`--diff` 新增 28 项 / 修改删除 0 项），四形态回归 520/520/527/521。

@@ -133,6 +133,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.26 | 36340 | 24 | 3016 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；与 v2.7~v2.25 行逐值相同（本版构建实测回填） |
 | v2.27 | 25600 | 24 | 1512 | 默认裁剪构建；**功能版**（第 35 模块 `debug/et_metrics` + `et_sched` 失准计数）：text **+1716 B** / bss **+772 B** = 新模块全量入 ELF（demo 未调用，本 port 构建无 gc-sections，沿 v2.1 行同因口径）——bss 增量与命令面共用缓冲 `g_io_buf`(768) + 只读句柄(4) 逐值吻合；`miss_cnt`/`tol_ms` 为 `et_task_t` 字段追加（demo 不实例化调度任务，零增量）（构建实测回填） |
 | v2.27 | 38044 | 24 | 3792 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+1704 B** / bss **+776 B**（同因，自测套件数维持 22——本版不加板上套件，裁决见 v2.27 计划 §1.3）（构建实测回填） |
+| v2.28 | 25608 | 24 | 1512 | 默认裁剪构建；**功能版（板侧窗口自动化 + 真固件升级链在途）**：库面唯一改动 = `et_metrics_format` 的 `slots == NULL` 防御守卫（`CO-7(v2.27)`-P，早退返回 0，签名与返回值语义不变，`apidump --diff` 对 v2.27 基线 **0 新增 / 0 修改 / 0 删除**）；text **+8 B**（守卫分支：默认裁剪态下该判定被并入既有早退路径），data/bss 零变化——公开面零新增故无新表入 ELF；`tools/board_window.py` 属上位机层不入 port 构建面（HC-9）。体积读数 = `arm-none-eabi-size` 本机实测，`sh tools/sizecheck.sh` 断言同值 |
+| v2.28 | 38056 | 24 | 3792 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+12 B**（同一守卫在 SELFTEST=1 构型下展开为独立分支，与本 port 默认构型的 +8 B 差异属构型相关，两值各按实测标注、不互推），data/bss 零变化；`make WERROR=1 test` 零警告 + 四形态 520/520/527/521 全绿（本版用例数零增减，`null_safety` 为既有用例内扩展） |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
