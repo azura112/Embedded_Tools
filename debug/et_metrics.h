@@ -87,6 +87,9 @@ void et_metrics_add_n(et_metrics_t *m, const char *key, uint32_t n);
 void et_metrics_set(et_metrics_t *m, const char *key, uint32_t v);
 
 /* 观测一个值: 仪表置为 v, 且若挂接了 et_hist 则同时 push 入桶
+ * 口径(v2.28 P1-2, `CO-8(v2.27)`-①): 入桶实参 = `(int32_t)v` **窄化**形态 —— v ≥ 2^31
+ * 时窄化为负值, 依 et_hist 语义落 **under** 桶(越下界)而非 over; 指标值本身按 uint32
+ * 原样保留且 dump 照原值渲染, 只有分布视图受此影响。需 ≥2^31 量级分布者勿挂 hist。
  * (ET_MODULE_HIST=0 时只置值, hist 指针永不使用)。键不存在返回 false。🏠MAIN */
 bool et_metrics_observe(et_metrics_t *m, const char *key, uint32_t v);
 
@@ -110,6 +113,9 @@ void et_metrics_reset(et_metrics_t *m);
  *     <key>=<val> <c|g>\n          ← 按登记顺序, 两空格缩进
  * 返回实际写入 buf 的字节数(不含终止 NUL)。容量不足 → **截断**到 cap-1
  * 字节并补 NUL(返回值 = 实际写入数, 等于 buf_cap-1 即提示被截断)。
+ * 口径(v2.28 P1-2, `CO-8(v2.27)`-②): 该提示是**必要非充分**条件 —— 全量渲染恰好
+ * = buf_cap-1 字节时返回值同为 buf_cap-1 而并未截断; 严格判定须加大容量复跑比对返回值
+ * 是否变化, 或按下方预算式取足额。`et_features_format` 同此口径。
  * buf_cap 预算: 32 + 每槽 32 字节(键上限 16 + 值 10 + 类别与缩进 6)。🏠MAIN */
 uint32_t et_metrics_format(const et_metrics_t *m, char *buf, uint32_t buf_cap);
 

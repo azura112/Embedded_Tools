@@ -1503,6 +1503,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 - **边界**：`AT+FEATURES` 报的是**编译期开关值**，不是"运行时链接了没"——`.c` 未移出编译列表而开关置 0 时，
   报 0 且对应模块 API 不存在（头文件内容被 `#if` 屏蔽）；模块数 ≠ 开关数（35 模块 / 32 开关，
   差因 = `et_xmodem_tx` 共享 `ET_MODULE_XMODEM`、`et_modbus_master` 共享 `ET_MODULE_MODBUS`、`et_assert` 无开关）；
+- **口径两处（v2.28 P1-2，`CO-8(v2.27)`，语义零改动、纯文档化）**：① `et_metrics_observe` 挂 `et_hist` 时入桶实参为 `(int32_t)v` **窄化**形态——`v ≥ 2^31` 窄化为负，按 et_hist 语义落 **under** 桶（不是 over），而指标值本身与 `AT+METRICS` 渲染仍按 uint32 原样；需要该量级的分布视图时勿挂 hist（改自备聚合面）。② `et_metrics_format` / `et_features_format` 的「返回值 == `buf_cap-1` 即提示被截断」是**必要非充分**判据——全量渲染恰好等于 `buf_cap-1` 字节时同样满足且并未截断；严格判定须加大容量复跑看返回值是否变化，或按预算式 `buf_cap ≥ 32 + 32×cap` 取足额。
 - **登记义务**：新增 `ET_MODULE_*` 开关必须同步登记进 `debug/et_metrics.c` 的特性表——
   `sh tools/docsync.sh` 断言"表行数 == `et_config.h` 开关数"，漏登记即红；
 - 用法与板侧走单见 [11.15 运行指标登记与板侧自描述](#1115-运行指标登记与板侧自描述et_metrics--atfeaturesv227)。
