@@ -21,9 +21,7 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 - **基线滚动**：`docs/API_INVENTORY_v2.27.md` 归档（worktree 于 tag `v2.27` = `a02f98a` 真生成，461 项，与 v2.26 归档逐段 diff = 28 项新增同一集合）；`apidump.sh` 默认 BASE 切 v2.27（**两处实测**口径）。
 
 ### Fixed
-- **自测内存防线与文档复原**：`metrics.dump_cmd_through_shell` 的换绑句柄由块作用域上移到函数作用域（Linux ASan 判 `stack-use-after-scope`，v2.27 发版后补丁 P-1 = `5d33d2f`）；四件已发布文档的裸转义控制符复原（证据目录路径串 `build…-evidence\` 与三形态走单行的 `
-` / `` / `
-` 字面量，v2.28 D-1 = `19a72c8`）——全仓裸控制符复扫 0 命中、`实机记录` 由 git 判二进制转文本态。
+- **自测内存防线与文档复原**：`metrics.dump_cmd_through_shell` 的换绑句柄由块作用域上移到函数作用域（Linux ASan 判 `stack-use-after-scope`，v2.27 发版后补丁 P-1 = `5d33d2f`）；四件已发布文档的裸转义控制符复原（证据目录路径串`build\v…-evidence\` 与三形态走单行的 `\r\n` / `\r` / `\n` 字面量，v2.28 D-1 = `19a72c8`）——全仓裸控制符复扫 0 命中、`实机记录` 由 git 判二进制转文本态。
 
 ### 挂账与受阻（禁静默）
 - **REQ-7 真固件 IAP 双单 = 受阻未达成**（`BLOCKED-2`）：当版真固件 48140 B vs 板侧 B 槽 = 参数区单页 2048 B（参数区全体 16 × 2048 = 32 KB），两单传输均 `receiver CAN at block 17`；板上态未受污染（`staged/confirmed/attempts` 与 `ver` 逐值不变）；不以合成镜像单冒充真固件单。解阻三径（板侧分区改造 v2.29 / 变更判据需 Owner 批准 / 撤条）交 A2 与 Owner。
