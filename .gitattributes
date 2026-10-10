@@ -1,0 +1,41 @@
+# =====================================================================
+# v2.28 P0-3（`CO-6(v2.27)`）行尾归一 —— 根治 `core.autocrlf=true` 且无属性文件时,
+# LF 形态跟踪文件在 stat 缓存刷新后 `git status` 报幻影 ` M`（内容逐字节同 HEAD）的
+# 缺陷: 工作区不洁判定、AC DoD 与发版判定曾因此失真。
+# 归一依据 = 本仓 index 侧实测**全部 `i/lf`**（无 blob 改写面）; 工作树 `w/crlf` 件
+# 由 `git checkout -- .` 归一后三门复跑同值（读数 = `versions/v2.28/DELIVERY.md` AC-2）。
+# 纪律: 本文件只声明行尾/二进制属性, 不改 `git config`（Owner 约束 HC-1）, 不动构建面。
+# =====================================================================
+
+# 默认: 自动识别文本, 检出侧统一 LF（覆盖 core.autocrlf=true 的检出行为; 真二进制按自动探测豁免）
+* text=auto eol=lf
+
+# 强制 LF: 脚本与源码（`.sh` 带 CR 在 MSYS/BSD 下即 `bad interpreter`; 工具链对 CR 宽容但口径须一致）
+*.sh     text eol=lf
+*.py     text eol=lf
+*.c      text eol=lf
+*.h      text eol=lf
+*.S      text eol=lf
+*.ld     text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+Makefile text eol=lf
+
+# 二进制: 关闭一切文本处理（当前跟踪件零命中, 属防御性声明面 —— 构建产物与镜像多落在 gitignore 的 build/ 下）
+*.bin    binary
+*.elf    binary
+*.hex    binary
+*.exe    binary
+*.o      binary
+*.a      binary
+*.map    binary
+*.gz     binary
+*.zip    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.pdf    binary
+*.xo     binary
+*.dfu    binary
