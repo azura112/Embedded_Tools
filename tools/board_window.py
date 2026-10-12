@@ -145,63 +145,89 @@ class Window:
                       os.path.join(self.board, "Core", "et", "port", "port.h")))
         return pairs
 
+    def same_file(self, a, b):
+        return (os.path.isfile(a) and os.path.isfile(b)
+                and sha256_file(a) == sha256_file(b))
+
     def sync(self):
+        """同步面比对与搬运。判定口径（v2.28-r2 T-2, `CO-1(v2.28)`）：
+        **abort 只看拷后残差与拷贝失败**；拷前差异 = 同步工作量（首次同步必为非零），
+        不得充当判据——旧形态把拷前差异计入 abort 条件，使"板侧落后一个版本"的正常
+        首次同步必然中止，而同一份 sync_report 的逐行结论全为 OK。
+        """
         lines = ["# board_window 同步面比对（等价 §16.2 step 0 的 diff -rq）",
                  "# 生成时点: " + now(),
                  "# 库侧 HEAD: " + self.git_short_head(),
                  "# 面 = 七目录(*.h/*.c) + et_config.h + port/port.h；et_port/、et_demo.c 工程私有不动",
+                 "# 判定 = 拷后残差 + 拷贝失败；拷前差异只作工作量（v2.28-r2 T-2, CO-1）",
                  ""]
+        root_et = os.path.join(self.board, "Core", "et")
+        pairs = [(s, d) for s, d in self.tree_pairs() if os.path.isfile(s)]
+
+        def rel(path):
+            return os.path.relpath(path, root_et).replace(os.sep, "/")
+
+        pre_diff = 0
+        for src, dst in pairs:
+            if not self.same_file(src, dst):
+                pre_diff += 1
+                lines.append("DIFF(拷前) %s" % rel(dst))
+
         copied = 0
-        diffcount = 0
-        for src, dst in self.tree_pairs():
-            if not os.path.isfile(src):
-                continue
-            same = (os.path.isfile(dst)
-                    and hashlib.sha256(open(src, "rb").read()).hexdigest()
-                    == hashlib.sha256(open(dst, "rb").read()).hexdigest())
-            if not same and self.mode != "dry-run":
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                with open(src, "rb") as f:
-                    data = f.read()
-                with open(dst, "wb") as f:
-                    f.write(data)
-                copied += 1
-            rel = os.path.relpath(dst, os.path.join(self.board, "Core", "et")).replace(os.sep, "/")
-            if not same:
-                lines.append("DIFF  %s" % rel)
-                diffcount += 1
+        copy_failed = 0
+        if self.mode != "dry-run":
+            for src, dst in pairs:
+                if self.same_file(src, dst):
+                    continue
+                try:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    with open(src, "rb") as f:
+                        data = f.read()
+                    with open(dst, "wb") as f:
+                        f.write(data)
+                    copied += 1
+                except (OSError, IOError) as exc:
+                    copy_failed += 1
+                    lines.append("COPY-FAIL %s (%s)" % (rel(dst), exc))
+
+        residual = 0
+        if self.mode != "dry-run":
+            for src, dst in pairs:
+                if not self.same_file(src, dst):
+                    residual += 1
+                    lines.append("RESIDUAL(拷后仍不一致) %s" % rel(dst))
+
         per_dir = []
         for d in SYNC_DIRS:
             src = os.path.join(self.repo, d)
-            dst = os.path.join(self.board, "Core", "et", d)
+            dst = os.path.join(root_et, d)
             bad = 0
             for root, _dirs, files in os.walk(src):
                 for fn in files:
                     if not fn.endswith((".h", ".c")):
                         continue
-                    a = os.path.join(root, fn)
-                    b = os.path.join(dst, os.path.relpath(a, src))
-                    if not os.path.isfile(b) or open(a, "rb").read() != open(b, "rb").read():
+                    if not self.same_file(os.path.join(root, fn),
+                                          os.path.join(dst, os.path.relpath(os.path.join(root, fn), src))):
                         bad += 1
             per_dir.append("%-10s %s" % (d, "OK (逐文件字节一致)" if bad == 0
-                                         else "DIFF x%d" % bad))
-            if bad:
-                diffcount += bad
+                                         else "DIFF x%d (拷后残差)" % bad))
         lines += per_dir
-        cfg_b = os.path.join(self.board, "Core", "et", "et_config.h")
-        cfg_ok = (os.path.isfile(cfg_b)
-                  and open(cfg_b, "rb").read() == open(os.path.join(self.repo, "et_config.h"), "rb").read())
+        cfg_b = os.path.join(root_et, "et_config.h")
+        cfg_ok = self.same_file(os.path.join(self.repo, "et_config.h"), cfg_b)
         lines.append("et_config.h %s" % ("OK" if cfg_ok else "DIFF"))
         lines.append("板侧 et_config.h MINOR = " + self.board_minor() if os.path.isfile(cfg_b)
                      else "板侧 et_config.h 不存在")
-        if diffcount and self.mode != "dry-run":
-            self.abort_reason = "同步面存在 %d 处差异且拷后仍不一致（应逐条排查，不得凭记录断言）" % diffcount
-        self.log("同步比对: diff=%d（dry-run 不写入；full/check 已拷 %d 件）" % (diffcount, copied))
-        if self.mode != "dry-run":
-            self.write("sync_report.txt", NL.join(lines) + NL)
-        else:
+        if self.mode == "dry-run":
+            self.log("同步比对(只读): 拷前差异=%d —— dry-run 不写入、不判残差、不中止" % pre_diff)
             self.log("dry-run: 同步面差异清单仅打印，不落盘不写入")
-        return diffcount
+        else:
+            self.log("同步比对: 拷前差异=%d / 已拷=%d / 残差=%d / 拷贝失败=%d"
+                     % (pre_diff, copied, residual, copy_failed))
+            if residual or copy_failed:
+                self.abort_reason = ("拷后残差 %d 处、拷贝失败 %d 处 => 同步面未闭合"
+                                     "（应逐条排查，不得凭记录断言）" % (residual, copy_failed))
+            self.write("sync_report.txt", NL.join(lines) + NL)
+        return residual
 
     def board_minor(self):
         txt = open(os.path.join(self.board, "Core", "et", "et_config.h"),
