@@ -918,7 +918,7 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 | 构建 | `cmake --build --preset Debug` | `build.log`（**warning 计数 0**，exit 0） | MEMORY USAGE **FLASH 86424 B / RAM 8048 B**（v2.27 同 preset = 86404 / 8048 ⇒ **+20 B**，归因 = P1-1 `et_metrics_format` 槽守卫；库侧 port 体积面见 sizecheck 读数 §18.3） |
 | HC-10② 烧前机检 | python 字节扫描目标 ELF 的 `x.y.z` 串集合 | `version_check.txt`：集合 = `['13.3.1', '2.28.0', '2.42.0', '4.4.0']`，逐条标注干扰串（GCC / HAL / newlib 族），断言 **PASS** | 命中标的串 = **2.28.0** ⇒ 方烧录 |
 | 烧录 | `STM32_Programmer_CLI`（v2.19.0，CubeCLT 1.18.0）`-c port=SWD -w …elf -v -rst` | `flash.log`：**`Download verified successfully`** + **`MCU Reset`**；`Device ID : 0x469` | 烧录成功（一次通过，无重试） |
-| 走单（含 REQ-7 前置基线） | `walk.py`（COM12 + 同口 Modbus 从站仿真 addr=0x11，复用库内 `tools/modbus_master.py`） | `walk_output.txt`（41 行原始全文）、`walk_summary.md` | 见下表 |
+| 走单（含 REQ-7 前置基线） | `walk.py`（COM12 + 同口 Modbus 从站仿真 addr=0x11，复用库内 `tools/modbus_master.py`） | `walk_output.txt`（**143 行**原始全文，`wc -l` 口径；脚本目录同件 = **136 行**，两目录不可互代）、`walk_summary.md` | 见下表 |
 
 **串口走单读数**（端口 = `serial.tools.list_ports` 枚举实测：**COM12**，描述 `USB-Enhanced-SERIAL CH343`，VID:PID=1A86:55D3，SER=5AE7117074；COM16 = WCH-Link 本轮**不在位**）：
 
