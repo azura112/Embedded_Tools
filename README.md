@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.28.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[versions/v2.27/DELIVERY.md](versions/v2.27/DELIVERY.md)**（功能版：`et_metrics` 运行指标注册表 + `AT+METRICS`/`AT+FEATURES` 板侧自描述 + `et_sched` 周期失准计数 + G474 板侧全要素窗口）
+> 当前版本：**v2.28.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[versions/v2.28/DELIVERY.md](versions/v2.28/DELIVERY.md)**（功能版：板侧窗口一键化 `tools/board_window.py`（REQ-5 / M3-⑤，五要素 + 三模式）+ `et_metrics_format` 槽守卫与两条口径文档化 + G474 全要素窗口复跑（§18，含 REQ-7 真固件双单受阻如实登记））
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**
 

@@ -290,6 +290,8 @@ assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接�
 assert_grep "docs/getting-started.md" "520"             "getting-started 用例数与实测一致(v2.7 回刷, v2.27 随新增 23 例滚动)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
 assert_grep "README.md"           "520"                 "README 用例数终值回刷(v2.7, v2.27 随新增 21 例滚动)"
+VMM_DS=$(echo "$V" | cut -d. -f1,2)   # v2.28-r2 T-4: 当版主.次号(CO-3(v2.28) 交付链接行滞后装门)
+assert_grep "README.md" "versions/v${VMM_DS}/DELIVERY"  "README 交付链接行指当版交付文档(v2.28-r2 T-4, CO-3, HC-7 扩检查面)"
 
 # ---- v1.8 覆盖率行治理: 每份交付文档复现表必须含覆盖率行 ----
 assert_grep "README.md" "行覆盖"                                 "README 含覆盖率行(测试与质量门)"
