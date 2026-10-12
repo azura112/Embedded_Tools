@@ -128,6 +128,8 @@ sh tools/gatecheck.sh 2.28 --verify versions/v2.28/DELIVERY.md   # 期望 exit 0
 
 - 本版对**已发布档**的触碰面 = D-1 复原四件（偏差 1，HC-4 放行）+ 登记行 carve-out（P4-3 对各 OK 档纯登记）；`docref.sh` 白名单形态未变（本仓 `*实机记录*.md` / `versions/*/REVIEW*.md` 等属良性面）。
 - 无本版内已发布档的 修订登记 token 需求：v2.27 四件在 r2 批内已携登记行；本档对它们的触碰 = 偏差 1/2 承载面（内容复原非声称改写）。
+- 修订登记（r2 轮，短语行不携 token，遵碰撞规避纪律；token 行另起）：v2.28-r2 批对本档 §2/§4/§6/§7.1 的实质变更与本轮门强制数值面走放行，来源 = `versions/v2.28/REVIEW.md` §6 清单 T-1…T-5 + T-7（载体 = `versions/v2.28/DELIVERY-r2.md`）
+- 修订登记 @ab4d104 @78aee9c @be6a40f @1b03bd6 @f158d05：r2 批逐笔点名面 = R3（T-5 本档 AC-2 与 §7.1 两处 1:1 行内替换）/ R6（T-2 `tools/board_window.py`，非白名单）/ R7（T-3 本档 §6 复评职责句更正）/ R8（T-1 本档 §4 三笔具名 + docref 声明行归位 + 对账注记）/ R9（T-4 `README.md` + `tools/docsync.sh` + `docs/architecture.md` 375→378 三面，非白名单）；R1 评审记录入仓、R2 申报件更正章与 R10 本笔 = 白名单或纯登记豁免面，不点名
 
 ### 7.4 ⑧ 自检表（引用机检第八周期）
 
