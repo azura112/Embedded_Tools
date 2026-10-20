@@ -21,6 +21,13 @@
 被中止。**退出码 0 不等于"板侧绿"**——板侧读数只看 `walk_output.txt` / `walk_summary.md`
 里的原文行（版本串、`disc=0`、`22/22`、`METRICS`、`BOOTINFO` 三字段）。
 
+非 0 再分两类（v2.29 P3-2，`RC-1`）：**2 = 端口不可用**（烧录后重枚举竞态或被其他
+进程占用，属物理可达性问题，不是判定红）；**1 = 机检失败**（同步残差 / 构建失败 /
+烧前版本串不命中 / 烧录 verify 不过 / 走单途中串口异常）。两类都走 `abort_reason`
++ 留痕通道，**不再抛 traceback**——旧形态 `serial.Serial()` 的 PermissionError 直接
+使进程崩溃，`window_run.log` 与已生成证据件一并丢失（v2.28 `DELIVERY-r2` §5.4 登记，
+v2.29 起改由 `open_port_with_retry` 有界重试 6×0.8s，重试仍失败即如实中止，不"重试到成功"）。
+
 本文件零反斜杠字面量（Windows 路径一律正斜杠形态，Python 在 Windows 下同样接受）——
 沿 v2.28 D-1 勘误教训：非 raw 字符串里的 backslash 会被求值成裸控制符，破坏路径与表格。
 """
@@ -47,12 +54,38 @@ SIZE_DEFAULT = "D:/software/STM32CubeCLT_1.18.0/GNU-tools-for-STM32/bin/arm-none
 BAUD_DEFAULT = 115200
 
 SYNC_DIRS = ("core", "algorithm", "sys", "protocol", "drivers", "storage", "debug")
+
+# 端口打开的有界重试(RC-1 修法 a): 烧录后 CH343 重枚举有 1~3s 窗口期, 旧形态直接
+# serial.Serial() 抛 PermissionError 走 traceback, 已生成的证据件与摘要全丢。
+# 有界 = 次数与间隔固定, 不做"重试直到成功"——重试成功即掩盖了真实失败(HC-10⑤)。
+PORT_RETRY_N = 6
+PORT_RETRY_WAIT = 0.8
 MODBUS_ADDR = 0x11
 VER_RE = re.compile(rb"[0-9]+\.[0-9]+\.[0-9]+")   # bytes 形态: 机检面扫的是 ELF 原始字节
 
 
 def now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def open_port_with_retry(port, baud, n=PORT_RETRY_N, wait=PORT_RETRY_WAIT):
+    """有界重试打开串口; 全部失败返回 None(调用方转 abort_reason, 不抛异常)。
+
+    捕获面 = serial.SerialException(含 PermissionError 包装) + OSError,
+    即 M3-⑤/v2.28 实机暴露的 `could not open port 'COMxx': PermissionError(13, ...)`。
+    serial 与本文件其余处一致: **惰性 import**(非走单模式不该依赖 pyserial)。
+    """
+    import serial
+
+    last = None
+    for i in range(1, n + 1):
+        try:
+            return serial.Serial(port, baud, timeout=0.02)
+        except (serial.SerialException, OSError) as e:
+            last = e
+            time.sleep(wait)
+    print("board_window: 端口 %s 重试 %d 次仍失败: %s" % (port, n, last))
+    return None
 
 
 def sha256_file(path):
@@ -406,26 +439,43 @@ class Window:
             ser.flush()
             return collect(wait, label)
 
-        ser = serial.Serial(self.port, self.baud, timeout=0.02)
-        ser.reset_input_buffer()
-        send(CR, "WAKE", 0.8)
-        for cmd, label, wait in (
-            (b"AT+VER", "AT+VER", 1.0),
-            (b"AT+BOOTINFO", "AT+BOOTINFO", 1.5),
-            (b"AT+FEATURES", "AT+FEATURES", 2.5),
-            (b"AT+SELFTEST", "AT+SELFTEST", 6.0),
-            (b"AT+MBRD 0 4" + CRLF, "MBRD-F1-CRLF", 3.0),
-            (b"AT+MBSTAT" + CRLF, "MBSTAT-F1", 1.0),
-            (b"AT+MBRD 0 4" + CR, "MBRD-F2-CR", 3.0),
-            (b"AT+MBSTAT" + CRLF, "MBSTAT-F2", 1.0),
-            (b"AT+MBRD 0 4" + LF, "MBRD-F3-LF", 3.0),
-            (b"AT+MBSTAT" + CRLF, "MBSTAT-F3", 1.0),
-            (b"AT+METRICS", "AT+METRICS", 2.0),
-            (b"AT+RXSTAT", "AT+RXSTAT", 1.0),
-        ):
-            raw = cmd + (CRLF if label.startswith("AT+") else b"")
-            send(raw, label, wait)
-        ser.close()
+        ser = open_port_with_retry(self.port, self.baud)
+        if ser is None:
+            self.abort_reason = ("端口 %s 在 %d 次有界重试(间隔 %.1fs)后仍不可打开 —— "
+                                 "烧录后 USB 串口重枚举竞态/被其他进程占用; 板侧读数**未取**, "
+                                 "不得据此判板侧绿(RC-1 修法: 走异常通道而非 traceback, "
+                                 "已生成件保留)"
+                                 % (self.port, PORT_RETRY_N, PORT_RETRY_WAIT))
+            self.log("!" + self.abort_reason)
+            return
+        try:
+            ser.reset_input_buffer()
+            send(CR, "WAKE", 0.8)
+            for cmd, label, wait in (
+                (b"AT+VER", "AT+VER", 1.0),
+                (b"AT+BOOTINFO", "AT+BOOTINFO", 1.5),
+                (b"AT+FEATURES", "AT+FEATURES", 2.5),
+                (b"AT+SELFTEST", "AT+SELFTEST", 6.0),
+                (b"AT+MBRD 0 4" + CRLF, "MBRD-F1-CRLF", 3.0),
+                (b"AT+MBSTAT" + CRLF, "MBSTAT-F1", 1.0),
+                (b"AT+MBRD 0 4" + CR, "MBRD-F2-CR", 3.0),
+                (b"AT+MBSTAT" + CRLF, "MBSTAT-F2", 1.0),
+                (b"AT+MBRD 0 4" + LF, "MBRD-F3-LF", 3.0),
+                (b"AT+MBSTAT" + CRLF, "MBSTAT-F3", 1.0),
+                (b"AT+METRICS", "AT+METRICS", 2.0),
+                (b"AT+RXSTAT", "AT+RXSTAT", 1.0),
+            ):
+                raw = cmd + (CRLF if label.startswith("AT+") else b"")
+                send(raw, label, wait)
+        except (serial.SerialException, OSError) as e:      # RC-1: 中途断口也走异常通道
+            self.abort_reason = ("走单途中串口异常(%s: %s) —— 已取读数落盘后中止, "
+                                 "不重试掩盖" % (type(e).__name__, e))
+            self.log("!" + self.abort_reason)
+        finally:
+            try:
+                ser.close()
+            except Exception:
+                pass
         path = self.write("walk_output.txt", NL.join(tr) + NL)
         self.log("走单落盘 %s（%d 行）; 从站 served=%d crc_err=%d mismatch=%d"
                  % (path, len(tr), slave.served, slave.crc_err, slave.mismatch))
@@ -505,7 +555,9 @@ class Window:
         self.write("window_run.log", NL.join(head) + NL)
         if self.abort_reason:
             print("board_window: 中止 => " + self.abort_reason)
-            return 1
+            # 退出码分两类(v2.29 P3-2, RC-1): 2 = 端口不可用(物理/占用竞态, 非判定红),
+            # 1 = 其余机检红(同步残差/构建/版本串/verify/走单途中断口)。
+            return 2 if ("端口" in self.abort_reason) else 1
         print("board_window: 机检通过（模式 %s）。板侧判据请核 walk_output.txt / walk_summary.md。"
               % self.mode)
         return 0
