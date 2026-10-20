@@ -135,6 +135,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.27 | 38044 | 24 | 3792 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+1704 B** / bss **+776 B**（同因，自测套件数维持 22——本版不加板上套件，裁决见 v2.27 计划 §1.3）（构建实测回填） |
 | v2.28 | 25608 | 24 | 1512 | 默认裁剪构建；**功能版（板侧窗口自动化 + 真固件升级链在途）**：库面唯一改动 = `et_metrics_format` 的 `slots == NULL` 防御守卫（`CO-7(v2.27)`-P，早退返回 0，签名与返回值语义不变，`apidump --diff` 对 v2.27 基线 **0 新增 / 0 修改 / 0 删除**）；text **+8 B**（守卫分支：默认裁剪态下该判定被并入既有早退路径），data/bss 零变化——公开面零新增故无新表入 ELF；`tools/board_window.py` 属上位机层不入 port 构建面（HC-9）。体积读数 = `arm-none-eabi-size` 本机实测，`sh tools/sizecheck.sh` 断言同值 |
 | v2.28 | 38056 | 24 | 3792 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+12 B**（同一守卫在 SELFTEST=1 构型下展开为独立分支，与本 port 默认构型的 +8 B 差异属构型相关，两值各按实测标注、不互推），data/bss 零变化；`make WERROR=1 test` 零警告 + 四形态 520/520/527/521 全绿（本版用例数零增减，`null_safety` 为既有用例内扩展） |
+| v2.29 | 25760 | 32 | 1520 | 默认裁剪构建；**接入版 P2 契约面**（v2.29 计划 P2-1/P2-2）：text **+152 B** = port 区域五符号(本平台 = 恒失败桩, 见 `port_stm32f103.c` 区域段) + `et_bootctl` 的 `cfg_slots_valid` 位形校验与 `slot_read` 分发(两取数点经区域 API 或 `port_flash_read`)；data **+8 B** / bss **+8 B** = `et_bootctl_cfg_t` 尾字段 `slot_base[2]`(20→28 B, 编译期断言实测)在 demo 静态实例与自测句柄上的尺寸增量, 无新增静态数组；`port_flash_read/write/erase_sector` 与 bootctl 七签名逐字不变(`apidump --diff` = 新增 7 项 / 修改删除 0 项)。体积读数 = `arm-none-eabi-size` 本机实测(GNU Tools for STM32 13.3.rel1, `sh tools/docbuild.sh` 产出的同一 ELF), `sh tools/sizecheck.sh` 断言同值 |
+| v2.29 | 38204 | 32 | 3808 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+148 B** / data **+8 B** / bss **+16 B**（同上一行归因；两构型 text 增量差 4 B 属构型相关, 各按实测标注、不互推）；板上 selftest 套件数维持 22（本版不新增板上套件, 计划 §1.3） |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
