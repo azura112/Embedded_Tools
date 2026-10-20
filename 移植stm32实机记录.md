@@ -979,3 +979,84 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 2. REQ-7 双单未达成 = 板侧槽几何（单页 2048 B）与真固件体量（48140 B）的硬冲突，非库缺陷、非操作失误；本版不为此改库面/参数区几何（HC-10⑤ + §1.3 Non-goals），处置 = BLOCKED-2 + 计划判据自洽性缺口交 A2 与 Owner。
 3. 脚本的「构建」要素在增量态下不重链接 ⇒ 无 linker MEMORY USAGE 行，尺寸改由 `arm-none-eabi-size` 直读 ELF（两种口径并列且各标其名，禁混用）。
 4. `loop_p99_ms` 未出现在板上 `AT+METRICS` 输出（demo 注册 11 项、槽 12）——手工与脚本两路读数一致，非采集缺失；v2.27 §17.2 的同名读数形态相同。
+
+## 19. v2.29 G474 板侧窗口——真 A/B 分区落地、分区表实测与真固件双单传输面受阻（2026-10-20）
+
+> 对应 `versions/v2.29/PLAN.md` P2-3 / P2-4（AC-8，REQ-7 / M4-④）与 P3-2（AC-10，`RC-1`）。
+> 板侧工程与证据目录均在**库外**（HC-1）：工程 `D:/code/STM32CubeMX/G474VET6_ET_TEST`；
+> 证据 `D:/code/STM32CubeMX/G474VET6_ET_TEST/build/v2.29-evidence/`（驱动脚本与私有件不入库）。
+> 本节路径一律正斜杠形态（D-1 教训：非 raw 字符串里的反斜杠转义会被求值成裸控制符）。
+> **本节的板侧结论只到"分区面达成"为止**：真固件双单的两条腿未完成，判据面见 §19.5 与
+> `BLOCKED-2__v2.29真固件双单传输面受阻__88KB_xmodem在约11KB处失步.md`（HC-10⑤：板侧红走申报，不改库面绕过）。
+
+### 19.1 分区表实测（AC-8 第一条，`AT+REGIONS` 读回 port 分区表）
+
+`port_flash_region_get()` 逐条读回（数据源 = 板侧 `Core/et/et_port/et_port.c` 的分区表本体，非 demo 里的宏）：
+
+```
+[at] region[0] base=0x08078000 size=32768  page=2048     ← 参数区(末端 16 页, kv 14/15 + bootctl 状态 13)
+[at] region[1] base=0x08000000 size=131072 page=2048     ← slot_a = 当前在跑的应用
+[at] region[2] base=0x08020000 size=131072 page=2048     ← slot_b = 新镜像落地处
+[at] region[3] base=0x08040000 size=2048   page=2048     ← state 页(本版 et_bootctl 仍用参数区状态扇区)
+[at] regions=4
+```
+
+命令与原文件：`python build/v2.29-evidence/regions_probe.py build/v2.29-evidence/regions.txt`（`REGIONS 命中条数 = 4`）。
+
+**体量 vs 容量维（HC-10①，算式 + 实测双读数）**：
+
+| 项 | 值 | 来源 |
+|---|---|---|
+| 当版真固件 body | 87,840 B | `arm-none-eabi-objcopy -O binary build/Debug/G474VET6_ET_TEST.elf` + `wc -c` |
+| 打包后镜像（含 32 B ETBI 头） | **87,872 B** | `python tools/pack_image.py --in … --ver 3` ⇒ `packed 87840 B img -> 87872 B` |
+| 单槽容量 | 131,072 B | `AT+REGIONS` 的 `region[2] size` |
+| 判定 | **87,872 ≤ 131,072**（余 43,200 B）⇒ v2.28 `BLOCKED-2` 的物理不可达在本版解除 | 两值同口径（字节），非设计值 |
+| 构建期护栏 | 工程 `STM32G474xx_FLASH.ld` 的 `FLASH` 长度由 512K 收到 **128K = 槽容量** ⇒ 应用超容在**链接期**失败 | 改后构建 `exit=0 warning=0`，`arm-none-eabi-size` text=87600 data=80 bss=7992 |
+
+### 19.2 五要素走单（真机，烧录后）
+
+`python tools/board_window.py --mode full --evidence v2.29-evidence` ⇒ **rc=0**；
+同步「拷前差异=0 / 残差=0 / 拷贝失败=0」，构建 `exit=0 warning=0`，烧前版本串机检命中 `2.29.0`，
+烧录 `exit=0 verified=True`，走单 36 行落 `walk_output.txt`，PC 侧从站 `served=3 crc_err=0 mismatch=0`：
+
+| 要素 | 原文读数 |
+|---|---|
+| `AT+VER` | `ver=2.29.0 boot=53` |
+| `AT+BOOTINFO` | `staged=1 confirmed=1 attempts=1` —— **归因限定见 §19.5 行 ②**：烧录只写应用区，参数区状态扇区未被擦除 ⇒ 该三字段是既有残留态，**不构成本版新 confirm 的证据** |
+| `AT+FEATURES` | `FEATURES v2.29.0 (maj=2 min=29 pat=0) sw=32` |
+| `AT+SELFTEST` | `SELFTEST: 22/22 PASS`（套件数维持 22；其 bootctl 套件仍走参数区旧位形 cfg，见 §19.4 行 ③） |
+| `AT+MBRD` 三形态 | 三行均 `disc=0`（CRLF / 仅 CR / 仅 LF） |
+| `AT+METRICS` | `METRICS 11/12 drop=0` |
+| `AT+RXSTAT` | `rx=180 ore=0` |
+
+### 19.3 真固件双单：传输面实测受阻（本窗口的主要发现）
+
+两条腿（confirm / 回滚）均需先把当版真固件镜像（87,872 B / 687 块 128 B）经 `AT+UPGRADE` 的 xmodem 写入 B 槽。实测：
+
+| 读数 | 值 | 证据件 |
+|---|---|---|
+| 中止点 | 两次独立复跑均停在 **block ≈ 91**（约 11.6 KB），由接收端发 `CAN` 中止 | `blk_trace.py` ⇒ `停止于 block 91`；`rxstat_probe.py` ⇒ `停止 = (91, 'CAN')` |
+| 重试率 | 该轮 ACK 计数 346 / 实到块 91 ⇒ **每块约 3.8 次发送**（NAK 风暴后才勉强前进） | 同上 |
+| 失败形态 | 单块 NAK 后重传可恢复，但连续 NAK 后接收端永久失步（`18`=CAN 出现后只剩日志文本字节） | `xfer_capture.txt`（逐块 replies 十六进制） |
+| 小图对照 | 4 KB / 12 KB 图另两次复跑在 block 1 即失败，且窗口内 COM12 两次被外部进程占用 ⇒ 该链路当前**不可稳定承载 xmodem 会话** | `sim_run.log`（`SerialException: PermissionError(13)`）、`p32_evidence.log` 用例 2 |
+| 库面未绕行 | 未改 `et_xmodem` 重试/超时、未改 `et_bootctl` 判据、未用小合成镜像冒充真固件 | `git diff` 面：`protocol/` 与 `storage/` 相关实现本批零改动（除 P2a 已登记的 bootctl 位形面） |
+
+### 19.4 本窗口顺带发现并修复的两处真实缺陷（均在库外工程侧）
+
+| # | 发现 | 修复 | 判据面 |
+|---|---|---|---|
+| ① | 工程内存在 **2026-10-08 的 `Core/et/port.h` 陈旧副本**，而 CMake 头文件搜索顺序把 `Core/et` 排在 `Core/et/port` 之前 ⇒ 它**遮蔽**同步进来的 `Core/et/port/port.h`。表现：`et_bootctl.c` / `et_port.c` 报 `unknown type name 'port_flash_region_info_t'`、`implicit declaration of port_flash_region_read`，构建 exit=1（同步比对却报「残差=0」——即同步门看不见这个遮蔽） | 该陈旧件移出源码树、保留为证据件 `build/v2.29-evidence/port.h.stale-20261008.shadow.txt`；复跑构建 exit=0 | 与本版 P1-2「双源一致性」同族的第二源问题，只是发生在库外；已登记进交付文档 |
+| ② | `cmd_upgrade` 的 xmodem sink 原按"每进一页擦该页"设计 ⇒ 88 KB 需 43 次页擦，每次约 22 ms **全程关中断**，与 RX 抢占冲突（首版实测 block 77 起 NAK 风暴） | 改为进接收循环前**整槽预擦**（`slot_b_preerase()`，64 页逐页擦、页间让出中断，此时上位机仍在等 `C` 不在流上），sink 只写不擦 | 该修改后失败点后移（block 77 → 91）但未根治，故 §19.3 仍判未闭合 |
+| ③ | `boot_flow()` 的自检取镜像头仍写死旧位形地址（`port_flash_read(BOOT_SLOT_B × 扇区大小)`），镜像搬进真分区后**读的是参数区残留**，奇偶判据失真 | 改按 `g_bcfg.slot_base[slot]` 经 `port_flash_region_read()` 取头，并在日志里带出 `addr=0x%08X` | 属 demo 逻辑，不触库面 |
+
+### 19.5 判据面小结（AC-8 逐子条状态）
+
+| AC-8 子条 | 状态 | 读数处 |
+|---|---|---|
+| 分区表实测（地址与容量，来源=链接脚本/CFG 实读） | **达成** | §19.1 |
+| 当版真固件产物体量实测 ≤ 槽容量（算式 + 实测双读数） | **达成** | §19.1 表 |
+| host 单测（跨区域 stage/rollback/超容拒绝） | **达成**（6 例全绿，套件 24→30，四形态 526/526/527/533） | 提交 `3307a1b` + `make test` 日志 |
+| `apidump --diff` 新增与点名清单一致、修改/删除 0 | **达成**（新增 7 项 / 0 删改）；`API_STABILITY` §5.1 追加行 = 1 | 同上 |
+| f103「不支持区域 API」声明在位 | **达成**（`PORT_FLASH_REGIONS 0u` + 五符号恒失败实现，`--mode full` 两板构建零警告） | 提交 `3307a1b` |
+| **真固件双单证据（confirm 三字段 + `AT+VER`；回滚 A 槽存活 + `attempts` 递增）** | **未闭合 ⇒ BLOCKED-2** | §19.3；② 行同时说明为何现有 `AT+BOOTINFO` 读数不可用作该判据证据 |
+| `--ver` 奇偶参数逐处标注 | 达成（奇偶只切 demo 自检支路，不切槽位形；SIMUPGRADE/UPGRADE 日志均带 ver 与 addr） | §19.4 行 ③ |
