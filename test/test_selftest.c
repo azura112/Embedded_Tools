@@ -61,8 +61,9 @@ static bool extra_note(et_selftest_report_fn r, void *u)
 static void storage_enable(void)
 {
     static const et_kv_layout_t   lay = { 14u, 15u };
+    /* 尾字段 {0,0} = bootctl 旧位形(slot 仍在参数区扇区), v2.29 结构追加后的补齐 */
     static const et_bootctl_cfg_t bc = { 13u, { 11u, 12u },
-                                         PORT_FLASH_SECTOR_SIZE, 2u };
+                                         PORT_FLASH_SECTOR_SIZE, 2u, { 0u, 0u } };
 
     port_host_flash_reset();
 #if ET_MODULE_KV

@@ -66,23 +66,33 @@
 
 ## port/port.h
 
-### 函数声明 (10)
+### 函数声明 (15)
 
 - `bool port_flash_erase_sector(uint32_t sector_index)`
 - `bool port_flash_read(uint32_t offset, void *buf, uint32_t len)`
+- `bool port_flash_region_erase(uint32_t addr)`
+- `bool port_flash_region_get(uint32_t index, port_flash_region_info_t *info)`
+- `bool port_flash_region_lookup(uint32_t addr, port_flash_region_info_t *info)`
+- `bool port_flash_region_read(uint32_t addr, void *buf, uint32_t len)`
 - `bool port_wdt_disable(void)`
 - `bool port_wdt_enable(uint32_t timeout_ms)`
 - `port_tick_ms_t port_tick_get_ms(void)`
+- `uint32_t port_flash_region_write(uint32_t addr, const void *buf, uint32_t len)`
 - `uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)`
 - `void port_critical_enter(void)`
 - `void port_critical_exit(void)`
 - `void port_putc(char c)`
 - `void port_wdt_feed(void)`
 
-### 宏 (3)
+### 类型 (1)
+
+- `port_flash_region_info_t`
+
+### 宏 (4)
 
 - `PORT_CRITICAL_ENTER() port_critical_enter()`
 - `PORT_CRITICAL_EXIT() port_critical_exit()`
+- `PORT_FLASH_REGIONS 0u`
 - `PORT_TICK_WAIT_FOREVER 0xFFFFFFFFu`
 
 ## algorithm/et_filter.h

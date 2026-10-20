@@ -23,19 +23,25 @@
 #define SLOT_B      1u
 
 static et_bootctl_t      g_bc;
-static et_bootctl_cfg_t  g_cfg = { ST_SEC, { SLOT_A, SLOT_B }, SZ, 2u };
+/* slot_base 尾字段 = {0,0} ⇒ 旧位形(槽在参数区扇区内), 既有语义逐字不变 */
+static et_bootctl_cfg_t  g_cfg = { ST_SEC, { SLOT_A, SLOT_B }, SZ, 2u, { 0u, 0u } };
 
 static void bc_fresh(void)
 {
     port_host_flash_reset();
+    g_cfg.slot_base[0] = 0u;                  /* 旧位形入口显式复位(用例可能改过尾字段) */
+    g_cfg.slot_base[1] = 0u;
+    g_cfg.slot_size      = SZ;
     ET_CHECK(et_bootctl_init(&g_bc, &g_cfg));
 }
 
 /* 白盒: 构造镜像头 (写槽位首部); corrupt_* 注入损坏 */
-static void write_image(uint32_t slot, uint32_t img_size, uint32_t img_ver,
-                        int corrupt_img, int corrupt_hdr)
+/* 白盒: 在**绝对地址** addr 处构造镜像头 + 镜像体 (v2.29 P2-2 起按地址参数化,
+ * 于是参数区槽位形与真分区位形共用同一套镜像构造; corrupt_* 注入损坏) */
+static void write_image_at(uint32_t addr, uint32_t img_size, uint32_t img_ver,
+                           int corrupt_img, int corrupt_hdr)
 {
-    uint8_t *mem = port_host_flash_mem(slot * SZ);
+    uint8_t *mem = port_host_flash_mem(addr);
     uint8_t  hdr[32];
     uint32_t crc;
     uint32_t i;
@@ -82,6 +88,22 @@ static void write_image(uint32_t slot, uint32_t img_size, uint32_t img_ver,
     for (i = 0u; i < img_size; i++) {
         mem[32u + i] = (uint8_t)(0xA0u + (uint8_t)i);
     }
+}
+
+/* 旧位形入口: 参数区内槽 = 扇区号 × 页大小 */
+static void write_image(uint32_t slot, uint32_t img_size, uint32_t img_ver,
+                        int corrupt_img, int corrupt_hdr)
+{
+    write_image_at(slot * SZ, img_size, img_ver, corrupt_img, corrupt_hdr);
+}
+
+/* 真分区位形入口: 按区域序号取该区的绝对基址(分区表由 host port 声明) */
+static uint32_t region_base(uint32_t idx)
+{
+    port_flash_region_info_t r;
+
+    ET_CHECK(port_flash_region_get(idx, &r));
+    return r.base;
 }
 
 /* 白盒: 直接读状态记录区第 idx 条 (0 起) 的 8B 引用 */
@@ -489,6 +511,186 @@ static void init_partial_erase_heal(void)
     ET_CHECK_U32_EQ(0u, st.attempts);
 }
 
+/* ===================== v2.29 P2-2: 真分区(区域 API)位形 ===================== */
+
+/* 跨区域 stage/回滚: 两槽落到参数区之外的 slot_a/slot_b 区域, 状态记录仍在参数区。
+ * 这一条是 REQ-7 的 host 侧判据面 —— v2.28 因"槽与参数区同池"物理不可达(BLOCKED-2)。 */
+static void region_stage_rollback(void)
+{
+    et_bootctl_t       bc;
+    et_bootctl_cfg_t   cfg;
+    et_bootctl_state_t st;
+    uint32_t           a;
+    uint32_t           b;
+
+    port_host_flash_reset();
+    a = region_base(PORT_HOST_REGION_SLOT_A);
+    b = region_base(PORT_HOST_REGION_SLOT_B);
+    cfg = g_cfg;
+    cfg.slot_sector[0] = 0u;                      /* 区域位形下忽略 */
+    cfg.slot_sector[1] = 0u;
+    cfg.slot_size      = PORT_HOST_SLOT_BYTES;
+    cfg.slot_base[0]   = a;
+    cfg.slot_base[1]   = b;
+    ET_CHECK(et_bootctl_init(&bc, &cfg));
+    ET_CHECK(a >= PORT_HOST_PARAM_BYTES);         /* 槽确实不在参数区内(与 et_kv 不同池) */
+
+    write_image_at(b, 64u, 7u, 0, 0);
+    ET_CHECK(et_bootctl_verify_image(&bc, SLOT_B));       /* 区域内流式 CRC 读路径 */
+    ET_CHECK(!et_bootctl_verify_image(&bc, SLOT_A));      /* A 区未写 = 空态 */
+    write_image_at(b, 64u, 7u, 1, 0);
+    ET_CHECK(!et_bootctl_verify_image(&bc, SLOT_B));      /* 镜像 CRC 坏 */
+    write_image_at(b, 64u, 7u, 0, 0);
+
+    ET_CHECK(et_bootctl_stage(&bc, SLOT_B));
+    ET_CHECK_U32_EQ(1u, et_bootctl_boot_attempt(&bc, SLOT_B));
+    ET_CHECK(!et_bootctl_should_rollback(&bc, SLOT_B));
+    ET_CHECK_U32_EQ(2u, et_bootctl_boot_attempt(&bc, SLOT_B));
+    ET_CHECK(et_bootctl_should_rollback(&bc, SLOT_B));    /* attempts≥max 且未 confirm */
+    ET_CHECK(et_bootctl_confirm(&bc, SLOT_B));
+    ET_CHECK(!et_bootctl_should_rollback(&bc, SLOT_B));
+    ET_CHECK(et_bootctl_abandon(&bc));
+    et_bootctl_state(&bc, &st);
+    ET_CHECK_U32_EQ(0xFFFFFFFFu, (uint32_t)st.staged_slot);    /* -1 = 无 staged */
+    ET_CHECK(st.state_ok);
+}
+
+/* 槽容量维(区域位形): img_size > slot_size 拒, 恰好占满通过 */
+static void region_img_size_domain(void)
+{
+    et_bootctl_t     bc;
+    et_bootctl_cfg_t cfg;
+
+    port_host_flash_reset();
+    cfg = g_cfg;
+    cfg.slot_sector[0] = 0u;
+    cfg.slot_sector[1] = 0u;
+    cfg.slot_size      = 256u;
+    cfg.slot_base[0]   = region_base(PORT_HOST_REGION_SLOT_A);
+    cfg.slot_base[1]   = region_base(PORT_HOST_REGION_SLOT_B);
+    ET_CHECK(et_bootctl_init(&bc, &cfg));
+
+    write_image_at(cfg.slot_base[1], 256u - 31u, 1u, 0, 0);    /* 超出槽容量 */
+    ET_CHECK(!et_bootctl_verify_image(&bc, SLOT_B));
+    write_image_at(cfg.slot_base[1], 256u - 32u, 1u, 0, 0);    /* 恰好占满 */
+    ET_CHECK(et_bootctl_verify_image(&bc, SLOT_B));
+}
+
+/* 体量 vs 容量维的 init 面: slot_size 大于区域容量即拒(禁"设计值可用"的乐观声称) */
+static void region_over_capacity(void)
+{
+    et_bootctl_t     bc;
+    et_bootctl_cfg_t cfg;
+
+    port_host_flash_reset();
+    cfg = g_cfg;
+    cfg.slot_sector[0] = 0u;
+    cfg.slot_sector[1] = 0u;
+    cfg.slot_size      = PORT_HOST_SLOT_BYTES + 4u;         /* 区域只有 SLOT_BYTES */
+    cfg.slot_base[0]   = region_base(PORT_HOST_REGION_SLOT_A);
+    cfg.slot_base[1]   = region_base(PORT_HOST_REGION_SLOT_B);
+    ET_CHECK(!et_bootctl_init(&bc, &cfg));
+
+    cfg.slot_size = PORT_HOST_SLOT_BYTES;                    /* 等于区域容量 = 边界可过 */
+    ET_CHECK(et_bootctl_init(&bc, &cfg));
+}
+
+/* 区域不支持路径: 基址不在任何分区表条目内 ⇒ 显式拒绝, 不静默退回参数区扇区。
+ * (f103 形态 = PORT_FLASH_REGIONS 0 + 恒失败实现, lookup 必假 ⇒ 同一拒绝分支) */
+static void region_unsupported_addr(void)
+{
+    et_bootctl_t               bc;
+    et_bootctl_cfg_t           cfg;
+    port_flash_region_info_t   r;
+
+    port_host_flash_reset();
+    ET_CHECK(!port_flash_region_lookup(PORT_HOST_FLASH_BYTES, &r));   /* 镜像外 = 无区域 */
+    ET_CHECK(!port_flash_region_get(PORT_FLASH_REGIONS, &r));         /* 序号越界 */
+
+    cfg = g_cfg;
+    cfg.slot_sector[0] = 0u;
+    cfg.slot_sector[1] = 0u;
+    cfg.slot_size      = 256u;
+    cfg.slot_base[0]   = 0xFFFF0000u;                        /* 不属于任何区域 */
+    cfg.slot_base[1]   = region_base(PORT_HOST_REGION_SLOT_B);
+    ET_CHECK(!et_bootctl_init(&bc, &cfg));
+
+    cfg.slot_base[0]   = region_base(PORT_HOST_REGION_SLOT_A);
+    cfg.slot_base[1]   = 0u;                                 /* 另一槽同样必须解析得到 */
+    ET_CHECK(!et_bootctl_init(&bc, &cfg));
+
+    /* 两槽解析到**同一区域**(基址不同但同区)也判非法 —— 双槽互斥维 */
+    cfg.slot_base[1]   = region_base(PORT_HOST_REGION_SLOT_A) + SZ;
+    ET_CHECK(!et_bootctl_init(&bc, &cfg));
+}
+
+/* 混合位形(一槽在参数区、一槽用绝对基址)判非法 —— 拒绝, 不逐槽拼接 */
+static void region_mixed_shape(void)
+{
+    et_bootctl_t     bc;
+    et_bootctl_cfg_t cfg;
+
+    port_host_flash_reset();
+    cfg = g_cfg;
+    cfg.slot_base[0] = region_base(PORT_HOST_REGION_SLOT_A);
+    cfg.slot_base[1] = 0u;
+    ET_CHECK(!et_bootctl_init(&bc, &cfg));
+
+    cfg.slot_base[0] = 0u;
+    cfg.slot_base[1] = region_base(PORT_HOST_REGION_SLOT_B);
+    ET_CHECK(!et_bootctl_init(&bc, &cfg));
+}
+
+/* 区域 API 自身面: 边界不得跨区、页擦除粒度、区域互不污染、掉电注入在区域位形仍生效 */
+static void region_bounds_and_powercut(void)
+{
+    port_flash_region_info_t r;
+    uint8_t                  w[8];
+    uint8_t                  rd[8];
+    uint32_t                 a;
+    uint32_t                 b;
+    uint32_t                 i;
+
+    for (i = 0u; i < 8u; i++) {
+        w[i] = (uint8_t)(0x10u + i);
+    }
+
+    port_host_flash_reset();
+    ET_CHECK(port_flash_region_get(PORT_HOST_REGION_SLOT_A, &r));
+    a = r.base;
+    ET_CHECK(port_flash_region_get(PORT_HOST_REGION_SLOT_B, &r));
+    b = r.base;
+    ET_CHECK(a + (uint32_t)PORT_HOST_SLOT_BYTES == b);       /* A/B 紧邻且不重叠 */
+
+    ET_CHECK(port_flash_region_write(b - 4u, w, 8u) == 0u);  /* 跨区写: 拒 */
+    ET_CHECK(!port_flash_region_read(b - 8u, rd, 12u));      /* 跨区读: 拒 */
+
+    ET_CHECK(port_flash_region_write(a, w, 8u) == 8u);
+    ET_CHECK(port_flash_region_read(a, rd, 8u));
+    ET_CHECK(memcmp(w, rd, 8u) == 0);
+    for (i = 0u; i < 8u; i++) {
+        ET_CHECK(port_host_flash_mem(b + i)[0] == 0xFFu);    /* B 区未被污染 */
+    }
+
+    /* 页擦除: 擦第二页, 第一页内容必须存活(擦除粒度 = page_size) */
+    ET_CHECK(port_flash_region_write(a + SZ, w, 8u) == 8u);
+    ET_CHECK(port_flash_region_erase(a + SZ + 4u));          /* 页内任意地址 → 擦所在页 */
+    for (i = 0u; i < 8u; i++) {
+        ET_CHECK(port_host_flash_mem(a + SZ + i)[0] == 0xFFu);
+    }
+    ET_CHECK(port_flash_region_read(a, rd, 8u));
+    ET_CHECK(memcmp(rd, w, 8u) == 0);
+
+    /* 掉电截断在区域位形下同样生效(沿用既有 host 注入机制, 未另起一套) */
+    port_host_flash_reset();
+    port_host_flash_fail_after(4u);
+    ET_CHECK(port_flash_region_write(a + 4u * SZ, w, 8u) == 4u);
+    ET_CHECK_U32_EQ(4u, port_host_flash_written());
+    ET_CHECK(port_flash_region_read(a + 4u * SZ, rd, 8u));
+    ET_CHECK_U32_EQ(0xFFu, rd[4]);
+    ET_CHECK_U32_EQ(0x13u, rd[3]);
+}
+
 static const et_test_case_t g_cases[] = {
     { "bc.init_validation",         init_validation },
     { "bc.init_fresh_selfheal",     init_fresh_selfheal },
@@ -514,6 +716,13 @@ static const et_test_case_t g_cases[] = {
     { "pcut.confirm_val_half",      pcut_confirm_val_half },
     { "bc.records_full",            records_full_rejected },
     { "bc.init_partial_erase",      init_partial_erase_heal },
+    /* v2.29 P2-2: 真分区(区域 API)位形 */
+    { "bc.region_stage_rollback",   region_stage_rollback },
+    { "bc.region_img_size",         region_img_size_domain },
+    { "bc.region_over_capacity",    region_over_capacity },
+    { "bc.region_unsupported",      region_unsupported_addr },
+    { "bc.region_mixed_shape",      region_mixed_shape },
+    { "bc.region_bounds",           region_bounds_and_powercut },
 };
 
 const et_test_case_t *test_bootctl_cases(size_t *count)

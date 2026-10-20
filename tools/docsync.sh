@@ -287,9 +287,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "520"             "getting-started 用例数与实测一致(v2.7 回刷, v2.27 随新增 23 例滚动)"
+assert_grep "docs/getting-started.md" "526"             "getting-started 用例数与实测一致(v2.7 回刷, v2.27 随新增 23 例滚动)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "520"                 "README 用例数终值回刷(v2.7, v2.27 随新增 21 例滚动)"
+assert_grep "README.md"           "526"                 "README 用例数终值回刷(v2.7, v2.27 随新增 21 例滚动)"
 VMM_DS=$(echo "$V" | cut -d. -f1,2)   # v2.28-r2 T-4: 当版主.次号(CO-3(v2.28) 交付链接行滞后装门)
 assert_grep "README.md" "versions/v${VMM_DS}/DELIVERY"  "README 交付链接行指当版交付文档(v2.28-r2 T-4, CO-3, HC-7 扩检查面)"
 

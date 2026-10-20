@@ -86,7 +86,7 @@ void port_putc(char c)
 
 /* ===================== flash 参数区模拟 ===================== */
 
-static uint8_t  g_flash[PORT_FLASH_SECTOR_SIZE * PORT_FLASH_SECTOR_COUNT];
+static uint8_t  g_flash[PORT_HOST_FLASH_BYTES];  /* 参数区 + A/B 槽 + 状态页(同一镜像) */
 static uint32_t g_fail_limit = 0xFFFFFFFFu;     /* 掉电注入阈值(写入累计) */
 static uint32_t g_written    = 0u;              /* 累计写入字节数 */
 static bool     g_erase_fail = false;           /* 下次擦除只擦前半 */
@@ -161,19 +161,118 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
     return i;
 }
 
-bool port_flash_erase_sector(uint32_t sector_index)
+/* 页擦除(供参数区扇区擦除与区域擦除共用): 擦除失败注入沿用同一 g_erase_fail 机制
+ * —— 只擦前半, 等效擦除中断(掉电矩阵用例的"坏页"来源)。 */
+static bool host_erase_page(uint32_t page_base, uint32_t page_size)
 {
-    uint32_t base;
     uint32_t n;
 
+    if ((page_base > sizeof(g_flash)) || (page_size > sizeof(g_flash) - page_base)) {
+        return false;
+    }
+    n = g_erase_fail ? (page_size / 2u) : page_size;
+    g_erase_fail = false;
+    memset(&g_flash[page_base], 0xFF, n);
+    return true;
+}
+
+bool port_flash_erase_sector(uint32_t sector_index)
+{
     if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
         return false;
     }
-    base = sector_index * PORT_FLASH_SECTOR_SIZE;
-    n    = g_erase_fail ? (PORT_FLASH_SECTOR_SIZE / 2u) : PORT_FLASH_SECTOR_SIZE;
-    g_erase_fail = false;
-    memset(&g_flash[base], 0xFF, n);
+    return host_erase_page(sector_index * (uint32_t)PORT_FLASH_SECTOR_SIZE,
+                           (uint32_t)PORT_FLASH_SECTOR_SIZE);
+}
+
+/* ===================== flash 区域(分区表)实现 (v2.29 P2-1/P2-2, REQ-7) =====================
+ * host 绝对地址 = 本镜像字节偏移(参数区基址 0) ⇒ 掉电截断与半途擦除注入在区域位形
+ * 下与参数区共用同一套开关(port_host_flash_fail_after / _erase_fail_once)。
+ */
+
+/* 编译期对账: 分区表条目数须与能力宏一致(否则循环上界与数组维度错位)。
+ * C99 负数组尺寸技巧, 与 et_bootctl.h 的镜像头 32B 断言同族。 */
+typedef char port_host_regions_check_[(PORT_FLASH_REGIONS == 4u) ? 1 : -1];
+
+static const port_flash_region_info_t g_regions[PORT_FLASH_REGIONS] = {
+    { PORT_HOST_REGION_PARAM,  0u,
+      PORT_HOST_PARAM_BYTES,            (uint32_t)PORT_FLASH_SECTOR_SIZE },
+    { PORT_HOST_REGION_SLOT_A, PORT_HOST_PARAM_BYTES,
+      PORT_HOST_SLOT_BYTES,             (uint32_t)PORT_FLASH_SECTOR_SIZE },
+    { PORT_HOST_REGION_SLOT_B, PORT_HOST_PARAM_BYTES + PORT_HOST_SLOT_BYTES,
+      PORT_HOST_SLOT_BYTES,             (uint32_t)PORT_FLASH_SECTOR_SIZE },
+    { PORT_HOST_REGION_STATE,  PORT_HOST_PARAM_BYTES + 2u * PORT_HOST_SLOT_BYTES,
+      PORT_FLASH_SECTOR_SIZE,           (uint32_t)PORT_FLASH_SECTOR_SIZE }
+};
+
+static const port_flash_region_info_t *host_region_of(uint32_t addr)
+{
+    uint32_t i;
+
+    for (i = 0u; i < (uint32_t)PORT_FLASH_REGIONS; i++) {
+        const port_flash_region_info_t *r = &g_regions[i];
+
+        if ((addr >= r->base) && ((addr - r->base) < r->size)) {
+            return r;
+        }
+    }
+    return NULL;                        /* 不在任何区域内 */
+}
+
+bool port_flash_region_lookup(uint32_t addr, port_flash_region_info_t *info)
+{
+    const port_flash_region_info_t *r;
+
+    if (info == NULL) {
+        return false;
+    }
+    r = host_region_of(addr);
+    if (r == NULL) {
+        return false;
+    }
+    *info = *r;
     return true;
+}
+
+bool port_flash_region_get(uint32_t index, port_flash_region_info_t *info)
+{
+    if ((info == NULL) || (index >= (uint32_t)PORT_FLASH_REGIONS)) {
+        return false;
+    }
+    *info = g_regions[index];
+    return true;
+}
+
+bool port_flash_region_read(uint32_t addr, void *buf, uint32_t len)
+{
+    const port_flash_region_info_t *r = host_region_of(addr);
+
+    if ((r == NULL) || (len > (r->size - (addr - r->base)))) {
+        return false;                   /* 越界或跨区 */
+    }
+    return port_flash_read(addr, buf, len);
+}
+
+uint32_t port_flash_region_write(uint32_t addr, const void *buf, uint32_t len)
+{
+    const port_flash_region_info_t *r = host_region_of(addr);
+
+    if ((r == NULL) || (len > (r->size - (addr - r->base)))) {
+        return 0u;
+    }
+    return port_flash_write(addr, buf, len);
+}
+
+bool port_flash_region_erase(uint32_t addr)
+{
+    const port_flash_region_info_t *r = host_region_of(addr);
+    uint32_t off;
+
+    if (r == NULL) {
+        return false;
+    }
+    off = ((addr - r->base) / r->page_size) * r->page_size;   /* 页内任地址 → 该页首字节 */
+    return host_erase_page(r->base + off, r->page_size);
 }
 
 /* ===================== 看门狗软件模拟 (et_wdt 测试用) ===================== */

@@ -134,16 +134,27 @@ static void flash_lock_idle(void)
     FLASH_CR |= (uint32_t)FLASH_CR_LOCK;
 }
 
+/* 绝对地址三件套(参数区与区域 API 共用): 边界检查由调用方按其视野负责 */
+static bool     g4_read_abs(uint32_t addr, void *buf, uint32_t len);
+static uint32_t g4_write_abs(uint32_t addr_start, const uint8_t *src, uint32_t len);
+static bool     g4_erase_page_abs(uint32_t page_addr);
+
 bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
 {
-    const uint8_t *src;
-    uint8_t *dst;
-
     if ((buf == NULL) || (offset > PORT_FLASH_AREA_SIZE) ||
         (len > PORT_FLASH_AREA_SIZE - offset)) {
         return false;
     }
-    src = (const uint8_t *)(PORT_FLASH_AREA_BASE + offset);
+    return g4_read_abs(PORT_FLASH_AREA_BASE + offset, buf, len);
+}
+
+/* 绝对地址读 (v2.29 P2-1: 参数区与区域 API 共用一套取数实现) */
+static bool g4_read_abs(uint32_t addr, void *buf, uint32_t len)
+{
+    const uint8_t *src;
+    uint8_t *dst;
+
+    src = (const uint8_t *)addr;
     dst = (uint8_t *)buf;
     while (len-- > 0u) {
         *dst++ = *src++;
@@ -153,25 +164,29 @@ bool port_flash_read(uint32_t offset, void *buf, uint32_t len)
 
 uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
 {
-    const uint8_t *src = (const uint8_t *)buf;
-    uint32_t done = 0u;
-
-    /* 契约: 4B 对齐; G4 编程粒度为 64 位双字, 半双字(4B)情形按
-     * "伴随字必须为全 1(从未编程)" 校验后合并编程 (见文件头注) */
-    if ((src == NULL) || ((offset & 3u) != 0u) || ((len & 3u) != 0u)) {
+    if ((buf == NULL) || ((offset & 3u) != 0u) || ((len & 3u) != 0u)) {
         return 0u;
     }
     if ((offset > PORT_FLASH_AREA_SIZE) ||
         (len > PORT_FLASH_AREA_SIZE - offset)) {
         return 0u;
     }
+    return g4_write_abs(PORT_FLASH_AREA_BASE + offset, (const uint8_t *)buf, len);
+}
 
+/* 绝对地址编程: 契约 = 4B 对齐 + 只能 1→0 + 双字单次编程; 违例按故障截断 */
+static uint32_t g4_write_abs(uint32_t addr_start, const uint8_t *src, uint32_t len)
+{
+    uint32_t done = 0u;
+
+    /* 契约: 4B 对齐; G4 编程粒度为 64 位双字, 半双字(4B)情形按
+     * "伴随字必须为全 1(从未编程)" 校验后合并编程 (见文件头注) */
     PORT_CRITICAL_ENTER();
     if (flash_wait_idle() && flash_unlock()) {
         FLASH_SR = FLASH_SR_ERR_ALL;            /* 清历史错误 */
         FLASH_CR |= (uint32_t)FLASH_CR_PG;      /* 编程使能 */
         while (done < len) {
-            uint32_t addr = PORT_FLASH_AREA_BASE + offset + done;
+            uint32_t addr = addr_start + done;
             uint32_t w0 = (uint32_t)src[done + 0u] |
                           ((uint32_t)src[done + 1u] << 8) |
                           ((uint32_t)src[done + 2u] << 16) |
@@ -219,16 +234,26 @@ uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len)
 
 bool port_flash_erase_sector(uint32_t sector_index)
 {
+    if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
+        return false;
+    }
+    return g4_erase_page_abs(PORT_FLASH_AREA_BASE +
+                             sector_index * (uint32_t)PORT_G4_PAGE_SIZE);
+}
+
+/* 绝对地址页擦 (RM0440 3.7.3): 全局页号 → bank/页号 → PER+PNB(+BKER)+STRT。
+ * v2.29 P2-1: 参数区扇区擦除与区域页擦除共用本实现, 只差页号来源。 */
+static bool g4_erase_page_abs(uint32_t page_addr)
+{
     bool ok = false;
     uint32_t global_page;
     uint32_t cr_page;
 
-    if (sector_index >= PORT_FLASH_SECTOR_COUNT) {
-        return false;
+    global_page = (page_addr - 0x08000000u) / PORT_G4_PAGE_SIZE;
+    if (global_page >= (PORT_G4_FLASH_SIZE / PORT_G4_PAGE_SIZE)) {
+        return false;                       /* 越出片内 flash */
     }
-
-    global_page = PORT_G4_PARAM_FIRST_PG + sector_index;
-    if (global_page >= PORT_G4_PAGES_PER_BANK) {    /* 参数区恒在 bank2 */
+    if (global_page >= PORT_G4_PAGES_PER_BANK) {
         cr_page = (1u << 11) |                      /* BKER=1 */
                   ((global_page - PORT_G4_PAGES_PER_BANK)
                    << FLASH_CR_PNB_Pos);
@@ -248,6 +273,129 @@ bool port_flash_erase_sector(uint32_t sector_index)
     }
     PORT_CRITICAL_EXIT();
     return ok;
+}
+
+/* ===================== flash 区域(分区表)实现 (v2.29 P2-1, REQ-7) =====================
+ * 默认位形(库外工程可用 -D 覆盖, 与 port/stm32g474/README.md 的分区表同源):
+ *   0x08000000  bootloader   16 页 = 32 KB   —— **不进分区表**(见下注)
+ *   0x08008000  slot_a       32 页 = 64 KB
+ *   0x08010000  slot_b       32 页 = 64 KB
+ *   0x08018000  state         1 页 =  2 KB
+ *   0x08078000  param        16 页 = 32 KB   (= PORT_FLASH_AREA_BASE, 参数区)
+ * 容量算式(计划 HC-10①): 32 + 64 + 64 + 2 + 32 = 194 KB ≤ 512 KB(片内 flash), 余 318 KB;
+ * 单槽 64 KB ≥ 当版真固件 48,140 B(v2.28 BLOCKED-2 的成因正是槽只能落在 32 KB 参数区内)。
+ * bootloader 区故意**不声明为区域**: 区域 API 的边界检查因此拒绝对 bootloader 区的
+ * 擦写 —— 把"升级链路把自己的引导区擦了"变成一次可复现的 false 返回, 而非偶发变砖。
+ * et_bootctl 本版的状态记录仍落在参数区状态扇区(state 条目为平台声明的可选迁移位)。
+ */
+#ifndef PORT_G474_SLOT_A_BASE
+#define PORT_G474_SLOT_A_BASE  0x08008000u
+#endif
+#ifndef PORT_G474_SLOT_B_BASE
+#define PORT_G474_SLOT_B_BASE  0x08010000u
+#endif
+#ifndef PORT_G474_STATE_BASE
+#define PORT_G474_STATE_BASE   0x08018000u
+#endif
+#ifndef PORT_G474_SLOT_SIZE
+#define PORT_G474_SLOT_SIZE    (64u * 1024u)
+#endif
+#ifndef PORT_G474_STATE_SIZE
+#define PORT_G474_STATE_SIZE   2048u
+#endif
+
+#ifdef PORT_FLASH_REGIONS
+#undef PORT_FLASH_REGIONS                 /* port.h 的默认 0 只服务无分区表的平台 */
+#endif
+#define PORT_FLASH_REGIONS    4u
+
+#define PORT_G474_REGION_PARAM   0u
+#define PORT_G474_REGION_SLOT_A  1u
+#define PORT_G474_REGION_SLOT_B  2u
+#define PORT_G474_REGION_STATE   3u
+
+typedef char port_g474_regions_check_[(PORT_FLASH_REGIONS == 4u) ? 1 : -1];
+
+static const port_flash_region_info_t g_regions[PORT_FLASH_REGIONS] = {
+    { PORT_G474_REGION_PARAM,  PORT_FLASH_AREA_BASE,
+      PORT_FLASH_AREA_SIZE,              PORT_G4_PAGE_SIZE },
+    { PORT_G474_REGION_SLOT_A, PORT_G474_SLOT_A_BASE,
+      PORT_G474_SLOT_SIZE,               PORT_G4_PAGE_SIZE },
+    { PORT_G474_REGION_SLOT_B, PORT_G474_SLOT_B_BASE,
+      PORT_G474_SLOT_SIZE,               PORT_G4_PAGE_SIZE },
+    { PORT_G474_REGION_STATE,  PORT_G474_STATE_BASE,
+      PORT_G474_STATE_SIZE,              PORT_G4_PAGE_SIZE }
+};
+
+static const port_flash_region_info_t *g4_region_of(uint32_t addr)
+{
+    uint32_t i;
+
+    for (i = 0u; i < (uint32_t)PORT_FLASH_REGIONS; i++) {
+        const port_flash_region_info_t *r = &g_regions[i];
+
+        if ((addr >= r->base) && ((addr - r->base) < r->size)) {
+            return r;
+        }
+    }
+    return NULL;
+}
+
+bool port_flash_region_lookup(uint32_t addr, port_flash_region_info_t *info)
+{
+    const port_flash_region_info_t *r;
+
+    if (info == NULL) {
+        return false;
+    }
+    r = g4_region_of(addr);
+    if (r == NULL) {
+        return false;
+    }
+    *info = *r;
+    return true;
+}
+
+bool port_flash_region_get(uint32_t index, port_flash_region_info_t *info)
+{
+    if ((info == NULL) || (index >= (uint32_t)PORT_FLASH_REGIONS)) {
+        return false;
+    }
+    *info = g_regions[index];
+    return true;
+}
+
+bool port_flash_region_read(uint32_t addr, void *buf, uint32_t len)
+{
+    const port_flash_region_info_t *r = g4_region_of(addr);
+
+    if ((buf == NULL) || (r == NULL) || (len > (r->size - (addr - r->base)))) {
+        return false;
+    }
+    return g4_read_abs(addr, buf, len);
+}
+
+uint32_t port_flash_region_write(uint32_t addr, const void *buf, uint32_t len)
+{
+    const port_flash_region_info_t *r = g4_region_of(addr);
+
+    if ((buf == NULL) || (r == NULL) || ((addr & 3u) != 0u) || ((len & 3u) != 0u) ||
+        (len > (r->size - (addr - r->base)))) {
+        return 0u;
+    }
+    return g4_write_abs(addr, (const uint8_t *)buf, len);
+}
+
+bool port_flash_region_erase(uint32_t addr)
+{
+    const port_flash_region_info_t *r = g4_region_of(addr);
+    uint32_t off;
+
+    if (r == NULL) {
+        return false;
+    }
+    off = ((addr - r->base) / r->page_size) * r->page_size;
+    return g4_erase_page_abs(r->base + off);
 }
 
 /* 看门狗 (RM0440 42): LSI≈32kHz, 超时 = (RLR+1)*div/32kHz。

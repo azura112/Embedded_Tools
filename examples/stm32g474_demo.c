@@ -74,7 +74,8 @@ static et_softclock_t g_sc;
 static et_bootctl_t   g_bc;
 static et_bootctl_cfg_t g_bcfg = { BOOT_STATE_SEC,
                                    { BOOT_SLOT_A, BOOT_SLOT_B },
-                                   PORT_FLASH_SECTOR_SIZE, BOOT_MAX_ATTEMPTS };
+                                   PORT_FLASH_SECTOR_SIZE, BOOT_MAX_ATTEMPTS,
+                                   { 0u, 0u } };   /* slot_base=0 ⇒ 旧位形(槽在参数区扇区) */
 static et_xmodem_t    g_xm;
 static et_shell_t     g_sh;
 static et_atcmd_proc_t g_at;

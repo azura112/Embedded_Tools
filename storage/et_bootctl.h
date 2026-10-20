@@ -114,6 +114,16 @@ typedef struct {
     uint32_t slot_sector[2];                /* A/B 槽位扇区号, 互异且 != state_sector */
     uint32_t slot_size;                     /* 单槽容量字节 (校验 img_size 上限) */
     uint8_t  max_attempts;                  /* 回滚阈值, ≥1 */
+    /* ---- v2.29 追加(尾部, 旧字段与既有语义逐字不变; 登记 = docs/API_STABILITY.md §5.1) ----
+     * 槽位形开关: 两元素**必须同位形**(全 0 或全非 0), 混合直接判 cfg 非法。
+     *  = 0 : 旧语义 —— 槽在参数区内, 由 slot_sector[2] 指扇区号(既有校验全部不变);
+     *  ≠ 0 : 该槽的**绝对基址** —— 经 port 区域 API 访问(slot_sector 忽略, 建议置 0),
+     *         init 用 port_flash_region_lookup 解析并要求"区域命中 且 区域容量 ≥
+     *         slot_size 且 两槽不同区域"; 平台无分区表时(PORT_FLASH_REGIONS = 0 的
+     *         恒失败实现, 如 f103)lookup 必假 ⇒ **显式拒绝该位形, 不静默退回参数区
+     *         扇区**。加这一维的因: 真固件体量装不进参数区(v2.28 BLOCKED-2 实测
+     *         48,140 B > 32 KB), A/B 双槽必须能落到参数区之外的真分区。 */
+    uint32_t slot_base[2];
 } et_bootctl_cfg_t;
 
 typedef struct et_bootctl {

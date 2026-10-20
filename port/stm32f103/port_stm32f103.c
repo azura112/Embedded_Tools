@@ -273,6 +273,55 @@ bool port_flash_erase_sector(uint32_t sector_index)
     return ok;
 }
 
+/* ===================== flash 区域: 本平台显式不支持 (v2.29 P2-1) =====================
+ * F103C8T6 = 64 KB flash / 1 KB 页, 参数区已占 8 KB(8 页), 剩下的空间放不下
+ * "两份可切换固件"(当版真固件 48,140 B, v2.28 BLOCKED-2 同族读数) ⇒ 本 port
+ * **不划分区表**, 并显式声明 PORT_FLASH_REGIONS = 0。
+ * 五个符号仍须存在(port.h 契约面), 但恒失败: lookup/get = false, read/erase = false,
+ * write = 0。于是 et_bootctl 的 cfg.slot_base 非 0 位形在本平台被【显式拒绝】
+ * (init 返回 false), 而不是悄悄退回参数区扇区 —— 计划 HC-9 要求的"不静默降级"。
+ */
+#ifdef PORT_FLASH_REGIONS
+#undef PORT_FLASH_REGIONS
+#endif
+#define PORT_FLASH_REGIONS 0u
+
+bool port_flash_region_lookup(uint32_t addr, port_flash_region_info_t *info)
+{
+    (void)addr;
+    (void)info;
+    return false;
+}
+
+bool port_flash_region_get(uint32_t index, port_flash_region_info_t *info)
+{
+    (void)index;
+    (void)info;
+    return false;
+}
+
+bool port_flash_region_read(uint32_t addr, void *buf, uint32_t len)
+{
+    (void)addr;
+    (void)buf;
+    (void)len;
+    return false;
+}
+
+uint32_t port_flash_region_write(uint32_t addr, const void *buf, uint32_t len)
+{
+    (void)addr;
+    (void)buf;
+    (void)len;
+    return 0u;
+}
+
+bool port_flash_region_erase(uint32_t addr)
+{
+    (void)addr;
+    return false;
+}
+
 /* ===================== 平台初始化 (非 port.h 契约, 供 main 调用) ===================== */
 
 void port_stm32f103_init(void)

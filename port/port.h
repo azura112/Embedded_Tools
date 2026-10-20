@@ -68,6 +68,49 @@ bool     port_flash_read(uint32_t offset, void *buf, uint32_t len);
 uint32_t port_flash_write(uint32_t offset, const void *buf, uint32_t len);
 bool     port_flash_erase_sector(uint32_t sector_index);
 
+/* ===================== flash 区域访问 (v2.29 契约演进, 纯增量) =====================
+ * 为什么加: 上面三函数只看得见"参数区"这一个连续扇区段(offset 相对参数区首字节,
+ * sector_index ∈ [0, PORT_FLASH_SECTOR_COUNT))。于是 A/B 槽只能与参数区同池 ——
+ * v2.28 实测当版真固件 48,140 B 装不进 32 KB 参数区(BLOCKED-2, 物理不可达)。
+ * 区域 API 把【平台分区表】变成可查询能力: 调用方传**绝对地址**, port 负责解析
+ * 它落在哪个区域、区域边界与擦除粒度。既有三签名与语义逐字不变(HC-6): 本面是
+ * **追加而非替代**, et_kv 与所有老移植零改动。
+ *
+ * 能力声明: PORT_FLASH_REGIONS = 本平台分区表的条目数, 由平台 port 头声明
+ * (host / g474 = 4; 未声明即本头文件给的 0 = 无分区表)。取值为 0 的平台**仍须提供
+ * 下面五个符号**, 但让它们恒失败(lookup/get 返回 false, read/erase 返回 false,
+ * write 返回 0) —— 于是传绝对地址的调用方(et_bootctl 的 cfg.slot_base 非 0 位形)
+ * 在任何平台都被【显式拒绝】, 不存在"退化成参数区扇区"的静默降级(计划 HC-9)。
+ * 之所以用运行期失败而非编译期 `#if` 摘掉调用: 能力宏只有平台自己的头看得见,
+ * 而 et_bootctl.c 只包含本文件 —— 编译期分支会让"关掉的平台"变成链接错误。
+ *
+ * 边界与对齐(与参数区契约同源, 不另立口径):
+ *  - 一次操作不得跨区: 起点与终点须落在同一区域内, 否则 read/erase 返回 false、
+ *    write 返回 0; addr 不属于任何区域同样失败;
+ *  - 4B 对齐与"只能把 1 写成 0"的位写约束沿用 port_flash_write 的约定;
+ *  - erase 按页粒度擦除 addr 所在的那一页(粒度由 page_size 报出), 为 ms 级阻塞操作,
+ *    喂狗/调度暂停仍由调用方负责;
+ *  - 全部 API 仅限 🏠MAIN(与参数区擦写同一上下文要求)。
+ */
+typedef struct {
+    uint32_t index;                     /* 区域序号, ∈ [0, PORT_FLASH_REGIONS) */
+    uint32_t base;                      /* 区域首字节(绝对地址) */
+    uint32_t size;                      /* 区域容量(字节) */
+    uint32_t page_size;                 /* 擦除粒度(页/扇区)字节, ≥1 */
+} port_flash_region_info_t;
+
+#ifndef PORT_FLASH_REGIONS
+#define PORT_FLASH_REGIONS 0u           /* 平台未声明 = 不提供区域 API */
+#endif
+
+/* addr 命中某区域则填充 info 并返回 true; 未命中返回 false(info 不改写) */
+bool port_flash_region_lookup(uint32_t addr, port_flash_region_info_t *info);
+/* 按序号枚举分区表(platform 声明的条目数即上界), 越界返回 false */
+bool port_flash_region_get(uint32_t index, port_flash_region_info_t *info);
+bool     port_flash_region_read(uint32_t addr, void *buf, uint32_t len);
+uint32_t port_flash_region_write(uint32_t addr, const void *buf, uint32_t len);
+bool     port_flash_region_erase(uint32_t addr);
+
 /* ===================== 看门狗 (v1.5 契约演进, 纯增量) =====================
  * 仅 ET_MODULE_WDT=1 时为必选契约 (et_wdt 使用); 关闭该模块的老平台零影响。
  * 语义约定 (v1.5 评审决议, 见 docs/API_GUIDE.md §9):

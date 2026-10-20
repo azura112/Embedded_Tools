@@ -41,6 +41,28 @@ uint32_t port_host_capture_stop(void);
 #define PORT_FLASH_ERASE_MS_MAX     1u       /* host 模拟擦除瞬时完成 */
 #endif
 
+/* ===================== flash 区域(分区表)模拟 (v2.29 P2-1/P2-2, REQ-7) =====================
+ * host 的"绝对地址"= 同一块 g_flash 镜像内的字节偏移(参数区基址取 0), 于是掉电注入、
+ * 擦除半途失败注入这些既有门禁机制在**区域位形下同样可复现**(计划 P2-2 要求沿用既有
+ * host 机制, 不另起一套)。分区表 = 参数区 + A/B 双槽 + 状态页, 顺序即 index。
+ */
+#ifndef PORT_HOST_SLOT_BYTES
+#define PORT_HOST_SLOT_BYTES  8192u          /* 单槽模拟容量(须为页大小整数倍) */
+#endif
+#define PORT_HOST_PARAM_BYTES (PORT_FLASH_SECTOR_SIZE * PORT_FLASH_SECTOR_COUNT)
+#define PORT_HOST_FLASH_BYTES (PORT_HOST_PARAM_BYTES + 2u * PORT_HOST_SLOT_BYTES + \
+                               PORT_FLASH_SECTOR_SIZE)
+
+#ifdef PORT_FLASH_REGIONS
+#undef PORT_FLASH_REGIONS                     /* port.h 的默认 0 只服务无分区表的平台 */
+#endif
+#define PORT_FLASH_REGIONS    4u              /* param / slot_a / slot_b / state */
+
+#define PORT_HOST_REGION_PARAM   0u           /* 区域序号, 用例可读 */
+#define PORT_HOST_REGION_SLOT_A  1u
+#define PORT_HOST_REGION_SLOT_B  2u
+#define PORT_HOST_REGION_STATE   3u
+
 /* 模拟区整体置 0xFF(等效新芯片), 写入计数/故障注入清零 */
 void     port_host_flash_reset(void);
 

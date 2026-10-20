@@ -40,9 +40,21 @@ static uint32_t state_base(const et_bootctl_t *bc)
     return bc->cfg.state_sector * (uint32_t)PORT_FLASH_SECTOR_SIZE;
 }
 
-static uint32_t slot_base(const et_bootctl_t *bc, uint32_t slot)
+static uint32_t slot_addr(const et_bootctl_t *bc, uint32_t slot)
 {
     return bc->cfg.slot_sector[slot] * (uint32_t)PORT_FLASH_SECTOR_SIZE;
+}
+
+/* 槽读取分发 (v2.29 P2-1/P2-2): slot_base 全 0 = 旧参数区扇区位形, 走 port_flash_read;
+ * 非 0 = 真分区位形, 走 port 区域 API(绝对基址 + 区内偏移)。init 已判过位形合法与
+ * 区域命中, 这里不再重复查表 —— 区域越界由 port 侧"不得跨区"判定兜住。 */
+static bool slot_read(const et_bootctl_t *bc, uint32_t slot, uint32_t offset,
+                      void *buf, uint32_t len)
+{
+    if (bc->cfg.slot_base[slot] != 0u) {
+        return port_flash_region_read(bc->cfg.slot_base[slot] + offset, buf, len);
+    }
+    return port_flash_read(slot_addr(bc, slot) + offset, buf, len);
 }
 
 /* ---------------- 状态扇区头 ---------------- */
@@ -244,19 +256,42 @@ static void bc_state(const et_bootctl_t *bc, int32_t *staged,
 
 /* ---------------- 公开 API ---------------- */
 
+/* 槽位形校验 (v2.29 P2-1): 两槽必须同位形。
+ *  旧位形(slot_base 全 0) —— 既有逐条校验不变(扇区号上界/互异/不等于状态扇区);
+ *  真分区位形(slot_base 全非 0) —— 由 port 分区表裁决: 两个基址都要命中区域、
+ *  必须是**不同**区域、且区域容量不得小于 slot_size(体量 vs 容量维, 计划 HC-10①)。
+ *  平台无分区表时 lookup 恒假 ⇒ 该位形被显式拒绝, 不存在"退回参数区扇区"的静默降级。 */
+static bool cfg_slots_valid(const et_bootctl_cfg_t *cfg)
+{
+    port_flash_region_info_t a;
+    port_flash_region_info_t b;
+
+    if ((cfg->slot_base[0] == 0u) != (cfg->slot_base[1] == 0u)) {
+        return false;                       /* 混合位形: 拒 */
+    }
+    if (cfg->slot_base[0] == 0u) {
+        return (cfg->slot_sector[0] < PORT_FLASH_SECTOR_COUNT) &&
+               (cfg->slot_sector[1] < PORT_FLASH_SECTOR_COUNT) &&
+               (cfg->slot_sector[0] != cfg->slot_sector[1]) &&
+               (cfg->slot_sector[0] != cfg->state_sector) &&
+               (cfg->slot_sector[1] != cfg->state_sector);
+    }
+    if (!port_flash_region_lookup(cfg->slot_base[0], &a) ||
+        !port_flash_region_lookup(cfg->slot_base[1], &b)) {
+        return false;
+    }
+    return (a.index != b.index) && (a.size >= cfg->slot_size) && (b.size >= cfg->slot_size);
+}
+
 bool et_bootctl_init(et_bootctl_t *bc, const et_bootctl_cfg_t *cfg)
 {
     if ((bc == NULL) || (cfg == NULL)) {
         return false;
     }
     if ((cfg->state_sector >= PORT_FLASH_SECTOR_COUNT) ||
-        (cfg->slot_sector[0] >= PORT_FLASH_SECTOR_COUNT) ||
-        (cfg->slot_sector[1] >= PORT_FLASH_SECTOR_COUNT) ||
-        (cfg->slot_sector[0] == cfg->slot_sector[1]) ||
-        (cfg->slot_sector[0] == cfg->state_sector) ||
-        (cfg->slot_sector[1] == cfg->state_sector) ||
         (cfg->slot_size < ET_BOOT_HDR_SIZE + 1u) ||
-        (cfg->max_attempts == 0u)) {
+        (cfg->max_attempts == 0u) ||
+        (!cfg_slots_valid(cfg))) {
         return false;                       /* cfg 非法 */
     }
     bc->cfg     = *cfg;
@@ -283,13 +318,12 @@ bool et_bootctl_verify_image(et_bootctl_t *bc, uint32_t slot)
 {
     uint8_t  raw[ET_BOOT_HDR_SIZE];
     uint8_t  blk[64];
-    uint32_t base, crc, done, img_size;
+    uint32_t crc, done, img_size;
 
     if ((bc == NULL) || (!bc->inited) || (slot > 1u)) {
         return false;
     }
-    base = slot_base(bc, slot);
-    if (!port_flash_read(base, raw, ET_BOOT_HDR_SIZE)) {
+    if (!slot_read(bc, slot, 0u, raw, ET_BOOT_HDR_SIZE)) {
         return false;
     }
     if ((rd32(raw) != ET_BOOT_IMG_MAGIC) ||
@@ -316,7 +350,7 @@ bool et_bootctl_verify_image(et_bootctl_t *bc, uint32_t slot)
         if (chunk > sizeof(blk)) {
             chunk = sizeof(blk);
         }
-        if (!port_flash_read(base + ET_BOOT_HDR_SIZE + done, blk, chunk)) {
+        if (!slot_read(bc, slot, ET_BOOT_HDR_SIZE + done, blk, chunk)) {
             return false;
         }
         crc = et_crc32_update(crc, blk, chunk);

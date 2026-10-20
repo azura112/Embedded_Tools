@@ -1171,14 +1171,16 @@ et_kv_set(&kv, 1, &boot, sizeof(boot));   /* 即时持久化 */
 
 | API | 说明 |
 |---|---|
-| `et_bootctl_init(bc, cfg)` | cfg 校验（扇区互异/阈值≥1）+ 状态扇区自愈 |
-| `et_bootctl_verify_image(bc, slot)` | 头 5 项检查 + 全镜像 CRC（分块流式） |
+| `et_bootctl_init(bc, cfg)` | cfg 校验（扇区互异/阈值≥1；v2.29 起另判槽位形：`slot_base` 全 0 = 旧参数区位形，全非 0 = 真分区位形，混合判非法）+ 状态扇区自愈 |
+| `et_bootctl_verify_image(bc, slot)` | 头 5 项检查 + 全镜像 CRC（分块流式）；槽按 `slot_base` 位形经 `port_flash_read` 或 `port_flash_region_read` 取数 |
 | `et_bootctl_stage / confirm` | 置试运行（同槽幂等、双槽互斥）/ 确认 |
 | `et_bootctl_boot_attempt(bc, slot)` | bootloader 开机计数 +1，返回新计数 |
 | `et_bootctl_should_rollback(bc, slot)` | staged 且未确认且计数 ≥ max → true |
 | `et_bootctl_state / abandon` | 快照查询 / 擦状态扇区重置 |
 
-单测 24 例：掉电矩阵（stage/confirm/attempt 三类断点各 ≥2）+ 双槽互斥 + 计数耗尽 + 坏头/坏 CRC 拒绝 + 状态扇区自愈 + 容量满。
+单测 30 例：掉电矩阵（stage/confirm/attempt 三类断点各 ≥2）+ 双槽互斥 + 计数耗尽 + 坏头/坏 CRC 拒绝 + 状态扇区自愈 + 容量满 + **真分区（区域 API）位形 6 例**（v2.29 P2-2：跨区域 stage/回滚、`img_size` 超槽容量拒、`slot_size` 超区域容量拒、基址不在分区表内拒、混合位形拒、区域边界/页擦除/掉电截断）。
+
+**槽位形（v2.29 追加 `cfg.slot_base[2]`）**：真固件体量装不进参数区（v2.28 实测 48,140 B > 32 KB = `BLOCKED-2`），所以 A/B 槽可以落在平台分区表里的独立区域——`slot_base[i]` 填该区**绝对基址**，`slot_sector` 此时被忽略；两槽必须同位形（全 0 或全非 0）。init 会用 `port_flash_region_lookup` 要求"两基址各自命中区域、且属不同区域、且区域容量 ≥ `slot_size`"，任一不成立即返回 false。无分区表的平台（如 F103，`PORT_FLASH_REGIONS = 0` + 恒失败实现）在该位形下同样被拒——**不静默退回参数区扇区**。
 
 ```c
 /* bootloader 开机决策（应用内演示见 stm32f103_demo 的 boot_flow） */
@@ -1440,6 +1442,7 @@ while (1) { if (uart_rx_ready()) et_shell_feed(&sh, uart_getc()); }
 | `port_putc(c)` | 阻塞式单字符输出（日志底层） | USART 轮询发送 |
 | `port_flash_read/write/erase_sector` + 几何宏 | **仅 ET_MODULE_KV=1 时必选**：参数区 4B 对齐只擦写、只允许 1→0 写、短写如实上报（掉电/故障部分写入） | F103: FLASH 寄存器直驱（PM0056） |
 | `port_wdt_enable/feed/disable` | **仅 ET_MODULE_WDT=1 时必选**（v1.5 决议）：enable 校验 `timeout ≥ PORT_FLASH_ERASE_MS_MAX×2`（与擦除喂狗指引闭环）；feed 🔒ISR-safe；disable 尽力而为——F103 IWDG 启动后**不可停**，返回 false 即"仍在运行"；enable/disable 仅 🏠MAIN | F103: IWDG 寄存器直驱（RM0008 §IWDG，LSI 40kHz，PR 4~256 分频 + 12 位 RLR） |
+| `port_flash_region_lookup/get/read/write/erase` + `PORT_FLASH_REGIONS` | **v2.29 追加（可选能力）**：按**绝对地址**访问平台分区表里的任意区域（参数区之外的 A/B 槽等），边界检查禁止跨区；`PORT_FLASH_REGIONS` = 该区声明的条目数（host/G474 = 4）。**无分区表的平台也必须提供这五个符号并让它们恒失败**（lookup/get/read/erase = false，write = 0）——F103 即此形态（64 KB flash 放不下双槽），于是 `et_bootctl` 的 `cfg.slot_base` 非 0 位形被显式拒绝而非静默退回参数区 | host: 单镜像内偏移即绝对地址（掉电/坏页注入机制与参数区共用）；G474: 分区表由 `PORT_G474_SLOT_*_BASE/SIZE` 宏给出，可 -D 覆盖 |
 
 flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contract.md`）：
 - 参数区 = `PORT_FLASH_SECTOR_SIZE × PORT_FLASH_SECTOR_COUNT` 连续扇区，`PORT_FLASH_ERASE_MS_MAX` 给调用方喂狗参考；
@@ -1450,7 +1453,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 ### 8.4 et_selftest 板上自测组件 (v1.7)
 
-验证金字塔封顶：PC 单测(520) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
+验证金字塔封顶：PC 单测(526) → CI 仿真(F103 smoke) → **板上自测**(本组件)。G474 工程 AT+SELFTEST 的库化，任何 port 接入即得全模块冒烟。
 
 | 函数 | 上下文 | 说明 |
 |---|---|---|
@@ -1463,7 +1466,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 - **报告**：结构化事件回调 `et_selftest_report_fn(user, evt, suite, num)`——BEGIN/SUITE_PASS/SUITE_FAIL/SUITE_SKIP/CHECK_FAIL(带行号)/DONE；组件内不做格式化，接 et_log 或 shell 由应用决定；
 - **22 内建套件**（v2.2 起 +pid/stats/bytes，v2.7 起 +modbus/log）：ringbuf/queue/mempool/list/filter/pid/stats/bytes/fsm/sched/event/stimer/crc/frame/softclock/wdt/atcmd+xmodem(RAM 环回)/kv/bootctl；sched/stimer 为自洽性断言（无忙等），host 注入时基与真机均可确定性通过；
-- **覆盖边界**：冒烟非对等 host 520 用例，掉电注入类 host-only 用例不移植；**板上 `log` 套件只验修饰面"生效性"（输出字符数符合预期），不校字符内容**——内容级断言（格式化字节逐值比对）由 host 30 例承担（`test/test_log.c`），板上不做（v2.8 P3-1，`CO-11(v2.7)` 边界明示；内容级板上断言需 `port.h` 捕获钩子属公开契约变更，评估结论见 `docs/v3-candidates.md`「v2.8 复评记录」，本版不实现）；
+- **覆盖边界**：冒烟非对等 host 526 用例，掉电注入类 host-only 用例不移植；**板上 `log` 套件只验修饰面"生效性"（输出字符数符合预期），不校字符内容**——内容级断言（格式化字节逐值比对）由 host 30 例承担（`test/test_log.c`），板上不做（v2.8 P3-1，`CO-11(v2.7)` 边界明示；内容级板上断言需 `port.h` 捕获钩子属公开契约变更，评估结论见 `docs/v3-candidates.md`「v2.8 复评记录」，本版不实现）；
 - **裁剪**：`ET_MODULE_SELFTEST` 默认 0（发布零开销），启用见 et_config.h；编译期各套件随对应模块开关自动增减；
 - **接入示例**：G474 工程 `AT+SELFTEST`（非存储）/ `AT+SELFSTOR`（存储套件，破坏性）—— `Core/Src/et_demo.c`。
 
@@ -1512,7 +1515,7 @@ flash 契约要点（详见 `port/port.h` 与 `docs/proposals/et_kv_flash_contra
 
 | 平台 | 编译 | 仿真 | 真机实测 | 记录 |
 |---|---|---|---|---|
-| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 520 用例（1K 变体 521） | v1.0 起 |
+| host（gcc / clang，CI ubuntu+windows） | ✅ | ✅（虚拟 flash+时基） | ✅ 526 用例（1K 变体 527） | v1.0 起 |
 | STM32F103C8T6（arm-none-eabi-gcc 13.3，`port/stm32f103/`） | ✅ 零警告 | ✅ Renode smoke（CI 门） | — | v1.1 编译 / v1.3 仿真闭环，真机顺延补录 |
 | STM32G474VET6（arm-none-eabi-gcc 13.3，`port/stm32g474/`） | ✅ 零警告 | 挂账（G4 模型待验证） | ✅ 上板：kv 重启计数递增 + AT+SELFTEST 13/13（经 CubeMX/HAL 集成版 port，2026-09 记录） | v1.5 编译级 + 真机；G4 双字单次编程约束见其 README |
 
