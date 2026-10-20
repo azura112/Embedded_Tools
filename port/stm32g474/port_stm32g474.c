@@ -277,33 +277,22 @@ static bool g4_erase_page_abs(uint32_t page_addr)
 
 /* ===================== flash 区域(分区表)实现 (v2.29 P2-1, REQ-7) =====================
  * 默认位形(库外工程可用 -D 覆盖, 与 port/stm32g474/README.md 的分区表同源):
- *   0x08000000  bootloader   16 页 = 32 KB   —— **不进分区表**(见下注)
- *   0x08008000  slot_a       32 页 = 64 KB
- *   0x08010000  slot_b       32 页 = 64 KB
- *   0x08018000  state         1 页 =  2 KB
- *   0x08078000  param        16 页 = 32 KB   (= PORT_FLASH_AREA_BASE, 参数区)
- * 容量算式(计划 HC-10①): 32 + 64 + 64 + 2 + 32 = 194 KB ≤ 512 KB(片内 flash), 余 318 KB;
- * 单槽 64 KB ≥ 当版真固件 48,140 B(v2.28 BLOCKED-2 的成因正是槽只能落在 32 KB 参数区内)。
- * bootloader 区故意**不声明为区域**: 区域 API 的边界检查因此拒绝对 bootloader 区的
- * 擦写 —— 把"升级链路把自己的引导区擦了"变成一次可复现的 false 返回, 而非偶发变砖。
- * et_bootctl 本版的状态记录仍落在参数区状态扇区(state 条目为平台声明的可选迁移位)。
+ *   0x08000000  slot_a     32 页 = 64 KB   ← 当前在跑的应用(A 槽)
+ *   0x08010000  slot_b     32 页 = 64 KB   ← 新镜像落地处(B 槽)
+ *   0x08020000  state       1 页  = 2 KB   ← 平台声明的状态页
+ *   0x08078000  param      16 页 = 32 KB   ← 参数区 (= PORT_FLASH_AREA_BASE)
+ * 容量算式(计划 HC-10① / P2-1): 64 + 64 + 2 + 32 = **162 KB ≤ 512 KB**(片内 flash),
+ * 余 350 KB; 单槽 64 KB ≥ 当版真固件 48,140 B —— v2.28 的 `BLOCKED-2` 正是"槽只能
+ * 落在 32 KB 参数区内"导致真固件物理不可达, 本表把槽移出参数区即其解。
+ * A 槽基址取 0x08000000 而非"引导区之后": Cortex-M4 的初始 SP/PC 由硬件固定在
+ * 0x08000000 读取, 在前面留 32 KB 空区的话板子根本不起跳 —— 而 bootloader 工程
+ * (搬运/跳转)按本库定位属应用侧(计划 Non-goal), 故默认位形不假设引导区。
+ * 等价的护栏在库外工程侧: 链接脚本把 FLASH 长度收到 64 KB ⇒ 应用超出 A 槽容量
+ * 直接在链接期失败, 不必等运行时判。
+ * et_bootctl 本版的状态记录仍落参数区状态扇区(state 条目为平台声明的可选迁移位)。
+ * 几何宏(PORT_G474_SLOT_* / PORT_G474_STATE_*)定义在 port_stm32g474.h —— 与板侧 demo
+ * 的 cfg.slot_base 同源, 本文件不重复定义。
  */
-#ifndef PORT_G474_SLOT_A_BASE
-#define PORT_G474_SLOT_A_BASE  0x08008000u
-#endif
-#ifndef PORT_G474_SLOT_B_BASE
-#define PORT_G474_SLOT_B_BASE  0x08010000u
-#endif
-#ifndef PORT_G474_STATE_BASE
-#define PORT_G474_STATE_BASE   0x08018000u
-#endif
-#ifndef PORT_G474_SLOT_SIZE
-#define PORT_G474_SLOT_SIZE    (64u * 1024u)
-#endif
-#ifndef PORT_G474_STATE_SIZE
-#define PORT_G474_STATE_SIZE   2048u
-#endif
-
 #ifdef PORT_FLASH_REGIONS
 #undef PORT_FLASH_REGIONS                 /* port.h 的默认 0 只服务无分区表的平台 */
 #endif
