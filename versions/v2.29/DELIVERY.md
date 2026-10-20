@@ -134,9 +134,13 @@ make test-asan CC=clang ASAN_DLL_DIR=<LLVM asan 目录>  # ALL PASS rc=0（gcc �
 sh tools/gatecheck.sh 2.29 --verify versions/v2.29/DELIVERY.md        # 期望 verify PASS
 ```
 
+### 7.2b 覆盖率行（`docsync` 交付复现表检查的承载；本版两面新增点名）
+
+**测试与质量门覆盖面（四形态 + 两新增面）**：host 全量回归四形态 **526/526/527/533**（`make WERROR=1 test` / `test-g4` / `test-1k` / `test-tab`，各 rc=0，基线 520/520/527/521 各 +6 = P2-2 区域 6 例）+ **37 套件**（实测 = 本轮 `make coverage-build` 输出 `[Suite] … (N cases)` 求和 = 37 套 / 526 例，末行 `RESULT: ALL PASS (fail=0)`）+ `make ex` **六配方**各 PASS（v2.29 由五例扩至六例 = P0-3 `ex_min`）+ **CMake 双路径**（`add_subdirectory` 与 `install`+`find_package` 两形态各 5 行消费件可编可跑、`ctest` **6/6 Passed**、`-DET_MODULE_KV=0` 裁剪位形的符号读数 10→**0**，均带对照面）+ **板侧真分区**（`AT+REGIONS` 四条板侧读回 + 真固件打包 87,872 B ≤ 槽 131,072 B + 链接脚本 128K 护栏 + 五要素走单 rc=0；**真固件双单传输面未闭合** ⇒ 本行按「覆盖面含一红」如实写，不写成全绿）+ 机制门五项（docsync 382 / docref / apidump `--check`+`--diff` / sizecheck / docbuild）+ `make WERROR=1` 零警告门 + ASan 双变体（本机 clang 23.1.0 经 `ASAN_DLL_DIR` 一条命令可达，gcc 侧 `cannot find -lasan` 为已知对照面）+ gcov 实测（本轮 `gcovr --print-summary --txt-summary --fail-under-line 85 --xml`，**默认全仓口径**：lines **97.4%** = 11,391/11,693、functions **99.3%** = 1,146/1,154、branches **57.9%** = 6,059/10,470，rc=0 即 ≥85% 门通过；取数时点 = 本档落仓笔 `17c4df8`，`rm` 掉 `.gcda/.gcno` 后重跑而非沿用中间读数）。口径注记：v2.27/v2.28 的覆盖率行为**定性承载**（本版沿用其形态并补两面），gcov 三条 = 本版新增的定量面。
+
 ### 7.3 登记链逐档点名（(d) 桶，逐文档非聚合）
 
-本版 P4-3 触碰的九档 = `v2.20`~`v2.24` 五件平铺档 + `versions/v2.25~v2.28/DELIVERY.md` 四件，各 **+1 行纯登记**；token 全列 = 本档 §4 表 1~11 的前十笔（`git log --reverse --format=%h snap-2.29-start..HEAD`）。其余 14 份「未登记实质变更」与 9 份「缺声明行」= v2.28 终态既有形态，本版未触碰 ⇒ 不代其登记（沿 v2.28 手法）。逐档 emit 机读值见 §7.4⑧。
+本版对 (d) 的两批动作与**本档自身的桶**（逐值取自 §7.4⑧ 的 (d) 行，非本段自述）：① **P4-3**（`4b991fc`）对九档（`v2.20`~`v2.24` 五件平铺档 + `versions/v2.25~v2.28/DELIVERY.md` 四件）各 +1 行纯登记，token = 本版前十笔；② 但同一笔使这九档由 v2.28 终态的 **OK 9** 退化为 **未登记**——成因 = 登记笔**自身**的 SHA 无法在该笔内列出（自指不可预写），且 `0f9389e`（入仓批 = 快照本身，触碰 `BACKLOG.md`/`ROADMAP.md` 两个非白名单件）从未登记过；③ **P4-4b** 补登 `@0f9389e @4b991fc @<P4-4>` 三 token 各一行（同一手法、纯登记提交 ⇒ 由 `docref.sh:176-184`「该笔对该档的增删行全部为登记行」路径豁免，不需自我 token），九档复绿；④ **本档自身**在终态判为「未登记实质变更」= **结构性未闭合**：本档落仓笔 `17c4df8` 是非白名单触碰面（README/architecture）而无法在本档内预写其 token，且定稿链粘贴笔亦触及本档 ⇒ 与「代登记」不可同时成立；该面已入 `docs/v3-candidates.md` 候选池 **D**（含两条候选修法，本档不代改门判定语义 HC-7）。其余 14 份「未登记实质变更」与 9 份「缺声明行」= v2.28 终态既有形态，本版未触碰 ⇒ 不代其登记（沿 v2.28 手法与 §6 零伪造纪律）。逐档 emit 机读值见 §7.4⑧。
 
 ### 7.4 ⑧ 机读值（`--emit` 逐字粘贴，禁重打）
 
