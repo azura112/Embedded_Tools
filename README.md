@@ -2,7 +2,7 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.29.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[versions/v2.28/DELIVERY.md](versions/v2.28/DELIVERY.md)**（功能版：板侧窗口一键化 `tools/board_window.py`（REQ-5 / M3-⑤，五要素 + 三模式）+ `et_metrics_format` 槽守卫与两条口径文档化 + G474 全要素窗口复跑（§18，含 REQ-7 真固件双单受阻如实登记））
+> 当前版本：**v2.29.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[versions/v2.29/DELIVERY.md](versions/v2.29/DELIVERY.md)**（功能版「接入版」：**CMake 接入面** `et::embedded_tools` + `find_package`（REQ-10 / M4-②）+ **并发契约表** [docs/concurrency.md](docs/concurrency.md)（REQ-11 / M4-③）+ **真 A/B 分区** port 区域契约与 G474 板侧实测（REQ-7 / M4-④，真固件双单传输面按 `BLOCKED-2` 如实登记）+ MIT 许可证 / 支持矩阵 / 十分钟样例（REQ-18 / M4-①））
 
 > 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**；每个模块的并发级别（ISR / 主循环 / 单所有者 / 多生产者）见 **[docs/concurrency.md](docs/concurrency.md)**（35 行，逐行带头注行号）
 
