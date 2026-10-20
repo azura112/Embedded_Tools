@@ -68,6 +68,8 @@
 │   ├── ex_modbus_slave.c  # 配方载体: Modbus RTU 从站全路径自检（v2.4）
 │   ├── ex_modbus_master.c # 配方载体: Modbus RTU 主站全路径自检（v2.5，内置模拟从站）
 │   └── ex_min.c           # 十分钟最小样机: ringbuf + kv 自检（v2.29 P0-3）
+├── CMakeLists.txt  # 消费侧接入面（v2.29 P1-1，导出 et::embedded_tools；非门禁入口）
+├── cmake/          # etConfig.cmake.in + toolchains/（交叉位形由 toolchain 文件描述）
 └── Makefile
 ```
 
@@ -84,6 +86,10 @@ make test-g4 # v1.6 双几何回归: G474 2KB 页几何下同一套用例（stor
 
 make demo    # 全栈演示（虚拟 UART + 定时器 + 按键 + LED + kv）
 ```
+
+**要把本库装进现有 CMake 工程**（v2.29 N-01 接入面）：消费侧 5 行即可，`add_subdirectory` 与
+`find_package(et CONFIG)` 两形态、模块开关与交叉 toolchain 见 [docs/getting-started.md](docs/getting-started.md) §0.9。
+本库的 host 门禁与测试仍以 `make` 为单一入口，CMake 侧源列表由 `tools/docsync.sh` 的一致性断言对齐。
 
 STM32F103 真机构建/烧录见 [port/stm32f103/README.md](port/stm32f103/README.md)；STM32G474 见 [port/stm32g474/README.md](port/stm32g474/README.md)；CH32X035G8U6（PD 测试板，库侧参考移植）见 [port/ch32x035/README.md](port/ch32x035/README.md)。
 
@@ -194,7 +200,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | RTOS：FreeRTOS | 未验证 | 本版仅交付**并发契约表** `docs/concurrency.md`（各模块 ISR/上下文级别汇总），无 FreeRTOS port、优先级反转与中断嵌套实测 |
 | RTOS：其他（Zephyr / RT-Thread / 无 OS 裸机） | 不支持 | 库不依赖 OS（无阻塞式系统调用），但除裸机主循环外无集成实测 |
 | 构建系统：Makefile（host 门禁单一入口） | 验证过 | `make WERROR=1 test` / `make ex` / `make coverage-build`（本机与全部 CI 门均以 Makefile 目标为口径，`tools/docsync.sh` 断言源列表） |
-| 构建系统：CMake（v2.29 N-01 接入面） | 未验证 | 本版 P1 交付根 `CMakeLists.txt` + `cmake/` 导出；交付前无构建读数 ⇒ 按"没跑过就是没跑过"登记，P1 实跑 `cmake -B build` / `cmake --install` / `find_package` 后随批改判并附命令 |
+| 构建系统：CMake（v2.29 N-01 接入面） | 验证过 | `cmake -B build-cmake -G Ninja -DET_WERROR=ON -DET_BUILD_EXAMPLES=ON && cmake --build build-cmake && ctest --test-dir build-cmake`（本机 gcc 16.1.0 实测 6/6 Passed）；交叉 = `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-{g474,f103}.cmake`（13.3.rel1 实测零警告）；裁剪读数 `-DET_MODULE_KV=0` 后 `et_kv.c.obj` 的 `et_` 定义符号 10→**0**；CI job `cmake integration (v2.29 P1-2)` |
 | 构建系统：Meson / Bazel | 不支持 | 本版不做（计划 §1.3） |
 
 **许可证**：MIT（全文见 [LICENSE](LICENSE)，版权行 = `Copyright (c) 2026 azura`）——法务侧可据此单文件判定可否商用/闭源集成/再分发。

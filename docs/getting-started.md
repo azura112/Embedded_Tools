@@ -35,7 +35,7 @@ Windows Git Bash 下没有 `make` 也能用 `mingw32-make`; 或直接照 README 
 | 1 一键跑全部配方 | `make ex` | 六个示例各出一行 `[ex_*] PASS`，末行即 `[ex_min] PASS`，退出码 0（任一 FAIL 即红，CI 常设） |
 | 2 只跑这一例（不依赖 make） | `mkdir -p build && gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Iprotocol -Istorage -Iport -Iport/host examples/ex_min.c core/et_ringbuf.c protocol/et_crc.c storage/et_kv.c port/host/port_host.c -o build/ex_min.exe && ./build/ex_min.exe` | 五个源文件即最小闭环（示例 + ringbuf + crc + kv + host port）；编译零警告、输出同下方预期、退出码 0 |
 | 3 全库回归 | `make WERROR=1 test` | 末尾 `=== RESULT: ALL PASS (fail=0) ===`（520 例）；`-Wall -Wextra -pedantic -Werror` 下零警告（gcc 口径，见 README 支持矩阵） |
-| 4 验证"关掉的模块没有符号" | 关：`gcc -std=c99 -DET_MODULE_CRC=0 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_off.o && nm build/crc_off.o > build/crc_off.syms`；开：`gcc -std=c99 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_on.o && nm build/crc_on.o > build/crc_on.syms`；读数：`grep -c " T et_" build/crc_off.syms build/crc_on.syms` | 本机实测 **off=0 / on=8**（口径 = 无目标代码/符号，不是"源文件不参与编译"）；CMake 侧同形态开关由本版 P1 接入面交付，交付后本行并入 `cmake -DET_MODULE_KV=0` 读数 |
+| 4 验证"关掉的模块没有符号" | 关：`gcc -std=c99 -DET_MODULE_CRC=0 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_off.o && nm build/crc_off.o > build/crc_off.syms`；开：`gcc -std=c99 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_on.o && nm build/crc_on.o > build/crc_on.syms`；读数：`grep -c " T et_" build/crc_off.syms build/crc_on.syms` | 本机实测 **off=0 / on=8**（口径 = 无目标代码/符号，不是"源文件不参与编译"）；CMake 侧同形态读数见下方「CMake 接入」小节（`-DET_MODULE_KV=0` 实测归档符号 10 ↔ 0） |
 | 5 改自己的工程 | 复制 `examples/ex_min.c` 的两个 API 调用块（init/format/set/get）进你的 main | 5~10 行即可，无需改库源码 |
 
 预期输出（逐字，`make ex` 的该配方）：
@@ -58,6 +58,71 @@ Windows Git Bash 下没有 `make` 也能用 `mingw32-make`; 或直接照 README 
   `PATH="$PATH:/d/software/LLVM/lib/clang/23/lib/windows" mingw32-make test-asan CC=clang`（实测 `=== RESULT: ALL PASS (fail=0) ===`；口径与警告面见 README 支持矩阵「内存检查门」行）。
 - **字符集与路径空格**：串口/日志读用 UTF-8 终端；工程路径含空格时 `make` 目标可能被拆分，建议无空格路径；Windows Defender/占用会令 `build/*.exe` 链接失败，先关闭上一个 `ex_*.exe` 实例。
 - **平台支持面**：能不能用你的板子/编译器/RTOS，只看 README 的「支持矩阵」节（验证过 / 未验证 / 不支持三档，逐行带验证方式），不推测。
+
+---
+
+## 0.9 CMake 接入 (v2.29 P1-1/P1-3, N-01 / REQ-10)
+
+仓库根 `CMakeLists.txt` 把本库导出为 **`et::embedded_tools`**，消费侧只需要 5 行。
+两条路径各管自己：**Makefile 仍是本仓库 host 门禁与测试的单一入口**（`make test` 那套），
+CMake 是给"要把本库装进现有工程"的人用的接入面；两边的源文件列表由
+`tools/docsync.sh` 的一致性断言把守（谁漂移谁红）。
+
+**形态 A —— `add_subdirectory`（源码随工程走）**，`CMakeLists.txt` 全文 5 行：
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(et_ac6_subdir C)
+add_subdirectory("${ET_SRC}" et_build)          # ET_SRC = 本仓库根
+add_executable(ac6_sub main.c)
+target_link_libraries(ac6_sub PRIVATE et::embedded_tools)
+```
+
+**形态 B —— `find_package`（先装再用）**，同样 5 行：
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(et_ac6_pkg C)
+find_package(et CONFIG REQUIRED)
+add_executable(ac6_pkg main.c)
+target_link_libraries(ac6_pkg PRIVATE et::embedded_tools)
+```
+
+安装与消费（`etConfig.cmake` + export set 由 `cmake/etConfig.cmake.in` 生成）：
+
+```sh
+cmake -S . -B build-cmake -DCMAKE_INSTALL_PREFIX=<前缀>   # 配
+cmake --build build-cmake                                  # 建
+cmake --install build-cmake                                # 装
+cmake -S . -B b -DCMAKE_PREFIX_PATH=<前缀>                 # 消费侧配置
+```
+
+| 项 | 形态 | 说明 |
+|---|---|---|
+| 语言标准 | `C_STANDARD 99` + `C_EXTENSIONS OFF` | 与 Makefile 的 `-std=c99 -pedantic` 同位形 |
+| 模块开关 | `-DET_MODULE_KV=0`（32 个同名 option） | **默认值从 `et_config.h` 读出**，不在 CMake 里复制第二份；显式给 0/1 才覆盖 |
+| 关模块的口径 | 所有 `.c` 仍参与编译，关掉的编译成**空 TU** | 实测 `-DET_MODULE_KV=0` 后 `et_kv.c.obj` 的 `et_` 定义符号 = **0**（默认位形 10），`nm` 可核（计划 HC-8①：只声称"无目标代码与符号"，不声称"不参与编译"） |
+| 零警告门 | `-DET_WERROR=ON` | 加 `-Wall -Wextra -pedantic -Werror`；host 与两板交叉均实测 0 警告 |
+| port 选择 | `-DET_PORT=host\|stm32f103\|stm32g474` | 一次只装一个实现；目录不存在直接 `FATAL_ERROR`（不静默退回首项） |
+| flash 几何 | `-DPORT_FLASH_SECTOR_SIZE=2048` 等三枚 | 传下去即 PUBLIC 定义；不传 = 用 `port.h` 的编译期默认（f103 形态） |
+| 示例 | `-DET_BUILD_EXAMPLES=ON`（host 限定） | 六个 `examples/ex_*.c` 各注册为一条 CTest 用例，`ctest` 实测 6/6 Passed |
+
+交叉编译（toolchain 文件描述位形，不写死工具链路径）：
+
+```sh
+cmake -B build-arm -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-g474.cmake -DET_WERROR=ON
+cmake --build build-arm     # 产物 = libembedded_tools.a（裸机环境按静态库试编译）
+cmake -B build-arm-f103 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-f103.cmake -DET_WERROR=ON
+cmake --build build-arm-f103
+```
+
+常见失败：
+
+- **`ET_PORT=xxx 在 port/ 下不存在`**：拼写或大小写；现役三套 = `host` / `stm32f103` / `stm32g474`（`ch32x035` 为私有工程，不在接入面）。
+- **`find_package(et CONFIG)` 找不到包**：没给 `CMAKE_PREFIX_PATH`，或 `<前缀>` 里没 `lib/cmake/et/etConfig.cmake`（`cmake --install` 未跑）。
+- **头文件包含不到**：安装形态是**扁平** `include/et/`（本库按裸名包含，`#include "et_kv.h"`）；把 `et/` 再套一层目录是自己改了安装前缀结构。
+- **交叉报 `no CMAKE_C_COMPILER`**：`arm-none-eabi-gcc` 不在 PATH；工具链文件只写前缀 `arm-none-eabi-`，路径交给你（可用 `-DET_CROSS_PREFIX=` 换前缀）。
+- **关模块后链接期报未定义符号**：你的代码仍在调用被关模块——这正是裁剪该有的失败（见 §1）。
 
 ---
 

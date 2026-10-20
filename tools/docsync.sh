@@ -521,6 +521,40 @@ fi
 # 纯新增检查面(判定语义零变更, HC-7); 门自证可红: 删掉 README 该节标题即 FAIL。
 assert_grep "README.md" "## 支持矩阵"                   "README 支持矩阵节在位(v2.29 P0-2/REQ-18)"
 
+# ---- v2.29 P1-2 (REQ-10 / N-01): Makefile 源列表 ↔ CMake glob 双源一致性 ----
+# 动机: CMake 接入面按目录 glob(CONFIGURE_DEPENDS) 自动收集源文件, Makefile 门禁面
+# 逐文件点名 —— 两源一旦漂移(新增 .c 只进 glob 不进测试列表), 接入方会拿到一个
+# "host 门从未跑过"的文件, 而全部现有门仍绿(README 清单①: 无断言的同步声明=未同步)。
+# 形态: 七目录聚合成**一条**断言(K=1, 判定语义零变更, HC-7); 门自证可红: 临时树里
+# 从任一 *_SRC 删掉一个文件即点名 FAIL(证据记交付文档 §7 机制自证表)。
+et_ds_paired=0
+et_ds_missing=""
+for pair in core:CORE_SRC algorithm:ALGO_SRC sys:SYS_SRC protocol:PROTO_SRC \
+            drivers:DRIVERS_SRC debug:DEBUG_SRC storage:STORAGE_SRC; do
+    d=${pair%%:*}; var=${pair##*:}
+    line=$(grep -E "^${var}[ \t]*:=" Makefile | head -1)
+    if [ -z "${line:-}" ]; then
+        et_ds_missing="${et_ds_missing} ${var}(变量缺失)"
+        continue
+    fi
+    line=" ${line} "
+    for f in "$d"/*.c; do
+        [ -f "$f" ] || continue
+        b=$(basename "$f")
+        case "$line" in
+            *" $d/$b "*) et_ds_paired=$((et_ds_paired + 1)) ;;
+            *)           et_ds_missing="${et_ds_missing} $f" ;;
+        esac
+    done
+done
+if [ -z "$et_ds_missing" ]; then
+    echo "ok   CMake glob 收到的每个库源文件都在 Makefile *_SRC 点名 (七目录 ${et_ds_paired} 文件, v2.29 P1-2/REQ-10)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL CMake glob 与 Makefile 源列表漂移, 未点名:${et_ds_missing} (v2.29 P1-2/REQ-10)"
+    FAIL=$((FAIL + 1))
+fi
+
 # ---- v2.6 P0-2 跨文档计数一致性 (CO-3/CO-4 漏刷的根因根治, HC-4) ----
 # 单一来源 = README(交付时回刷的唯一权威); architecture 机制门行与 API_GUIDE 的
 # 对应数字必须**与实测/README 一致**, 而非各自写死。v2.5 的 examples 数(architecture

@@ -97,6 +97,91 @@ jobs:
             coverage.xml
             coverage_summary.txt
 
+  # CMake 接入面验证 (v2.29 P1-2, REQ-10 / N-01) —— **新增 job, 不替代任何 Makefile job**
+  # 覆盖面: host 构建零警告 + 模块裁剪位形 + install/export 后的 find_package 消费
+  #         + 六个自检式示例经 CTest 跑通。源列表漂移由 docsync 的 P1-2 断言把守。
+  cmake-integration:
+    name: cmake integration (v2.29 P1-2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cmake + ninja
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Host configure & build (C99, -Werror, 六例经 CTest)
+        run: |
+          cmake -S . -B build-cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+                -DET_WERROR=ON -DET_BUILD_EXAMPLES=ON
+          cmake --build build-cmake
+          ctest --test-dir build-cmake --output-on-failure
+
+      - name: Module-off configure (关 KV 与 LOG, 空 TU 位形须能编能链)
+        run: |
+          rm -rf build-off
+          cmake -S . -B build-off -G Ninja -DET_WERROR=ON \
+                -DET_MODULE_KV=0 -DET_MODULE_LOG=0 -DET_BUILD_EXAMPLES=ON
+          cmake --build build-off
+
+      - name: Disabled modules carry no symbols (HC-8① 口径 = 无目标代码/符号)
+        run: |
+          mkdir -p build
+          nm build-off/CMakeFiles/embedded_tools.dir/storage/et_kv.c.obj | grep -E '[TtDdBbRrWw] et_' | tee build/kv-off-symbols.txt
+          test "$(grep -c '[TtDdBbRrWw] et_' build/kv-off-symbols.txt)" -eq 0
+          nm build-off/CMakeFiles/embedded_tools.dir/debug/et_log.c.obj | grep -E '[TtDdBbRrWw] et_' | tee build/log-off-symbols.txt
+          test "$(grep -c '[TtDdBbRrWw] et_' build/log-off-symbols.txt)" -eq 0
+          # 对照面: 默认位形下同一命令必须数得出符号(证明上一条不是空 grep 假绿)
+          test "$(nm build-cmake/CMakeFiles/embedded_tools.dir/storage/et_kv.c.obj | grep -c '[TtDdBbRrWw] et_')" -gt 0
+
+      - name: install + find_package(et CONFIG) 消费样例 (5 行接入)
+        run: |
+          rm -rf build-prefix build-consumer
+          cmake -S . -B build-cmake-install -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/build-prefix"
+          cmake --build build-cmake-install
+          cmake --install build-cmake-install
+          mkdir -p build-consumer && cd build-consumer
+          cat > CMakeLists.txt <<'CEOF'
+          cmake_minimum_required(VERSION 3.20)
+          project(et_consumer C)
+          find_package(et CONFIG REQUIRED)
+          add_executable(consumer main.c)
+          target_link_libraries(consumer PRIVATE et::embedded_tools)
+          CEOF
+          cat > main.c <<'CEOF'
+          #include <stdio.h>
+          #include "et_ringbuf.h"
+          #include "et_kv.h"
+          #include "port_host.h"
+          static uint8_t mem[16];
+          static et_ringbuf_t rb;
+          int main(void) {
+              uint8_t w[3] = {1u, 2u, 3u}, r[3];
+              port_host_flash_reset();
+              if (!et_ringbuf_init(&rb, mem, sizeof mem)) return 1;
+              if (et_ringbuf_write(&rb, w, 3u) != 3u) return 2;
+              if (et_ringbuf_read(&rb, r, 3u) != 3u) return 3;
+              printf("[consumer] ringbuf ok, et_kv header visible=%d\n", ET_MODULE_KV);
+              return 0;
+          }
+          CEOF
+          cmake -S . -B b -G Ninja -DCMAKE_PREFIX_PATH="$OLDPWD/build-prefix"
+          cmake --build b
+          ./b/consumer
+
+      - name: Cross configure via toolchain files (零警告位形)
+        run: |
+          sudo apt-get install -y gcc-arm-none-eabi
+          cmake -S . -B build-arm-g474 -G Ninja \
+                -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-g474.cmake -DET_WERROR=ON
+          cmake --build build-arm-g474
+          cmake -S . -B build-arm-f103 -G Ninja \
+                -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-f103.cmake -DET_WERROR=ON
+          cmake --build build-arm-f103
+
+      - name: Doc-sync dual-source assertion (tools/docsync.sh, P1-2 同一入口)
+        run: sh tools/docsync.sh
+
   # STM32F103 移植编译验证 (Cortex-M3, 零警告门槛)
   cross-stm32f103:
     name: cross stm32f103

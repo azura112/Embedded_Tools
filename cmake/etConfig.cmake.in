@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+# etConfig.cmake —— find_package(et CONFIG) 入口（v2.29 P1-1，REQ-10）
+#
+# 消费侧只需要：
+#   find_package(et CONFIG REQUIRED)
+#   target_link_libraries(your_target PRIVATE et::embedded_tools)
+# 模块开关与 flash 几何随导出的编译定义一并传播（头文件里的 `#if ET_MODULE_X`
+# 与库的编译位形因此不会错位）。
+
+include("${CMAKE_CURRENT_LIST_DIR}/etTargets.cmake")
+
+check_required_components(et)
