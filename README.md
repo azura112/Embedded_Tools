@@ -191,7 +191,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | host 编译器 gcc（MinGW-w64 16.1.0，Windows） | 验证过 | `mingw32-make WERROR=1 test` 本机实测 + CI windows job 的纯 gcc 无 make 路径 |
 | host 编译器 gcc（Linux CI） | 验证过 | CI job `unit-tests (ubuntu-latest)`（含 `make test` / `test-1k` / `test-tab` / `ex`） |
 | host 编译器 clang 23.1.0（Windows） | 验证过 | `mingw32-make test-asan CC=clang` 与 `mingw32-make test-asan-1k CC=clang` 本机实测 `=== RESULT: ALL PASS (fail=0) ===`；**限定面**：clang 侧 15 条警告在案（10 CRT deprecation + 4 set-but-not-used + 1 self-assign），零警告门仍以 gcc 为准 |
-| 内存检查门（ASan） | 验证过 | 双路：CI = `make test-asan` + `make test-asan-1k`（ubuntu job，Linux-only 形态）；本机 = `PATH="$PATH:/d/software/LLVM/lib/clang/23/lib/windows" mingw32-make test-asan CC=clang` 实测 ALL PASS。**gcc 侧不可执行** = `cannot find -lasan` 实测（MinGW 不带 libasan） |
+| 内存检查门（ASan） | 验证过 | 双路：CI = `make test-asan` + `make test-asan-1k`（ubuntu job，Linux gcc）；本机 = `make test-asan CC=clang ASAN_DLL_DIR=D:/software/LLVM/lib/clang/23/lib/windows`（`test-asan-1k` 同形态；实测两目标 `=== RESULT: ALL PASS (fail=0) ===`，rc=0，v2.29 P3-3① 一条命令、无需手工 `export PATH`）。**gcc 侧仍不可执行** = `cannot find -lasan` 实测（MinGW 不带 libasan）；clang 侧 **15 条警告**（10 CRT deprecation + 4 set-but-not-used + 1 self-assign）零警告门仍以 gcc 为准 |
 | ARM 交叉工具链 GNU Tools for STM32 13.3.rel1 | 验证过 | CI job `cross stm32f103` / `cross stm32g474`（`-werror` 零警告）+ `docbuild`（port README 命令可执行化） |
 | IAR / ARMCC(AC6) | 不支持 | 无 port 适配与实测；port 层含 GCC 属性与 HAL 依赖（本版不移植，非"暂未验证"） |
 | 平台 STM32F103C8T6（真机） | 验证过 | 实机记录 §15/§16 走单 + CI job `renode stm32f103 smoke`（kv/重启计数/selftest 22/22） |
@@ -236,7 +236,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | 门 | 命令 | 覆盖面 |
 |---|---|---|
 | host 零警告 | `make WERROR=1 test` / `make WERROR=1 ex`（Linux）、纯 gcc `-Werror`（Windows） | 全库 + 五例配方 |
-| 内存检查 | `make test-asan` + `make test-asan-1k` | 默认几何 + 1K 块变体（Linux） |
+| 内存检查 | `make test-asan` + `make test-asan-1k` | 默认几何 + 1K 块变体（CI = Linux gcc；本机 = `CC=clang ASAN_DLL_DIR=<LLVM asan 目录>`，v2.29 P3-3） |
 | 冻结面 | `sh tools/apidump.sh --check` | 公开 API 清单与头文件一致 |
 | 文档同步 | `sh tools/docsync.sh` | 跨文档计数一致性 + 自指断言（含 architecture 机制门行） |
 | 覆盖率 | `gcovr --fail-under-line 85` | 行覆盖 ≥85% |
@@ -250,7 +250,10 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 
 **本机（Windows / MinGW）检出边界 —— 如实声明，未执行者不得按通过计**：
 
-- `make test-asan` / `make test-asan-1k` **本机不可执行**：MinGW-w64 gcc 不带 `libasan`；clang 17 的 ASan 运行时在本机 Windows 初始化失败（v2.5 D-2、v2.6 CO-13）。内存类缺陷在本机**只能靠 Linux CI 前置拦截**。
+- **内存门的本机可达性（v2.29 P3-3，`CO-8(v2.28)-P` 裁决=路径①'）**：按编译器分档，不再笼统写"本机不可执行"——
+  `make test-asan CC=clang ASAN_DLL_DIR=<LLVM 的 clang/23/lib/windows 目录>` 与 `test-asan-1k` 同形态**本机可跑**（实测两目标 `=== RESULT: ALL PASS (fail=0) ===`，rc=0；该变量把 ASan 运行时 DLL 拷到产物旁，不需要手工 `export PATH`）；
+  **gcc 侧仍不可执行** = MinGW-w64 gcc 16.1.0 报 `cannot find -lasan`（不带 libasan，v2.5 D-2/v2.6 CO-13 的结论只对 gcc 成立）；clang 17 时代的"本机初始化失败"不再适用于 clang 23.1.0。
+  ⇒ 内存类缺陷本机不再只能等 Linux CI；clang 侧 **15 条警告**如实登记（10 CRT deprecation + 4 set-but-not-used + 1 self-assign），零警告门仍以 gcc 为准。
 - 本机无 WSL、无 MSYS2（v2.6 起草期实测）→ 跨 ABI 缺陷（如 `va_list` 形态差异）本机静默、Linux 侧硬失败（v2.5 D-8 的 `-Werror=incompatible-pointer-types` 门即为此设）。
 - 触发条件：安装 WSL 或 MSYS2 后补本机 ASan 执行路径（v2.6 P3-3，**未触发则不做**）。
 - 治理脚本 `apidump.sh` / `docsync.sh` 在本机（Windows/MinGW）为**秒级~分钟级**（随机器与负载浮动，**勿以单点读数为预期**——v2.8 时代注记的分钟级点值已过时约一个量级，`CO-3(v2.8)` 教训：点值易过时，只记区间与量级）：`apidump --diff` 实测区间十几~三十秒（交付机 14.9s / 评审机 25.2s / v2.9 起草机 24.3s）；`docsync` 约半分钟~1 分钟（交付机 ~27s / 评审机 ~1min / v2.9 起草机 42.9s）。**建议后台执行并保留日志**；CI（Linux）侧耗时更低，不构成门阻塞。

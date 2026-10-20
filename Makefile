@@ -101,10 +101,18 @@ $(OBJDIR)/et_tests_tab.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 
 # v2.5 P1-3: AddressSanitizer 构建 —— 域宽/精度上限用例(AC-8)的越界门。
 # et_log 规格解析器改动后, "超限域宽是否写越界"必须有机器证据, 不能只看输出长度。
-# CI(Linux) 常设; Windows 本机 MinGW gcc 不带 libasan, clang 的 ASan 运行时在
-# 本机初始化失败(见交付文档环境注记), 故本目标以 Linux 为准。
+# CI(Linux gcc) 常设。**本机面(v2.29 P3-3② 按值勘误, 旧注释"本机不可执行"只对 gcc 成立)**:
+#   MinGW-w64 gcc 16.1.0 = `cannot find -lasan`(不带 libasan, 该结论保留);
+#   clang 23.1.0(LLVM) = **可执行**, 但需 ASan 运行时 DLL 在 PATH —— 由下面 ASAN_DLL_DIR 承担,
+#   不再要求手工 export PATH(实测读数与命令见 README 支持矩阵「内存检查门」行)。
+# 用法: make test-asan CC=clang ASAN_DLL_DIR=D:/software/LLVM/lib/clang/23/lib/windows
+# (形态 = 拷贝运行时 DLL 到产物旁。**不用 PATH 前置**: 配方里的 $$PATH 是 MSYS 的
+#  POSIX 形态(/usr/bin:…), 直接拼进 PATH 反而把 Windows 侧 PATH 覆盖掉,
+#  实测报 `clang_rt.asan_dynamic-x86_64.dll: cannot open shared object file`)
 ASAN_CFLAGS := $(CFLAGS) -fsanitize=address -g -fno-omit-frame-pointer
+ASAN_DLL_DIR ?=
 test-asan: $(OBJDIR)/et_tests_asan.exe
+	-if [ -n "$(ASAN_DLL_DIR)" ]; then cp -f "$(ASAN_DLL_DIR)"/*.dll $(OBJDIR)/ ; fi
 	./$(OBJDIR)/et_tests_asan.exe
 
 $(OBJDIR)/et_tests_asan.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
@@ -113,8 +121,9 @@ $(OBJDIR)/et_tests_asan.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)
 
 # v2.6 P1-6 (HC-10): ASan 门**常设化并覆盖 1K 变体** —— v2.5 的 ASan 门抓到了
 # 既有的 stack-buffer-overflow(N-9), 本版把 XMODEM 1K 块路径一并纳入内存检查矩阵。
-# 本机 MinGW 无 libasan, 该目标以 Linux(CI) 为准, 交付文档显式声明"本机不可执行"。
+# 本机可达性同上一目标(v2.29 P3-3② 勘误): gcc 不可 / clang 23.1.0 + ASAN_DLL_DIR 可执行。
 test-asan-1k: $(OBJDIR)/et_tests_asan_1k.exe
+	-if [ -n "$(ASAN_DLL_DIR)" ]; then cp -f "$(ASAN_DLL_DIR)"/*.dll $(OBJDIR)/ ; fi
 	./$(OBJDIR)/et_tests_asan_1k.exe
 
 $(OBJDIR)/et_tests_asan_1k.exe: $(LIB_SRC) $(PORT_SRC) $(TEST_SRC)

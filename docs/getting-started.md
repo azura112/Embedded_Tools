@@ -54,8 +54,8 @@ Windows Git Bash 下没有 `make` 也能用 `mingw32-make`; 或直接照 README 
 常见失败与自查（三类，环境注记精确到版本）：
 
 - **编译器**：`make`（Windows 无 `make` 时）→ 用 `mingw32-make`；本机实测 gcc **16.1.0**（MinGW-w64）与 clang **23.1.0**（LLVM）；ARM 交叉 = GNU Tools for STM32 **13.3.rel1**。ARM 工具链不在 PATH 时 port 构建与 `sizecheck` 会红，先 `arm-none-eabi-gcc --version` 自查。
-- **内存门（ASan）本机可达性**：gcc 侧 `make test-asan` 报 `cannot find -lasan`（MinGW 不带 libasan）；clang 侧一条命令即可（ASan 运行时 DLL 目录进 PATH）：
-  `PATH="$PATH:/d/software/LLVM/lib/clang/23/lib/windows" mingw32-make test-asan CC=clang`（实测 `=== RESULT: ALL PASS (fail=0) ===`；口径与警告面见 README 支持矩阵「内存检查门」行）。
+- **内存门（ASan）本机可达性**：gcc 侧 `make test-asan` 报 `cannot find -lasan`（MinGW 不带 libasan）；clang 侧一条命令即可，**无需手工改 PATH**——ASan 运行时目录交给 Makefile 变量（v2.29 P3-3①，拷贝到产物旁）：
+  `make test-asan CC=clang ASAN_DLL_DIR=D:/software/LLVM/lib/clang/23/lib/windows`（`test-asan-1k` 同形态；两目标实测 `=== RESULT: ALL PASS (fail=0) ===`；口径与警告面见 README 支持矩阵「内存检查门」行）。
 - **字符集与路径空格**：串口/日志读用 UTF-8 终端；工程路径含空格时 `make` 目标可能被拆分，建议无空格路径；Windows Defender/占用会令 `build/*.exe` 链接失败，先关闭上一个 `ex_*.exe` 实例。
 - **平台支持面**：能不能用你的板子/编译器/RTOS，只看 README 的「支持矩阵」节（验证过 / 未验证 / 不支持三档，逐行带验证方式），不推测。
 
