@@ -599,6 +599,34 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ---- v2.29 P3-1 (REQ-11): 并发契约表逐模块对账(行数 + 名字集合) ----
+# 动机: docs/concurrency.md 是 35 个模块头注的汇总面。汇总文档天生易漏行(新增模块或
+# 手工搬表时少一行), 而"每个模块的并发级别可查"正是 M4-③ 的判据 ⇒ 必须与模块集合对账。
+# 口径: 模块集合 = 七目录 *.h 去掉后缀(现值 35 个), 与"ET_MODULE_* 开关数 32"是两个不同
+#       口径(后者是宏计数), 本断言按头文件集合判, 与**行前缀名逐个比**(反向探针实测:
+#       只数行数时把某行改名成 et_smapX 仍绿 ⇒ 计数式断言不足, 故改为集合相等)。
+# 形态: 单条断言(K=1, 判定语义零变更 HC-7); 可红面两点: 删行 / 行内模块名失配。
+et_cc_expect=$(ls core/*.h algorithm/*.h sys/*.h protocol/*.h drivers/*.h debug/*.h storage/*.h 2>/dev/null | sed 's/\.h$//' | sort)
+et_cc_got=$(grep -oE '^\| (core|algorithm|sys|protocol|drivers|debug|storage)/[A-Za-z0-9_]+' docs/concurrency.md 2>/dev/null | sed 's/^| //' | sort)
+et_cc_miss=""
+et_cc_extra=""
+for m in $et_cc_expect; do
+    printf '%s\n' "$et_cc_got" | grep -qx -- "$m" || et_cc_miss="$et_cc_miss $m"
+done
+for m in $et_cc_got; do
+    printf '%s\n' "$et_cc_expect" | grep -qx -- "$m" || et_cc_extra="$et_cc_extra $m"
+done
+et_cc_n=$(printf '%s\n' "$et_cc_expect" | grep -c .)
+et_cc_k=$(printf '%s\n' "$et_cc_got" | grep -c .)
+if [ -z "$et_cc_miss$et_cc_extra" ] && [ "$et_cc_n" = "$et_cc_k" ]; then
+    echo "ok   并发契约表与模块集合逐名一致 (${et_cc_n} 行, v2.29 P3-1/REQ-11)"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL 并发契约表与模块集合不一致: 期望=${et_cc_n} 实得=${et_cc_k} 表缺=[${et_cc_miss:-无}] 表多/名错=[${et_cc_extra:-无}]"
+    echo "  (期望面 = 七目录 *.h 去后缀; 表文件 docs/concurrency.md)"
+    FAIL=$((FAIL + 1))
+fi
+
 # ---- v2.6-r2 G0′-4 同族漏刷三处装门 (CO-6/CO-7/CO-11(v2.6)) ----
 # 背景: v2.6 的"装门"只盖住了被点名的三处, 同族的另外三处(README 冻结基线名 /
 # port README 板侧叙述 / 计划模板项数)无门 → 漏刷第四例。本节把它们也变成硬门。

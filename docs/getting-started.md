@@ -253,6 +253,12 @@ sh tools/sizecheck.sh            # ARM 体积表与实测逐值比对 (需 arm-n
 
 **该看到什么**: `docsync: pass=N fail=0`; `apidump: OK —— 纯新增`; `sizecheck: pass=3 fail=0`。
 
+**改并发用法前先查**：[`docs/concurrency.md`](concurrency.md)（35 模块 × 4 列：ISR 可调用 / 任务可调用 /
+单所有者 / 多生产者是否安全，每行带 `文件:行` 的头注原文）。判某 API 能否进中断以前**先看这一行**，
+不要按"看起来无锁所以应该能进"推断 —— 表里的"未声明"就是没写过，既不算许可也不算禁止。
+其中 `protocol/et_frame.h` 与 `protocol/et_atcmd.h` 两处头注**自身互相矛盾**（表内标"冲突"并照抄两文），
+遇到这两个模块的 ISR 问题时以"补临界区"为安全侧，并留意 v3 候选里的收敛项。
+
 Modbus 从站接入后，上位机侧可直接用工具验证（不依赖串口助手）：
 
 ```sh
