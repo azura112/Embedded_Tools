@@ -159,14 +159,16 @@ EX2_SRC := examples/ex_kv_backup.c
 EX3_SRC := examples/ex_upgrade_flow.c
 EX4_SRC := examples/ex_modbus_slave.c
 EX5_SRC := examples/ex_modbus_master.c
+EX6_SRC := examples/ex_min.c                      # v2.29 P0-3: 十分钟最小样机(ringbuf+kv)
 
 .PHONY: ex
-ex: $(OBJDIR)/ex_pid_loop.exe $(OBJDIR)/ex_kv_backup.exe $(OBJDIR)/ex_upgrade_flow.exe $(OBJDIR)/ex_modbus_slave.exe $(OBJDIR)/ex_modbus_master.exe
+ex: $(OBJDIR)/ex_pid_loop.exe $(OBJDIR)/ex_kv_backup.exe $(OBJDIR)/ex_upgrade_flow.exe $(OBJDIR)/ex_modbus_slave.exe $(OBJDIR)/ex_modbus_master.exe $(OBJDIR)/ex_min.exe
 	./$(OBJDIR)/ex_pid_loop.exe
 	./$(OBJDIR)/ex_kv_backup.exe
 	./$(OBJDIR)/ex_upgrade_flow.exe
 	./$(OBJDIR)/ex_modbus_slave.exe
 	./$(OBJDIR)/ex_modbus_master.exe
+	./$(OBJDIR)/ex_min.exe
 
 $(OBJDIR)/ex_pid_loop.exe: $(EX1_SRC) $(LIB_SRC) $(PORT_SRC)
 	-mkdir $(OBJDIR)
@@ -187,6 +189,11 @@ $(OBJDIR)/ex_modbus_slave.exe: $(EX4_SRC) $(LIB_SRC) $(PORT_SRC)
 $(OBJDIR)/ex_modbus_master.exe: $(EX5_SRC) $(LIB_SRC) $(PORT_SRC)
 	-mkdir $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ $(EX5_SRC) $(LIB_SRC) $(PORT_SRC)
+# v2.29 P0-3: 第 6 配方载体 = ringbuf + kv 最小样机（clean 机器一条命令可跑通）
+$(OBJDIR)/ex_min.exe: $(EX6_SRC) $(LIB_SRC) $(PORT_SRC)
+	-mkdir $(OBJDIR)
+	$(CC) $(CFLAGS) -o $@ $(EX6_SRC) $(LIB_SRC) $(PORT_SRC)
+
 
 clean:
 	-rm -rf $(OBJDIR)

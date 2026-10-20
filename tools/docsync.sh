@@ -516,6 +516,11 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+# ---- v2.29 P0-2 (REQ-18 采纳前置 1.2): README 支持矩阵节存在性 ----
+# 动机: "已验证平台"一行无法区分 验证过/未验证/不支持, 法务与首次接入者只能猜。
+# 纯新增检查面(判定语义零变更, HC-7); 门自证可红: 删掉 README 该节标题即 FAIL。
+assert_grep "README.md" "## 支持矩阵"                   "README 支持矩阵节在位(v2.29 P0-2/REQ-18)"
+
 # ---- v2.6 P0-2 跨文档计数一致性 (CO-3/CO-4 漏刷的根因根治, HC-4) ----
 # 单一来源 = README(交付时回刷的唯一权威); architecture 机制门行与 API_GUIDE 的
 # 对应数字必须**与实测/README 一致**, 而非各自写死。v2.5 的 examples 数(architecture

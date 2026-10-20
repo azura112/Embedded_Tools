@@ -24,6 +24,43 @@
 
 Windows Git Bash 下没有 `make` 也能用 `mingw32-make`; 或直接照 README 的纯 gcc 命令。
 
+## 0.5 十分钟最小样机 (ringbuf + kv, v2.29 P0-3)
+
+目标 = 干净机器上**十分钟内**看到"库能用"的两块证据：`core/et_ringbuf`（字节环形缓冲，零动态内存）
+与 `storage/et_kv`（掉电安全参数区，host 侧由 `port_host` 虚拟 flash 承载）。载体就是仓库自带的
+第 6 个配方示例 `examples/ex_min.c`，它自检式断言、退出码 0 = PASS。
+
+| 步 | 命令（Windows 用 `mingw32-make`，Linux/macOS 用 `make`；以下均在仓库根执行） | 该看到什么 |
+|---|---|---|
+| 1 一键跑全部配方 | `make ex` | 六个示例各出一行 `[ex_*] PASS`，末行即 `[ex_min] PASS`，退出码 0（任一 FAIL 即红，CI 常设） |
+| 2 只跑这一例（不依赖 make） | `mkdir -p build && gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Iprotocol -Istorage -Iport -Iport/host examples/ex_min.c core/et_ringbuf.c protocol/et_crc.c storage/et_kv.c port/host/port_host.c -o build/ex_min.exe && ./build/ex_min.exe` | 五个源文件即最小闭环（示例 + ringbuf + crc + kv + host port）；编译零警告、输出同下方预期、退出码 0 |
+| 3 全库回归 | `make WERROR=1 test` | 末尾 `=== RESULT: ALL PASS (fail=0) ===`（520 例）；`-Wall -Wextra -pedantic -Werror` 下零警告（gcc 口径，见 README 支持矩阵） |
+| 4 验证"关掉的模块没有符号" | 关：`gcc -std=c99 -DET_MODULE_CRC=0 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_off.o && nm build/crc_off.o > build/crc_off.syms`；开：`gcc -std=c99 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_on.o && nm build/crc_on.o > build/crc_on.syms`；读数：`grep -c " T et_" build/crc_off.syms build/crc_on.syms` | 本机实测 **off=0 / on=8**（口径 = 无目标代码/符号，不是"源文件不参与编译"）；CMake 侧同形态开关由本版 P1 接入面交付，交付后本行并入 `cmake -DET_MODULE_KV=0` 读数 |
+| 5 改自己的工程 | 复制 `examples/ex_min.c` 的两个 API 调用块（init/format/set/get）进你的 main | 5~10 行即可，无需改库源码 |
+
+预期输出（逐字，`make ex` 的该配方）：
+
+```text
+[ex_min] start
+  ringbuf: cap=16 wrote=7 read=7 bytes match
+  ringbuf: full-path short write 1 of 15 (free=1), empty read 0
+  kv: format+init ok, keys=2
+  kv: read-back match (k=1 len=4, k=2 len=11)
+  kv: after re-init without format (simulated reboot) k=1 len=4 first byte=0xA0
+  kv: overwrite persisted (k=1 len=2, first byte=0x5A)
+[ex_min] PASS
+```
+
+常见失败与自查（三类，环境注记精确到版本）：
+
+- **编译器**：`make`（Windows 无 `make` 时）→ 用 `mingw32-make`；本机实测 gcc **16.1.0**（MinGW-w64）与 clang **23.1.0**（LLVM）；ARM 交叉 = GNU Tools for STM32 **13.3.rel1**。ARM 工具链不在 PATH 时 port 构建与 `sizecheck` 会红，先 `arm-none-eabi-gcc --version` 自查。
+- **内存门（ASan）本机可达性**：gcc 侧 `make test-asan` 报 `cannot find -lasan`（MinGW 不带 libasan）；clang 侧一条命令即可（ASan 运行时 DLL 目录进 PATH）：
+  `PATH="$PATH:/d/software/LLVM/lib/clang/23/lib/windows" mingw32-make test-asan CC=clang`（实测 `=== RESULT: ALL PASS (fail=0) ===`；口径与警告面见 README 支持矩阵「内存检查门」行）。
+- **字符集与路径空格**：串口/日志读用 UTF-8 终端；工程路径含空格时 `make` 目标可能被拆分，建议无空格路径；Windows Defender/占用会令 `build/*.exe` 链接失败，先关闭上一个 `ex_*.exe` 实例。
+- **平台支持面**：能不能用你的板子/编译器/RTOS，只看 README 的「支持矩阵」节（验证过 / 未验证 / 不支持三档，逐行带验证方式），不推测。
+
+---
+
 ## 1. 裁剪: 只留你要的模块
 
 ```sh

@@ -66,7 +66,8 @@
 │   ├── ex_kv_backup.c     # 配方载体: 11.11 kv 备份恢复自检版（v2.3）
 │   ├── ex_upgrade_flow.c  # 配方载体: xmodem+bootctl 升级流程自检版（v2.3）
 │   ├── ex_modbus_slave.c  # 配方载体: Modbus RTU 从站全路径自检（v2.4）
-│   └── ex_modbus_master.c # 配方载体: Modbus RTU 主站全路径自检（v2.5，内置模拟从站）
+│   ├── ex_modbus_master.c # 配方载体: Modbus RTU 主站全路径自检（v2.5，内置模拟从站）
+│   └── ex_min.c           # 十分钟最小样机: ringbuf + kv 自检（v2.29 P0-3）
 └── Makefile
 ```
 
@@ -171,6 +172,33 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 
 已验证平台：host（CI 双平台全量测试）、**STM32F103C8T6**（`port/stm32f103/`）、**STM32G474VET6**（`port/stm32g474/`）——均零警告编译 + 片内 flash 参数区；G474 已完成 **v1.6~v1.9 板面收口 + v2.1/v2.2 控制链路上板**（升级链真机走单 5 条 / 库化 selftest 22 套件 / PID 闭环真机走单，记录见仓库根 `移植stm32实机记录.md`），F103 真机维持常设挂账（编译+Renode 仿真门）。**CH32X035G8U6**（`port/ch32x035/`，Qingke RISC-V2A）为**库侧参考移植**（应用以工程本体为准）：`python build.py`（MRS2 工具链，**不入 CI/sizecheck**）零警告编译 + et 重构版固件实机运行（两处移植缺陷实机定位修复，见其 README 验证状态），已含 flash 擦写攻坚链（实机#3–#16，`9b090ad` RAM 驻留核心）与 et_kv 断电记忆应用（V1.9）；上板回归清单 8 项未系统执行，不按"已验证"整体结论计。
 
+## 支持矩阵（v2.29 P0-2，采纳前置 1.2）
+
+状态只有三档：**验证过**（附可复现命令或 CI job 名）/ **未验证**（没跑过就是没跑过）/ **不支持**（明确不做，不留"疑似支持"歧义）。
+逐行验证方式 = 命令、CI job 名或实机记录节号；**未验证不等于不支持**，也不构成隐含承诺。
+
+| 维度 | 状态 | 验证方式 |
+|---|---|---|
+| 语言标准 C99（`-std=c99 -Wall -Wextra -pedantic`） | 验证过 | `make WERROR=1 test`（本机 + CI `unit-tests (windows-latest)` / `unit-tests (ubuntu-latest)`） |
+| 语言标准 C11 / C17 | 未验证 | 本版未在 `-std=c11` 下跑过任何门；不改语言标准（计划 §1.3） |
+| C++ 混编（extern "C" 包裹） | 未验证 | 各头文件 `#ifdef __cplusplus extern "C"` 面在位，但无 C++ 消费者与 CI job |
+| host 编译器 gcc（MinGW-w64 16.1.0，Windows） | 验证过 | `mingw32-make WERROR=1 test` 本机实测 + CI windows job 的纯 gcc 无 make 路径 |
+| host 编译器 gcc（Linux CI） | 验证过 | CI job `unit-tests (ubuntu-latest)`（含 `make test` / `test-1k` / `test-tab` / `ex`） |
+| host 编译器 clang 23.1.0（Windows） | 验证过 | `mingw32-make test-asan CC=clang` 与 `mingw32-make test-asan-1k CC=clang` 本机实测 `=== RESULT: ALL PASS (fail=0) ===`；**限定面**：clang 侧 15 条警告在案（10 CRT deprecation + 4 set-but-not-used + 1 self-assign），零警告门仍以 gcc 为准 |
+| 内存检查门（ASan） | 验证过 | 双路：CI = `make test-asan` + `make test-asan-1k`（ubuntu job，Linux-only 形态）；本机 = `PATH="$PATH:/d/software/LLVM/lib/clang/23/lib/windows" mingw32-make test-asan CC=clang` 实测 ALL PASS。**gcc 侧不可执行** = `cannot find -lasan` 实测（MinGW 不带 libasan） |
+| ARM 交叉工具链 GNU Tools for STM32 13.3.rel1 | 验证过 | CI job `cross stm32f103` / `cross stm32g474`（`-werror` 零警告）+ `docbuild`（port README 命令可执行化） |
+| IAR / ARMCC(AC6) | 不支持 | 无 port 适配与实测；port 层含 GCC 属性与 HAL 依赖（本版不移植，非"暂未验证"） |
+| 平台 STM32F103C8T6（真机） | 验证过 | 实机记录 §15/§16 走单 + CI job `renode stm32f103 smoke`（kv/重启计数/selftest 22/22） |
+| 平台 STM32G474VET6（真机） | 验证过 | `python tools/board_window.py --mode full`（本机实测 exit 0，读数落 `D:\code\STM32CubeMX\G474VET6_ET_TEST\build\v2.28-evidence-rerun\`：`SELFTEST 22/22`、`FEATURES sw=32`、`METRICS 11/12 drop=0`、`BOOTINFO staged=1 confirmed=1 attempts=1`）+ 实机记录 §17（v2.27 跨 16 版债清偿）与 §18（v2.28 五项走单） |
+| 平台 CH32X035G8U（WCH RISC-V） | 未验证 | `port/ch32x035/` 编译通过；上板回归 8 项挂账（BACKLOG REQ-2），触发 = WCH-Link 枚举在位（v2.27/v2.28 两轮实测 COM16 不在位） |
+| RTOS：FreeRTOS | 未验证 | 本版仅交付**并发契约表** `docs/concurrency.md`（各模块 ISR/上下文级别汇总），无 FreeRTOS port、优先级反转与中断嵌套实测 |
+| RTOS：其他（Zephyr / RT-Thread / 无 OS 裸机） | 不支持 | 库不依赖 OS（无阻塞式系统调用），但除裸机主循环外无集成实测 |
+| 构建系统：Makefile（host 门禁单一入口） | 验证过 | `make WERROR=1 test` / `make ex` / `make coverage-build`（本机与全部 CI 门均以 Makefile 目标为口径，`tools/docsync.sh` 断言源列表） |
+| 构建系统：CMake（v2.29 N-01 接入面） | 未验证 | 本版 P1 交付根 `CMakeLists.txt` + `cmake/` 导出；交付前无构建读数 ⇒ 按"没跑过就是没跑过"登记，P1 实跑 `cmake -B build` / `cmake --install` / `find_package` 后随批改判并附命令 |
+| 构建系统：Meson / Bazel | 不支持 | 本版不做（计划 §1.3） |
+
+**许可证**：MIT（全文见 [LICENSE](LICENSE)，版权行 = `Copyright (c) 2026 azura`）——法务侧可据此单文件判定可否商用/闭源集成/再分发。
+
 裁剪：编辑 `et_config.h` 中 `ET_MODULE_*` 开关（支持 `-D` 覆盖），未启用的模块不参与编译（对应 `.c` 亦移出构建列表）。
 
 ## 设计原则
@@ -188,7 +216,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **host 零警告门**（v2.6 P2-1）：`make WERROR=1 test` / `make WERROR=1 ex`（CI 的 Linux 与 Windows 两个 job 同用 `-Werror`）——把"只有 ARM 交叉编译有零警告门"扩到 host 侧；
 - **内存检查门**（v2.5 起，v2.6 扩变体）：`make test-asan` + `make test-asan-1k`（ASan 覆盖默认几何与 1K 块变体），CI 常设；
 - **板上自测**（v1.7）：`debug/et_selftest` 库组件，**22** 套件一条命令冒烟（host/板上结果可比对；v2.2 起 pid/stats/bytes、v2.7 起 modbus/log 进板上冒烟）；
-- **配方可执行载体**（v2.3，v2.5 扩至五例）：`make ex` 一键跑五个自检式示例（闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
+- **配方可执行载体**（v2.3，v2.5 扩至五例，**v2.29 P0-3 扩至六例**）：`make ex` 一键跑六个自检式示例（**十分钟最小样机 ringbuf+kv**/闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
 - **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.27.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
