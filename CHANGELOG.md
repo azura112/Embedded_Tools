@@ -6,6 +6,36 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.29.0] — 2026-10-20 · **v2.29 — 首次接入面（CMake）、并发契约表与真 A/B 分区（功能版）**
+
+功能版（出口 A，全量档，服务 M4-①②③④ + M3 收尾）：主题 = **让第一次使用本库的工程师能把库装进自己的工程**。采纳前置三件（MIT `LICENSE` / README 支持矩阵 / 十分钟最小样机）+ N-01 CMake 接入面（与 Makefile 由机检对齐）+ N-02 并发契约表（**仅文档面，无 FreeRTOS port**）+ REQ-7 真 A/B 分区（port 区域契约，v2.28 `BLOCKED-2` 的物理不可达在此解除）。公开面纯追加（`apidump --diff` = **新增 7 项 / 修改删除 0 项**，对 v2.27 与 v2.28 两基线交叉一致），四形态回归 **526/526/527/533**（基线 520/520/527/521，+6 区域用例）。
+
+### Added
+- **`LICENSE`（MIT，采纳前置 1.1 / REQ-18）**：全文 1,062 B，版权行 `Copyright (c) 2026 azura`（= `git config user.name` 实测值）；README 增「许可证」链接行。
+- **README 支持矩阵（前置 1.2）**：17 数据行 × 三档封闭取值（**验证过 / 未验证 / 不支持**），每「验证过」行逐行带可复现命令、CI job 名或实机记录节号（9 行）；未验证 5 行含 C11、C++ 混编、ch32x035 上板、FreeRTOS、**CMake（P1 交付前按"没跑过就是没跑过"登记，P1 实跑后随批改判）**；不支持 3 行（IAR/ARMCC、其他 RTOS、Meson/Bazel）；`docsync` 装断言把该节存在性变硬门（K=1）。
+- **`examples/ex_min.c`（前置 1.3）**：ringbuf + KV 十分钟最小样机，**五个源文件即最小闭环**（示例 + `et_ringbuf.c` + `et_crc.c` + `et_kv.c` + `port_host.c`），零动态内存、自检式、退出码 0；配套 `docs/getting-started.md` §0.5 一页纸（命令逐条从文档提取真跑，含 `ET_MODULE_CRC=0` 关↔开的 `nm` 符号读数 **0 ↔ 8**）。
+- **CMake 接入面（N-01 / REQ-10）**：根 `CMakeLists.txt` + `cmake/etConfig.cmake.in` + `cmake/toolchains/arm-none-eabi-{g474,f103}.cmake`；目标 `embedded_tools` + ALIAS **`et::embedded_tools`**，`install/export` + `find_package(et CONFIG)`；**版本与 32 枚模块开关的默认值全部从 `et_config.h` 正则读出**（零复制字面量 ⇒ 不破单一来源）；`C_STANDARD 99 / C_EXTENSIONS OFF`；`-DET_PORT=host|stm32f103|stm32g474` 选唯一 port（目录不存在直接 `FATAL_ERROR`）；`-DET_WERROR=ON`、`-DET_BUILD_EXAMPLES=ON`（六例各注册为 CTest 用例）。消费侧**两形态各 5 行**（`add_subdirectory` / `find_package`）实测可编可跑。
+- **`docs/concurrency.md`（N-02 文档面 / REQ-11 / M4-③）**：35 模块 × 4 列（ISR 可调用 / 任务可调用 / 单所有者 / 多生产者是否安全），**每行带 `文件:行` 的头注逐字引文**（64 条引文机核全命中）；取值闭集六档，含 **未声明**（头注没写≠许可）与 **冲突**（同文件两处互斥时照抄两文不择一）两档；`docsync` 断言"表与模块集合**逐名**一致"（反向探针实测：改名与删行各红一次）。
+- **port 区域访问契约（REQ-7 / `CO-7(v2.28)`，纯追加）**：`port/port.h` 增 `port_flash_region_lookup/get/read/write/erase` 五符号 + `port_flash_region_info_t` + 能力宏 `PORT_FLASH_REGIONS`，**三既有 `port_flash_*` 签名与语义逐字不变**；host 与 G474 实现真分区表，F103 显式 `PORT_FLASH_REGIONS = 0` + 五符号恒失败 ⇒ `et_bootctl` 的 `slot_base` 非 0 位形在该平台被**显式拒绝**（不静默退回参数区扇区）。
+- **内存门一条命令本机可复现（`CO-8(v2.28)-P` 裁决 = 路径①'）**：`make test-asan CC=clang ASAN_DLL_DIR=<LLVM asan 目录>`（`test-asan-1k` 同形态）——ASan 运行时 DLL 由 Makefile 变量拷贝到产物旁，**不需要手工 `export PATH`**。
+
+### Changed
+- **`et_bootctl_cfg_t` 尾部追加 `slot_base[2]`**（`sizeof` **20→28 B**，gcc x86-64 与 cortex-m4 两目标各以断言实测同值）：全 0 = 旧 `slot_sector` 语义（既有五条校验逐条不变），全非 0 = 该槽绝对基址经区域 API 访问（混合位形判非法）；`API_STABILITY` §5.1 追加登记行。**可见代价登记**：尾字段使 `-Wmissing-field-initializers` 在四处位置化初始化器报警 ⇒ 各补 `{ 0u, 0u }`（零语义变化）。
+- **机制门**：`docsync` 本版 **K=3 条断言**（① 支持矩阵节存在性、② Makefile↔CMake 源列表双源一致性聚合断言（七目录 35 文件合一条）、③ 并发契约表与模块集合逐名对账）⇒ 终态断言数见本版交付文档行首声明；`apidump.sh` BASE 两处切 v2.28。
+- **「本机不可执行」按值勘误三处**（README 门禁条 + README 表行 + Makefile 两注释块）：旧结论只对 **gcc 16.1.0**（`cannot find -lasan`）与 clang 17 时代成立；clang **23.1.0** 本机可达（实测两目标 ALL PASS rc=0），clang 侧 **15 条警告**如实登记（10 CRT deprecation + 4 set-but-not-used + 1 self-assign，零警告门仍以 gcc 为准）。
+- **文档面**：README 目录树（`ex_min.c` / `CMakeLists.txt` / `cmake/`）与许可证行、快速开始 CMake 段、§0.9「CMake 接入」（两形态全文 + 开关表 + 交叉命令 + 常见失败）、§7 并发表入口；`docs/API_GUIDE.md` §9 区域契约行与 §6.2 槽位形段；`docs/architecture.md` 例数与机制门行；ROADMAP 新建 **M4「首次接入与产品化路径」** 四判据 + **M3 结案归档**（①②③④⑤ 全达成，⑤ 由 2026-10-20 复跑闭合）。
+- **模板条文五处**（`CO-7`/`CO-10`/`RC-3`/`RC-4`/`RC-5`）：§7④-bis「体量/容量维」必填（算式 + 实测读数 + 容量来源，反例 = v2.28 `BLOCKED-2`）、评审/交付**双时点标注**、申报件白名单归属须显式、**末笔身份单点承载**与 1:1 补充笔上限、DELIVERY §8「新增破坏性候选」段落点义务。
+
+### Fixed
+- **`tools/board_window.py`（`RC-1`）**：烧录后串口重枚举竞态与占用不再抛 `traceback`——`open_port_with_retry` 有界重试 6×0.8s，失败走 `abort_reason` 且 `window_run.log` 必生成；退出码分两类（**2 = 端口不可用** / **1 = 机检失败**）并写入 `--help`。
+- **库外工程侧三处（板侧窗口内发现，逐条见 `移植stm32实机记录.md` §19.4）**：① 2026-10-08 的 `Core/et/port.h` 陈旧副本在 `-I` 顺序上**遮蔽**同步进来的 `port/port.h`（同步门看不见，表现 = 区域类型未知、构建 exit=1）；② `cmd_upgrade` 的"xmodem 接收路径内逐页擦"⇒ 88 KB 需 43 次约 22 ms 关中断窗口，与 RX 抢占冲突，改整槽预擦；③ `boot_flow()` 自检仍按旧参数区扇区地址取镜像头（真分区位形下读的是残留），改按 `slot_base` 经区域 API 取。
+
+### 挂账与受阻（禁静默）
+- **REQ-7 真固件双单 = 传输面受阻未达成**（`BLOCKED-2__v2.29真固件双单传输面受阻__88KB_xmodem在约11KB处失步.md`）：分区面**达成并实测**（`AT+REGIONS` 四条读数、真固件 87,872 B ≤ 槽 131,072 B、链接脚本护栏 512K→128K），但 687 块 xmodem 两次独立复跑均在 **block ≈ 91（约 11.6 KB）** 由接收端 `CAN` 中止（该轮每块约 3.8 次发送）；**库面零绕行**（未改 `et_xmodem` 重试/超时、未以小合成镜像冒充真固件）。另登记：烧录不擦参数区状态扇区 ⇒ 窗口内 `AT+BOOTINFO` 三字段属既有残留态，**不得当作新 confirm 证据**。
+- **头注自相矛盾两处**（`protocol/et_frame.h` `:15`↔`:23`、`protocol/et_atcmd.h` `:12`↔`:65`）：并发表照抄两文标"冲突"，收敛修法属 `protocol/` 头注（本版零 diff 面）⇒ 转下版文档批。
+- N-02 后半（FreeRTOS port 本体与优先级/嵌套压测）、REQ-12~REQ-17（参数版本化、黑匣子、可恢复升级、低功耗、HIL、CLI）**本版不认领**（提案逐条映射与理由见 `versions/v2.29/PLAN.md` §1.1）。
+- ch32x035（REQ-2）本版零操作（WCH-Link 不在位）；f103（REQ-3）缺板挂账续期，Renode CI smoke 常态兜底；跨版链与 v3 池维持（本版新入池：并发表两处冲突收敛、板侧 xmodem 大块传输可靠性）。
+
 ## [2.28.0] — 2026-10-10 · **v2.28 — 板侧窗口一键化、真固件升级链判定与自测内存防线（功能版）**
 
 ### Added

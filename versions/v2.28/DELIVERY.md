@@ -130,6 +130,7 @@ sh tools/gatecheck.sh 2.28 --verify versions/v2.28/DELIVERY.md   # 期望 exit 0
 - 无本版内已发布档的 修订登记 token 需求：v2.27 四件在 r2 批内已携登记行；本档对它们的触碰 = 偏差 1/2 承载面（内容复原非声称改写）。
 - 修订登记（r2 轮，短语行不携 token，遵碰撞规避纪律；token 行另起）：v2.28-r2 批对本档 §2/§4/§6/§7.1 的实质变更与本轮门强制数值面走放行，来源 = `versions/v2.28/REVIEW.md` §6 清单 T-1…T-5 + T-7（载体 = `versions/v2.28/DELIVERY-r2.md`）
 - 修订登记 @ab4d104 @78aee9c @be6a40f @1b03bd6 @f158d05：r2 批逐笔点名面 = R3（T-5 本档 AC-2 与 §7.1 两处 1:1 行内替换）/ R6（T-2 `tools/board_window.py`，非白名单）/ R7（T-3 本档 §6 复评职责句更正）/ R8（T-1 本档 §4 三笔具名 + docref 声明行归位 + 对账注记）/ R9（T-4 `README.md` + `tools/docsync.sh` + `docs/architecture.md` 375→378 三面，非白名单）；R1 评审记录入仓、R2 申报件更正章与 R10 本笔 = 白名单或纯登记豁免面，不点名
+- 修订登记 @20e767a @057cd2e @3307a1b @cc6d1b7 @d701c41 @8718397 @68dd7dc @4f1487a @e752234 @2b54f62：**v2.29 P4-3 登记链收口（纯登记行，HC-1 carve-out）**——本版对已发布档的非白名单触碰面逐笔点名放行，列举形态 = `git log --format=%h snap-2.29-start..HEAD` 全 10 笔，采全列而非择要（沿 v2.28 消「同串异写漏列」的枚举纪律）。内容面触碰仅三类且均已入本版偏差表：① 门与工具面 = `tools/docsync.sh` 三条纯新增断言（K=3，`20e767a`/`057cd2e`/`68dd7dc`）+ `tools/apidump.sh` BASE 两处切 v2.28（`2b54f62`）+ `tools/board_window.py` 串口异常面（`d701c41`）；② 库面 = port 区域契约与三 port 实现 + `et_bootctl` 位形（`3307a1b`/`8718397`），公开面 `apidump --diff` = 新增 7 项 / 修改删除 0 项（追加型）；③ 数字回刷与文档面 = 版本宏 29（`cc6d1b7`）、用例数 520→526 五处 + 两 port v2.29 体积行（`cc6d1b7`）、Makefile 十分钟样例接线（`20e767a`，本版偏差 1）、README 支持矩阵与基线名/版本行（`20e767a`/`2b54f62`）。其余笔面（新增 `CMakeLists.txt`/`cmake/`/`LICENSE`/`examples/ex_min.c`/`docs/concurrency.md`、两模板条文、ROADMAP/实机记录/申报件）属白名单或本版新建文件，不点名。
 
 ### 7.4 ⑧ 自检表（引用机检第八周期）
 
