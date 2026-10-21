@@ -40,14 +40,14 @@
 | 1 | **R1 = 清单外最小登记面（评审记录本体入仓）** | `versions/v2.29/REVIEW.md` 为 A2 自产件、落笔时点为未追踪件；Owner 2026-10-21 明示「你自己提交」；`PROCESS.md` §8 三件套完整性要求该件在库，且本档 §2/§8 全部引用以其为路径锚 | 如实登记；内容零改动逐字入库（`git show --numstat a1c26fb` = 212+/0−）；铁律 5 双向适用：§6 勾选框不代勾、正文零改写 | 无（流程完整性面，非门改动） |
 | 2 | **`.gitignore` 增 `build-cmake/` 一行（T-4 授权面）** | 该行使 (b) 全量/自排除均 **+1 行**；r2 档落仓（新文件）另使全量 +1 件 ⇒ ⑧ 锚值必然后移 | 按 `CO-12(v2.28)` 等价式执行：R2/R3 落仓后**重跑 `--emit`**、R4 逐字粘贴（禁以旧锚回填）；主档 ⑧ 保持 `8662ba0` 时点真值不回改 | T-4（评审点名的 `.gitignore` 增行，明示「若 +1 行须重 emit」） |
 | 3 | **主档结构性未登记面的清偿（r2 轮补登记）** | 主档 §7.3④ 在 v2.29 终态自述「本档自身 = 结构性未登记」：落仓笔 `17c4df8` 与后续 `46e7a20`/`8662ba0` 均触及本档而无法自列 token（池 D 成因）。r2 轮必须有笔再触及本档（T-1…T-3 的 1:1 修订）⇒ 若不清偿，未登记集会增至四笔 | R3 以**纯登记行**补 `@17c4df8 @46e7a20 @8662ba0 @04e6471` 四 token（R3 对本档的增删行全部为登记行 ⇒ 由 `docref.sh:176-184` 豁免路径放行、不需自我 token）⇒ 主档实测转 **OK**；R4 以同一手法对**九档历史交付档**各补一行（token = `@04e6471 @36de066`），把 R2/R3 的非白名单触碰面一并吸收（收口前实测九档全红）⇒ 九档复绿；池 D 条文作为机制记录保留（本版不再复现该形态，v2.30 仍可采其修法） | 无（登记链维护面） |
-| 4 | **⑧ 取值与粘贴分笔（CO-12 等价式）** | 「同一笔内取值又粘贴」不可自指；R4 = 末笔，其行数须与 R3 一致 | R3 落仓后在**该 HEAD** 前台单跑 `--emit`（rc 与 stdout 独立落档），R4 严格 1:1 行内粘贴五锚行并回填 SHA（`wc -l` 不变 ⇒ (b) 两口径随 R3 取值稳定） | 无 |
+| 4 | **⑧ 取值与粘贴分笔（CO-12 等价式）** | 「同一笔内取值又粘贴」不可自指；记录范围 END = R4（末笔 = R5，见 §4 首行），其行数须与 R3 一致 | R3 落仓后在**该 HEAD** 前台单跑 `--emit`（rc 与 stdout 独立落档），R4 严格 1:1 行内粘贴五锚行并回填 SHA（`wc -l` 不变 ⇒ (b) 两口径随 R3 取值稳定） | 无 |
 | 5 | **R2 首次提交误含会话工具产物（已 amend 剔除）** | 首次 `git add -A` 把工作树未追踪的 `.qoder-credits/`（Qoder 会话 canvas 产物，含 20 个 `.canvas.tsx`）收进 R2，提交消息的 `10+/9−` 随之失真 | R2 未推送 ⇒ 以 `git commit --amend` 剔除该目录（仓库内容零改动，`.qoder-credits/` 回到未追踪态）、消息同步补记该次修正；此后一律按文件名暂存 | 无（本侧操作失误） |
 
 > 授权列语义（`templates/DELIVERY.md` 五列形态）：本轮唯一的计划/评审点名文件改动 = `.gitignore` 增行（T-4），其余 4 项均无计划面外授权；`docs/architecture.md` 一行数值为门强制（`[自指]` 对账），非授权面。
 
 ## 4. commit 范围
 
-记录范围 = **上一轮交付 HEAD（`8662ba0` = 主批定稿链末笔 D1）..本提交（R4 = 定稿链末笔，见本节围栏首行）**（B2 口径）。本档不入 docref 严格声明行形态（rN 档定稿笔自引用不可预写，沿 v2.28 r2 先例；实测 = `缺'记录范围 + diffstat'声明行` exit 1），三数口径由 §7.4⑧ (b) 片段行的版本键区间承载。
+记录范围 = **上一轮交付 HEAD（`8662ba0` = 主批定稿链末笔 D1）..本提交（记录范围 END = R4；末笔 = R5，见本节围栏首行）**（B2 口径）。本档不入 docref 严格声明行形态（rN 档定稿笔自引用不可预写，沿 v2.28 r2 先例；实测 = `缺'记录范围 + diffstat'声明行` exit 1），三数口径由 §7.4⑧ (b) 片段行的版本键区间承载。
 
 `git log --oneline 8662ba0..HEAD`（终态 = **5 笔**，`git rev-list --count` 实测）：
 
@@ -58,7 +58,7 @@
 a1c26fb v2.29-r2 R1: versions/v2.29/REVIEW.md 入仓（212+/0−，内容零改动）
 ```
 
-（对账口径：`git rev-list --count 8662ba0..HEAD` 终态 = **5 笔** = 围栏 4 行中行首具名 2 笔（R2/R1）+ 首行合写 3 笔（R3/R4 以行内 SHA 记名、R5 自指不列），4 行覆盖 5 笔，差集 = ∅（合写行显式声明覆盖笔画数）。**触碰文件全列**（`git diff --name-only 8662ba0..HEAD`，R4 实测回填）= `versions/v2.29/REVIEW.md` / `versions/v2.29/DELIVERY-r2.md`（本档）/ `versions/v2.29/DELIVERY.md`（主档）/ `README.md` / `.gitignore` / `docs/v3-candidates.md` / `docs/architecture.md` / 九档历史交付档（R4 登记链收口：平铺 `v2.20`–`v2.24` 五件 + `versions/v2.25`–`v2.28` 四件，各 +1 纯登记行）——**库面六目录 / 公开 API / 测试面 / 构建输入 / CHANGELOG / 两 port / 归档 / tag / Release 零触碰**（逐路径 `git diff --numstat` = 空，命令与输出见 `build/final-gates-v229.log` §6）。）
+（对账口径：`git rev-list --count 8662ba0..HEAD` 终态 = **5 笔** = 围栏 4 行中行首具名 **3** 笔（R3/R2/R1）+ 首行合写 3 笔（R3/R4/R5；R3 双重覆盖以归并声明、R5 自指不列），4 行覆盖 5 笔，差集 = ∅（合写行显式声明覆盖笔画数）。**触碰文件全列**（`git diff --name-only 8662ba0..HEAD`，R4 实测回填）= `versions/v2.29/REVIEW.md` / `versions/v2.29/DELIVERY-r2.md`（本档）/ `versions/v2.29/DELIVERY.md`（主档）/ `README.md` / `.gitignore` / `docs/v3-candidates.md` / `docs/architecture.md` / 九档历史交付档（R4 登记链收口：平铺 `v2.20`–`v2.24` 五件 + `versions/v2.25`–`v2.28` 四件，各 +1 纯登记行）——**库面六目录 / 公开 API / 测试面 / 构建输入 / CHANGELOG / 两 port / 归档 / tag / Release 零触碰**（逐路径 `git diff --numstat` = 空，命令与输出见 `build/final-gates-v229.log` §6）。）
 
 ## 5. 未核验项与新发现
 
@@ -137,3 +137,4 @@ sh tools/gatecheck.sh 2.29 --verify versions/v2.29/DELIVERY-r2.md   # 期望 ver
 | **CO-6**（REQ-7 双单未闭合） | **维持未闭合 + 裁决入池**：Owner 2026-10-21 裁「认领 v2.30」⇒ 本版零改写、池 B 行已记；`BLOCKED-2(v2.29)` 维持原样 | §2 T-6 行 / 池 B 行 |
 
 **新增破坏性候选：无。** 本轮库面六目录 / `et_config.h` / `Makefile` / `CHANGELOG.md` / `port/` / `docs/API_INVENTORY*` diff = 空；公开 API 零变化；门判定语义零变更（`tools/*` 本轮零 diff）；仅 `.gitignore` +1 行为构建产物忽略面、`README.md` 与主档为 T 点名修订。
+- 修订登记：v2.30 P0-1 对本档两处按值勘误（`CO-7` 末笔口径 `:43/:50` → 「记录范围 END = R4；末笔 = R5」；`CO-8` 围栏计数 `:61` → 行首具名 3 笔 R3/R2/R1 + 合写行 3 笔 R3/R4/R5）；均 1:1 行内、`wc -l` 不变；token 由 v2.30 P3-3 登记轮按实测补列（本笔 SHA 不可自列，沿 `RC-5` 自指形态）。

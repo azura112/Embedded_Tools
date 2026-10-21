@@ -26,3 +26,5 @@ __pycache__/
 # 会话/环境产物 (v2.15 G0-2, CO-3(v2.14); 目录内容保留原地, 仅不入仓)
 .dsh-acl-report/
 .workbuddy/
+# Qoder 会话产物目录 (v2.30 P0-3; v2.29 r2 交付 §5.4 新发现)
+.qoder-credits/
