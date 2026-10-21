@@ -200,7 +200,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 | RTOS：FreeRTOS | 未验证 | 本版仅交付**并发契约表** `docs/concurrency.md`（各模块 ISR/上下文级别汇总），无 FreeRTOS port、优先级反转与中断嵌套实测 |
 | RTOS：其他（Zephyr / RT-Thread / 无 OS 裸机） | 不支持 | 库不依赖 OS（无阻塞式系统调用），但除裸机主循环外无集成实测 |
 | 构建系统：Makefile（host 门禁单一入口） | 验证过 | `make WERROR=1 test` / `make ex` / `make coverage-build`（本机与全部 CI 门均以 Makefile 目标为口径，`tools/docsync.sh` 断言源列表） |
-| 构建系统：CMake（v2.29 N-01 接入面） | 验证过 | `cmake -B build-cmake -G Ninja -DET_WERROR=ON -DET_BUILD_EXAMPLES=ON && cmake --build build-cmake && ctest --test-dir build-cmake`（本机 gcc 16.1.0 实测 6/6 Passed）；交叉 = `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-{g474,f103}.cmake`（13.3.rel1 实测零警告）；裁剪读数 `-DET_MODULE_KV=0` 后 `et_kv.c.obj` 的 `et_` 定义符号 10→**0**；CI job `cmake integration (v2.29 P1-2)` |
+| 构建系统：CMake（v2.29 N-01 接入面） | 验证过 | `cmake -B build-cmake -G Ninja -DCMAKE_C_COMPILER=gcc -DET_WERROR=ON -DET_BUILD_EXAMPLES=ON && cmake --build build-cmake && ctest --test-dir build-cmake`（**`-DCMAKE_C_COMPILER=gcc` = `-DET_WERROR=ON` 的编译器前置**：CMake 默认可能选到 clang 并命中已登记的 `-Wself-assign`；本机 gcc 16.1.0 实测 6/6 Passed）；交叉 = `-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/arm-none-eabi-{g474,f103}.cmake`（13.3.rel1 实测零警告）；裁剪读数 `-DET_MODULE_KV=0` 后 `et_kv.c.obj` 的 `et_` 定义符号 10→**0**；CI job `cmake integration (v2.29 P1-2)` |
 | 构建系统：Meson / Bazel | 不支持 | 本版不做（计划 §1.3） |
 
 **许可证**：MIT（全文见 [LICENSE](LICENSE)，版权行 = `Copyright (c) 2026 azura`）——法务侧可据此单文件判定可否商用/闭源集成/再分发。
