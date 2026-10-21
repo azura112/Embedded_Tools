@@ -115,6 +115,9 @@ extern "C" {
 #ifndef ET_MODULE_BOOTCTL
 #define ET_MODULE_BOOTCTL       1   /* storage: 安全升级控制(A/B 状态机)*/
 #endif
+#ifndef ET_MODULE_PARAMS
+#define ET_MODULE_PARAMS        1   /* storage: 参数版本化与代际原子保存(v2.30) */
+#endif
 #ifndef ET_MODULE_SOFTCLOCK
 #define ET_MODULE_SOFTCLOCK     1   /* sys: 软时钟(毫秒 tick→日历时钟)  */
 #endif
