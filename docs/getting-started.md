@@ -34,7 +34,7 @@ Windows Git Bash 下没有 `make` 也能用 `mingw32-make`; 或直接照 README 
 |---|---|---|
 | 1 一键跑全部配方 | `make ex` | 六个示例各出一行 `[ex_*] PASS`，末行即 `[ex_min] PASS`，退出码 0（任一 FAIL 即红，CI 常设） |
 | 2 只跑这一例（不依赖 make） | `mkdir -p build && gcc -std=c99 -Wall -Wextra -pedantic -I. -Icore -Iprotocol -Istorage -Iport -Iport/host examples/ex_min.c core/et_ringbuf.c protocol/et_crc.c storage/et_kv.c port/host/port_host.c -o build/ex_min.exe && ./build/ex_min.exe` | 五个源文件即最小闭环（示例 + ringbuf + crc + kv + host port）；编译零警告、输出同下方预期、退出码 0 |
-| 3 全库回归 | `make WERROR=1 test` | 末尾 `=== RESULT: ALL PASS (fail=0) ===`（526 例）；`-Wall -Wextra -pedantic -Werror` 下零警告（gcc 口径，见 README 支持矩阵） |
+| 3 全库回归 | `make WERROR=1 test` | 末尾 `=== RESULT: ALL PASS (fail=0) ===`（536 例）；`-Wall -Wextra -pedantic -Werror` 下零警告（gcc 口径，见 README 支持矩阵） |
 | 4 验证"关掉的模块没有符号" | 关：`gcc -std=c99 -DET_MODULE_CRC=0 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_off.o && nm build/crc_off.o > build/crc_off.syms`；开：`gcc -std=c99 -I. -Iprotocol -c protocol/et_crc.c -o build/crc_on.o && nm build/crc_on.o > build/crc_on.syms`；读数：`grep -c " T et_" build/crc_off.syms build/crc_on.syms` | 本机实测 **off=0 / on=8**（口径 = 无目标代码/符号，不是"源文件不参与编译"）；CMake 侧同形态读数见下方「CMake 接入」小节（`-DET_MODULE_KV=0` 实测归档符号 10 ↔ 0） |
 | 5 改自己的工程 | 复制 `examples/ex_min.c` 的两个 API 调用块（init/format/set/get）进你的 main | 5~10 行即可，无需改库源码 |
 
@@ -146,7 +146,7 @@ cd Embedded_Tools
 mingw32-make test        # 或 make test
 ```
 
-**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **526** 例。
+**该看到什么**: 末尾 `=== RESULT: ALL PASS (fail=0) ===`，共 **536** 例。
 
 ```sh
 mingw32-make test-g4     # 双几何回归 (G474 2KB 页几何; storage 布局改动必跑)

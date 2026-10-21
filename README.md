@@ -2,9 +2,9 @@
 
 一套面向嵌入式 MCU 的 C99 组件库：**零动态内存、多实例句柄化、分层单向依赖、PC 可全量单测**。
 
-> 当前版本：**v2.29.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[versions/v2.29/DELIVERY.md](versions/v2.29/DELIVERY.md)**（功能版「接入版」：**CMake 接入面** `et::embedded_tools` + `find_package`（REQ-10 / M4-②）+ **并发契约表** [docs/concurrency.md](docs/concurrency.md)（REQ-11 / M4-③）+ **真 A/B 分区** port 区域契约与 G474 板侧实测（REQ-7 / M4-④，真固件双单传输面按 `BLOCKED-2` 如实登记）+ MIT 许可证 / 支持矩阵 / 十分钟样例（REQ-18 / M4-①））
+> 当前版本：**v2.30.0**（`ET_VERSION_STRING`，**API 冻结版本**，MINOR 只追加；契约与 `--diff` 机检见 [docs/API_STABILITY.md](docs/API_STABILITY.md)）｜ 版本路线与变更记录见 **[CHANGELOG.md](CHANGELOG.md)** 与 **[versions/v2.30/DELIVERY.md](versions/v2.30/DELIVERY.md)**（功能版「升级链闭合 + 参数版本化」：真固件 1K 块型 **86/86 传输 + confirm/回滚双单**（REQ-7 / M4-④）+ 新模块 **`et_params` 参数版本化**（schema/逐版迁移/代际原子保存/恢复出厂，REQ-12 / M5-①）+ `AT+FEATURES` 33 开关）
 
-> 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**；每个模块的并发级别（ISR / 主循环 / 单所有者 / 多生产者）见 **[docs/concurrency.md](docs/concurrency.md)**（35 行，逐行带头注行号）
+> 📖 完整接口手册见 **[docs/API_GUIDE.md](docs/API_GUIDE.md)**；从零到板上见 **[docs/getting-started.md](docs/getting-started.md)**；每个模块的并发级别（ISR / 主循环 / 单所有者 / 多生产者）见 **[docs/concurrency.md](docs/concurrency.md)**（36 行，逐行带头注行号）
 
 ## 特性总览
 
@@ -29,6 +29,7 @@
 |  | `et_softclock` | 软时钟：ms tick → UTC 日历（Hinnant 整数算法，1970–2106） |
 | storage/ | `et_kv` | flash 键值掉电存储：双扇区乒乓 + 逐条 CRC + 断电自愈 |
 |  | `et_bootctl` | 安全升级：镜像头校验 + A/B 试运行/确认/回滚状态机 |
+|  | `et_params` | 参数版本化（v2.30）：定容 schema（类型/范围/默认/分组/`since_ver`/恢复出厂保留）+ 逐版迁移 + **代际原子保存**（新代际写完 → 单键 gen 提交点，掉电半写仍读旧代际）+ 恢复出厂；零动态内存、句柄化 |
 | protocol/ | `et_crc` | CRC8/CRC16-MODBUS/CCITT/CRC32，流式增量 API（可选查表加速） |
 |  | `et_bytes` | BE/LE u16/u32 打包解包（v2.1）：纯函数，边界检查即唯一面（越界拒绝且无副作用） |
 |  | `et_frame` | 字节流帧解析状态机，协议格式可配置，配套组帧函数 |
@@ -57,7 +58,7 @@
 │   ├── stm32f103/     # STM32F103 真机移植（FLASH 驱动/启动代码/链接脚本）
 │   ├── stm32g474/     # STM32G474 真机移植（144MHz/双 bank flash/IWDG）
 │   └── ch32x035/      # CH32X035G8U6 参考移植（PD 测试板/Qingke RISC-V2A，python build.py，不入 CI/sizecheck；flash 三件套含 RAM 驻留擦写核心，实机#3–#16）
-├── test/              # 迷你框架 + 526 个单元用例（bootctl 状态机与掉电矩阵 30（含 v2.29 区域位形 6）+ kv 35 + modbus 33 + modbus_master 32 + sched 26 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8 + metrics 16）
+├── test/              # 迷你框架 + 536 个单元用例（bootctl 状态机与掉电矩阵 30（含 v2.29 区域位形 6）+ kv 35 + modbus 33 + modbus_master 32 + sched 26 + pid 18 + map 13 + smap 18 + hist 11 + log 30 + medfilt 10 + stats 11 + bytes 8 + shell_tab 8 + metrics 16）
 ├── examples/
 │   ├── posix_demo.c       # 全栈联动演示
 │   ├── stm32f103_demo.c   # BluePill 真机 demo（blink/按键/呼吸灯/重启计数/软时钟）
@@ -213,11 +214,11 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **多实例句柄化**：一切经 `et_xxx_t*` 操作，无隐藏全局状态（stimer 注册表除外，已文档化）；
 - **并发策略显式声明**：每个头文件标明 ISR-safe 范围与所属上下文限制；
 - **单向依赖**：core/algorithm ← sys ← storage/drivers ← port，硬件仅存在于 port 层；
-- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，526 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步/命名指标登记与渲染/调度失准计数）。
+- **PC 可测**：核心逻辑纯算法化，host port 提供虚拟 flash（含掉电截断注入）+ 时间注入，536 用例覆盖回绕/并发边界/畸形输入/掉电恢复/升级状态机/传输对端矩阵/容器语义/定点数值（PID 阶跃/统计对拍/中值滤波/直方图分位/Modbus 主从异常矩阵/日志规格与实参对拍/主站噪声重同步/命名指标登记与渲染/调度失准计数）。
 
 ## 测试与质量门
 
-- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（526 例，另 1K 变体 527 例、shell Tab 开启形态 533 例）；
+- **单元测试**：迷你框架，双平台主机全量运行，ALL PASS（536 例，另 1K 变体 537 例、shell Tab 开启形态 543 例）；
 - **双几何回归**（v1.6）：storage 布局改动必须 F1/G4 两套 flash 几何下都过全量（`make test test-g4`）；
 - **host 零警告门**（v2.6 P2-1）：`make WERROR=1 test` / `make WERROR=1 ex`（CI 的 Linux 与 Windows 两个 job 同用 `-Werror`）——把"只有 ARM 交叉编译有零警告门"扩到 host 侧；
 - **内存检查门**（v2.5 起，v2.6 扩变体）：`make test-asan` + `make test-asan-1k`（ASan 覆盖默认几何与 1K 块变体），CI 常设；
@@ -225,7 +226,7 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 - **配方可执行载体**（v2.3，v2.5 扩至五例，**v2.29 P0-3 扩至六例**）：`make ex` 一键跑六个自检式示例（**十分钟最小样机 ringbuf+kv**/闭环整定/kv 备份恢复/升级流程/Modbus 从站/Modbus 主站），任一 FAIL 即红，CI 常设——配方的正确性由 CI 守护；
 - **host 基准**（v1.7）：`make bench`，数字入 [docs/bench.md](docs/bench.md)（中位数+环境注记）；
 - **掉电恢复矩阵**：kv 页头/记录/压缩断点每类 ≥2 注入点，掉电后重开全部恢复；
-- **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.28.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
+- **API 冻结机检**（v2.1）：`sh tools/apidump.sh --diff` 对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.29.md`）必须**纯新增**（签名删改即红），规则见 API_STABILITY 附则；
 - **CI 门控**（`.github/workflows/ci.yml`）：host 测试 × 覆盖率 gcovr 行覆盖 ≥85% × ARM 零警告交叉编译（双 port）× **文档命令可执行化 docbuild（v1.9）** × **Renode F103 仿真 smoke（断言 kv/重启计数 + selftest 22/22）**；
 - **发布**（`.github/workflows/release.yml`）：`v*` tag → 验证门（全量测试 + 仿真 smoke）→ ARM ELF/BIN → GitHub Release 附件。
 
@@ -279,6 +280,6 @@ et_spwm_set(0u, (uint32_t)out);                  /* 整定配方见 API_GUIDE 11
 5. **交付文档命名**：`v<版本号>开发交付__<重点概况>.md` 或 `v<版本号>开发交付：<重点概况>.md`（全角冒号或 `__` 分隔符均可，v2.0 起实际惯例），里程碑对照提交哈希逐条可回溯；
 6. **量化声明附复现命令 + 环境注记**（v1.3 验收教训）：任何体积/覆盖率/用例数声明必须注明测量工具链精确版本与 shell，并给出可复现命令（例：`arm-none-eabi-size` + GNU Tools for STM32 13.3.rel1；`gcovr --print-summary` 于 MinGW gcc 16.1）——无环境注记的裸数字视为无效。
 7. **数字回刷纪律（v1.9 P1-4）**：交付定稿后凡改变可观测数字的提交（体积表/用例数/docsync 断言数/smoke 计数），**同一提交内回刷所有引用处**（README / port README / 实机记录 / 交付文档）并在 commit message 注明"数字回刷"；文档命令由 CI `docbuild` job 以 ```docbuild 定界块原样执行守护（v1.8 三处滞后数字的制度化根治）。
-8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.28.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。**pass 计数语义（v2.9 P2-2，`CO-10(v2.8)`）**：pass 数 = **检查面断言数 + 自指对账 1**（v2.8 形态 306 = 305 + 1），且交付文档本体存在与否会使计数浮动（其进入「覆盖率行」循环）——**N 以终态实测回填，禁预写**。**预置公式（v2.11 G0-2，`CO-3(v2.10)`；v2.28 P0-5 补 K 项与 ±占位符拦截面项，`CO-10(v2.27)`）**：`N = 上版实测 + 当版交付文档数 + 当版 rN 文件数 + 1（CHANGELOG 链） + K（本版新增断言行数） ± 当版占位符拦截面变化`——各版按公式预置并写明推导，终态实测复核，不一致 = 公式缺项（如实登记并修公式口径）。两项来源：① `K` 早先隐含为 0，凡本版新增断言（P0-4 类扩检查面 / P3-4 类工具断言）即漏计；② 自 v2.26-r2 起 `docsync.sh` 文末「交付文档占位符拦截」循环**逐份扫描当前版交付文档（含 rN 档）**，版本切换时上版 rN 档各退场 −1、本版新增档各进场 +1。v2.11 预置推导 = 上版终态 311 + 交付文档 1 + rN 文件 0 + CHANGELOG 链 1 = **313**；v2.28 推导（新公式首例自证）= 上版终态 372 + 交付文档 1 + rN 文件 0 + CHANGELOG 链 1 + K − 上版 rN 档退场 1 = **373 + K**（`K` = 本版新增断言数，P0-4 已落 1 条，P3-4 再落 1 条 ⇒ 预期 K=2、N=375，终态以实测复核）。该行的基线文件名与 `tools/apidump.sh` 的默认基线由 docsync 断言交叉核对（v2.6-r2 起，防同族漏刷第四例）。
+8. **冻结面机检 + 自指断言（v2.1 P0-1/P0-2）**：打 tag 前跑 `sh tools/apidump.sh --diff`，对**最近已发布 MINOR 的冻结基线**（当前 `docs/API_INVENTORY_v2.29.md`，随发版 `--snapshot` 前滚）必须"纯新增"（签名删改/宏值变更即红；结构体字段追加须在交付文档 diff 说明区人工登记，规则见 API_STABILITY 附则）；当前版本交付文档须有**行首声明**一行 `本版 docsync：N/N`（允许 markdown 引用/表格前缀 `>`/`|`，检测以该行为准），`docsync.sh` 会把该声明与本轮实测断言数对账——写错计数即红（关闭 v2.0 验收发现的自指盲区，历史文档引用不在校验范围）。**pass 计数语义（v2.9 P2-2，`CO-10(v2.8)`）**：pass 数 = **检查面断言数 + 自指对账 1**（v2.8 形态 306 = 305 + 1），且交付文档本体存在与否会使计数浮动（其进入「覆盖率行」循环）——**N 以终态实测回填，禁预写**。**预置公式（v2.11 G0-2，`CO-3(v2.10)`；v2.28 P0-5 补 K 项与 ±占位符拦截面项，`CO-10(v2.27)`）**：`N = 上版实测 + 当版交付文档数 + 当版 rN 文件数 + 1（CHANGELOG 链） + K（本版新增断言行数） ± 当版占位符拦截面变化`——各版按公式预置并写明推导，终态实测复核，不一致 = 公式缺项（如实登记并修公式口径）。两项来源：① `K` 早先隐含为 0，凡本版新增断言（P0-4 类扩检查面 / P3-4 类工具断言）即漏计；② 自 v2.26-r2 起 `docsync.sh` 文末「交付文档占位符拦截」循环**逐份扫描当前版交付文档（含 rN 档）**，版本切换时上版 rN 档各退场 −1、本版新增档各进场 +1。v2.11 预置推导 = 上版终态 311 + 交付文档 1 + rN 文件 0 + CHANGELOG 链 1 = **313**；v2.28 推导（新公式首例自证）= 上版终态 372 + 交付文档 1 + rN 文件 0 + CHANGELOG 链 1 + K − 上版 rN 档退场 1 = **373 + K**（`K` = 本版新增断言数，P0-4 已落 1 条，P3-4 再落 1 条 ⇒ 预期 K=2、N=375，终态以实测复核）。该行的基线文件名与 `tools/apidump.sh` 的默认基线由 docsync 断言交叉核对（v2.6-r2 起，防同族漏刷第四例）。
 9. **每版交付后产出评审记录（v2.5 P0-4）**：按 [`docs/评审记录模板.md`](docs/评审记录模板.md) 产出 `vX.Y评审记录__<slug>.md`（HC/AC 逐条核验 + CO 编号 + 新发现问题），交付文档须引用该记录或显式声明其缺失；下一版计划 §1.1 的 CO 处置表以它为唯一输入——**没有评审记录，下一版计划就无输入可依**（v1.x~v2.4 十五版无评审记录，遗留项靠人工回收，v2.5 起根治）。
 10. **计划起草按模板自检（v2.6 P0-4，v2.6-r2 增第 5 项，v2.8 增第 6 项）**：每版计划按 [`docs/开发计划模板.md`](docs/开发计划模板.md) 的六节骨架起草，并在交付前完成其 **§7 起草期核验清单六项**（① 内部 tag 一律 `snap-*` 且触发面实测 / ② "无副作用"类断言必须实测 / ③ 板侧落点写库外私有全路径 / ④ AC ↔ 冻结 API 形状互洽 / ⑤ 证据落点章节号 + 占位节承接标注 / ⑥ 基线滚动（P0 期归档上一发布 MINOR + 切基线自证 + 发版点 0/0 复读）），文末附"起草期合规声明"——六项未过的计划不得进入开发（`CO-12(v2.5)` 的机制化根治；第 5 项来源 `CO-11(v2.6)`，第 6 项来源 `CO-2(v2.7)`，口径澄清 `CO-1(v2.8)`）。

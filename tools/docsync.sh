@@ -287,9 +287,9 @@ assert_grep "docs/bench.md"       "stats push"          "bench 含 stats 行(P3-
 assert_grep "docs/bench.md"       "v2.1.0"              "bench 文档含 v2.1 版本行"
 assert_grep "docs/getting-started.md" "从零到板上"       "getting-started 端到端教程(P3-2)"
 assert_grep "docs/getting-started.md" "port/_template"  "getting-started 链接移植模板"
-assert_grep "docs/getting-started.md" "526"             "getting-started 用例数与实测一致(v2.7 回刷, v2.27 随新增 23 例滚动)"
+assert_grep "docs/getting-started.md" "536"             "getting-started 用例数与实测一致(v2.7 回刷, v2.30 随 et_params 10 例滚动)"
 assert_grep "README.md"           "getting-started"     "README 链接上手教程(P3-2)"
-assert_grep "README.md"           "526"                 "README 用例数终值回刷(v2.7, v2.27 随新增 21 例滚动)"
+assert_grep "README.md"           "536"                 "README 用例数终值回刷(v2.7, v2.30 随 et_params 10 例滚动)"
 VMM_DS=$(echo "$V" | cut -d. -f1,2)   # v2.28-r2 T-4: 当版主.次号(CO-3(v2.28) 交付链接行滞后装门)
 assert_grep "README.md" "versions/v${VMM_DS}/DELIVERY"  "README 交付链接行指当版交付文档(v2.28-r2 T-4, CO-3, HC-7 扩检查面)"
 
@@ -656,6 +656,19 @@ assert_grep    "docs/开发计划模板.md"     "证据落点章节号" "计划�
 assert_grep    "docs/开发计划模板.md"     "基线滚动"       "计划模板含第 6 项(基线滚动三件事, CO-2(v2.7) 根因根治, v2.8 P0-4)"
 assert_grep    "docs/评审记录模板.md"     "基线滚动复核项" "评审记录模板含基线滚动复核节(v2.8 P0-4)"
 assert_grep    "README.md"                "核验清单六项"   "README checklist 第 10 条与模板项数一致(六项)"
+
+# ---- v2.30 P2 (REQ-12 / M5-①): et_params 参数版本化模块面 ----
+# 形态沿既有模块断言块先例 (纯新增, 判定语义零变更, HC-7): et_config/构建表/注册/文档五面 + 代际原子语义锚。
+assert_grep    "et_config.h"          "ET_MODULE_PARAMS"          "et_config 含 PARAMS 开关(v2.30 P2)"
+assert_grep    "Makefile"             "storage/et_params.c"       "Makefile 含 et_params 源(v2.30 P2)"
+assert_grep    "Makefile"             "test/test_params.c"        "Makefile 含 test_params(v2.30 P2)"
+assert_grep    "test/test_main.c"     "test_params_cases"         "test_main 注册 params 套件(v2.30 P2)"
+assert_grep    "README.md"            "et_params"                 "README 特性表: params(v2.30 P2)"
+assert_grep    "docs/API_GUIDE.md"    "6.3 et_params"             "API_GUIDE: params 章节(v2.30 P2)"
+assert_grep    "docs/API_GUIDE.md"    "11.16 参数升级与恢复出厂"   "API_GUIDE: params 配方(v2.30 P2)"
+assert_grep    "storage/et_params.h"  "ET_PARAMS_KEY_GEN"         "params 代际提交点键公开定义(v2.30 P2)"
+assert_grep    "storage/et_params.h"  "代际原子"                  "params 头注含代际原子语义(v2.30 P2)"
+assert_grep    "storage/et_params.c"  "提交点"                    "params 实现标注提交点顺序(v2.30 P2)"
 
 # ---- v2.26-r2 G0-T6 (CO-1(v2.26) 机制裁决): 占位符入终态拦截 ----
 # 背景: v2.25/v2.26 连续两版交付 §6 出现字面占位符入终态(同族第三实例链:

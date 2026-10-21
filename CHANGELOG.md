@@ -6,6 +6,35 @@ Embedded_Tools 版本变更记录。格式沿 [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+## [2.30.0] — 2026-10-22 · **v2.30 — 真固件升级链闭合与参数版本化（功能版）**
+
+功能版（出口 A，全量档，服务 M4-④ 收尾 + M5-①）：主题 = **现场升级链真可用 + 参数可随固件升级**。
+真固件（body 87,852 B / 打包 87,884 B ≤ 槽 131,072 B）经 **1K 块型** 86/86 传输 **0 重试**完成
+**confirm 与回滚两条腿**（v2.29 在 128 B 块型下于 ~11.6 KB 处 CAN 中止）；新模块 `storage/et_params`
+（第 **36** 模块）提供定容 schema、逐版迁移、**代际原子保存**与恢复出厂；开关 32→**33**、用例 526→**536**。
+
+### Added
+- **`storage/et_params.{h,c}`（REQ-12 / M5-①，第 36 模块，纯新增公开面）**：定容 schema 表（类型 `u8/u16/u32/i32/blob`、长度、默认值、数值范围、分组、`since_ver`、`keep_on_factory_reset`）+ 句柄化零分配（调用方提供 schema 与工作区）+ `init/load/save/validate/get/set/factory_reset/migrate/loaded_version` 九 API；**代际原子保存** = 写非活跃代际全部字段 → `et_kv_commit` → **最后写单键 `ET_PARAMS_KEY_GEN` 作为提交点**（提交点前掉电仍读旧代际），加载按 GEN 选代际并逐字段校验、损坏自动回退另一代际；迁移逐版步进（新增字段取默认、既有字段交回调换算），任一步失败回滚旧配置；恢复出厂保留 `keep` 字段。
+- **`test/test_params.c`（10 例）**：默认值/往返/范围与类型拒绝/代际交替/迁移成功与失败回滚/恢复出厂保留/**100 点掉电注入**（注入点覆盖 save 全过程，重开后七字段全 A 组或全 B 组、`validate == count`）/schema 拒绝/get 边界。
+- **板侧 1K 升级链（REQ-7 / M4-④，库外 demo）**：`g_xmbuf[132]→[1032]`、升级期 `et_log` 全静默（TX 仅协议字节）、`-DET_XM_1K=1`、升级期降速 57600 兜底；**confirm 单**（`BOOTINFO` 由 `-1/-1/0` → `staged=1 confirmed=1 attempts=1` + `AT+VER 2.30.0`）与**回滚单**（even-ver 自检不过 → `attempts` 累积后清状态 + A 槽 `SELFTEST 22/22`）。
+
+### Changed
+- **版本 2.29.0 → 2.30.0**（`0x021D00` → `0x021E00`）；模块开关 32→**33**（`ET_MODULE_PARAMS`）；`AT+FEATURES` 表增 `PARAMS` 行。
+- **用例数 526 → 536**（四形态 536/536/537/543，基线 526/526/527/533 各 +10）；模块数 35→**36**；板上套件 22 维持。
+- **基线滚动**：`docs/API_INVENTORY_v2.29.md` 归档（worktree 于 tag v2.29 真生成，475 项 / 25,233 B / sha256 `276224cd…a84adc`）；`tools/apidump.sh` BASE 两处切 v2.29；发版点复读 = **新增 22 / 修改删除 0**。
+- **`docs/API_GUIDE.md`**：新 `### 6.3 et_params 参数版本化与迁移`、新 `### 11.16 参数升级与恢复出厂`、§10 开关集合 + `PARAMS`；**`docs/concurrency.md`** 增 `storage/et_params` 行（**36 行**，分布 不可 23 / 部分 5 / 未声明 3 / 可 3 / 冲突 2）；**`docs/architecture.md`** storage 层框 + 36 模块；**README** 特性表增 `et_params`。
+- **`docs/开发计划模板.md` / `docs/评审记录模板.md`**（P0-2，`CO-9(v2.29)`）：tag 后收尾笔使 docref (d) 面短暂退回未登记 = 预期，由下一版 P3-3 登记轮吸收；tag 不重打、`--verify` 以 tag 前定稿链末笔为准。
+- **`.gitignore`**：`.qoder-credits/`（Qoder 会话产物目录，P0-3）。
+
+### Fixed
+- **`versions/v2.29/DELIVERY-r2.md` 两处按值勘误（P0-1，`CO-7`/`CO-8(v2.29)`）**：`R4 = 末笔` 口径 → 「记录范围 END = R4；末笔 = R5」；围栏对账句 → 「行首具名 3 笔（R3/R2/R1）+ 首行合写 3 笔（R3/R4/R5，R3 双重覆盖）」。
+- **`versions/v2.29/DELIVERY.md` AC-8 归因补注（P0-4，`CO-6(v2.29)-P`）**：`AT+BOOTINFO` 三字段读数来自参数区残留，**不构成新做一次 confirm 的证据**。
+
+### 挂账与受阻
+- **REQ-7 闭合**：真固件双单在本版达成（M4 四判据全达成，M4 结案）；`BLOCKED-2` 的传输面由 1K 块型 + 静默 + 57600 兜底解除。
+- 跨版维持：`CO-12(v2.28)` 门区间右端 / `CO-9①(v2.27)` [自指] 诊断行 / `CO-8(v2.8)-P` USART2 双口 / ch32x035 与 f103 挂账（本版端口枚举六口仍无 WCH-Link）；v3 池新增 4 条（头注冲突收敛 / 提交消息合计数求和条文 / 当版交付档 docref 自指面 / N 公式占位符项修正）。
+- **v2.29 Release 待发**：tag `v2.29` 仅在本地、未推送（Owner 明示不 push）；推送顺序 = v2.29 先于 v2.30（HC-0②）。
+
 ## [2.29.0] — 2026-10-20 · **v2.29 — 首次接入面（CMake）、并发契约表与真 A/B 分区（功能版）**
 
 功能版（出口 A，全量档，服务 M4-①②③④ + M3 收尾）：主题 = **让第一次使用本库的工程师能把库装进自己的工程**。采纳前置三件（MIT `LICENSE` / README 支持矩阵 / 十分钟最小样机）+ N-01 CMake 接入面（与 Makefile 由机检对齐）+ N-02 并发契约表（**仅文档面，无 FreeRTOS port**）+ REQ-7 真 A/B 分区（port 区域契约，v2.28 `BLOCKED-2` 的物理不可达在此解除）。公开面纯追加（`apidump --diff` = **新增 7 项 / 修改删除 0 项**，对 v2.27 与 v2.28 两基线交叉一致），四形态回归 **526/526/527/533**（基线 520/520/527/521，+6 区域用例）。

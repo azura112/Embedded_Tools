@@ -1,6 +1,6 @@
 # 并发契约表（v2.29 P3-1，REQ-11 / N-02 文档面 / M4-③）
 
-> **本表是什么**：35 个模块**既有头注**的逐模块汇总——把散在各 `.h` 文件头"并发策略/并发约定"段与
+> **本表是什么**：36 个模块**既有头注**的逐模块汇总——把散在各 `.h` 文件头"并发策略/并发约定"段与
 > 逐原型 `🔒ISR-safe / 🏠MAIN` 标注里的上下文约束，收成一张可查的表。
 > **本表不是什么**：不新增任何行为承诺，不改变任何模块语义；与头注冲突的写法以头注为准并登记冲突。
 > **FreeRTOS 面**：本版**只有这张表**，没有 FreeRTOS port，也没跑过优先级反转/中断嵌套实测 ⇒
@@ -55,11 +55,12 @@
 | debug/et_metrics | 部分(API 分工) | 可 | **是(显式前提)** | 不可 | `:27` 「🔒ISR-safe: inc / add_n / set / get —— 单字(32 位)读写, 前提」；`:28` 「**同一指标由单一上下文写**(与 core/et_ringbuf.h、sys/et_wdt.h 同族声明);」；`:29` 「两上下文写同一键属数据竞争, 本模块不代加锁;」；`:30` 「🏠MAIN: init / register_* / link_hist / observe / reset / count /」；`:82/:86/:97` 原型行 `🔒ISR-safe` |
 | storage/et_kv | 不可 | 可 | 是 | 需临界区 | `:19` 「并发约定: 与 et_mempool 同级 —— 全部 API 仅限 🏠MAIN 上下文」；`:20` 「(flash 擦写期间 port 内部有临界区, ISR 依赖契约禁止取指同区)。」；`:72/:75/:79/:93/:114` 原型行 `🏠MAIN` |
 | storage/et_bootctl | 不可 | 可 | 是 | 需临界区 | `:67` 「并发约定: 全部 API 仅限 🏠MAIN (flash 擦写为 ms 级阻塞, 喂狗见 et_wdt)」；`:137/:140/:143/:146/:149` 原型行 `🏠MAIN` |
+| storage/et_params | 不可 | 可 | 是 | 需临界区 | `:25` 「并发约定: 全部 API 仅限 🏠MAIN (flash 擦写与迁移不可 ISR 调用)。」；`:22` 「资源: 零动态内存。schema 表与工作区由调用方提供」；句柄多实例但同一 `et_kv` 只能被一个句柄持有（单所有者 = 调用方约定） |
 
 ## 汇总读数（本批实测）
 
 - 行数 = **35**。口径 = 七目录模块头文件数，实测 `ls core/*.h algorithm/*.h sys/*.h protocol/*.h drivers/*.h debug/*.h storage/*.h | wc -l` = **35**（与计划 HC-5"模块数 35 维持"同值）；**与"开关数 32"是两个不同口径**（后者 = `et_config.h` 的 `ET_MODULE_*` 宏计数，本表不按开关数计行），`tools/docsync.sh` 断言"表行数 = 模块数"把这条变成硬门（漏行即红）。
-- ISR 列分布（本表逐行实测计数）：**不可 22** / 部分(API 分工) 5（`et_ringbuf` / `et_stimer` / `et_wdt` / `et_key` / `et_metrics`）/ 未声明 3（`et_queue` / `et_bytes` / `et_log`）/ 可 3（`et_event` / `et_crc` / `et_assert`）/ **冲突 2**（`et_frame` / `et_atcmd`）= 35。
+- ISR 列分布（本表逐行实测计数）：**不可 23** / 部分(API 分工) 5（`et_ringbuf` / `et_stimer` / `et_wdt` / `et_key` / `et_metrics`）/ 未声明 3（`et_queue` / `et_bytes` / `et_log`）/ 可 3（`et_event` / `et_crc` / `et_assert`）/ **冲突 2**（`et_frame` / `et_atcmd`）= 36。
 - 多生产者列为"可"的只有 2 个：`et_event`（显式「多个生产者同时置位安全」）与 `et_crc`（纯函数无状态）。**其余模块的多生产者路径一律要调用方临界区，或显式禁止**（`et_xmodem` rx/rx_tick、`et_metrics` 两上下文写同键）。
 - 全库"单所有者"为**否**的模块：`et_event`（多位累积）、`et_log`（多上下文可各自输出，只可能交错）。
 

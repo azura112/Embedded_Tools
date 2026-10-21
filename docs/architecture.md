@@ -13,7 +13,7 @@
 │           et_selftest(板上自测, 22 套件)  et_metrics(运行指标+自描述)│
 ├────────────────────────────────────────────────────────────────────┤
 │  drivers/ et_key(按键)  et_led(LED)  et_spwm(软 PWM)                │
-│  storage/ et_kv(掉电参数)  et_bootctl(安全升级 A/B)                  │
+│  storage/ et_kv(掉电参数)  et_bootctl(安全升级 A/B)  et_params(参数版本化)│
 ├────────────────────────────────────────────────────────────────────┤
 │  protocol/et_crc(校验)  et_bytes(字节序)  et_frame(帧)              │
 │           et_atcmd(AT 命令)  et_xmodem/_tx(固件传输)  et_modbus(RTU) │
@@ -71,7 +71,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 
 ## 3. 模块选型表（按场景查）
 
-| 你要… | 用 | 搭配/备注（35 模块按场景查） |
+| 你要… | 用 | 搭配/备注（36 模块按场景查） |
 |---|---|---|
 | 中断与主循环传字节 | `et_ringbuf` | SPSC 无锁，ISR-safe 写 |
 | 传"消息"而非字节流 | `et_queue` | 同款无锁技巧 |
@@ -109,7 +109,7 @@ ADC/传感器 ──> et_medfilt(去尖峰) ──> et_lpf1(平滑) ──> et_p
 ```
         板上自测 (et_selftest 22 套件, AT+SELFTEST)
        仿真回归  (Renode F103 smoke: kv/重启计数/selftest 22/22)
-      host 单测  (526 用例 × 2 几何 + 1K 变体 + Tab 形态)
+      host 单测  (536 用例 × 2 几何 + 1K 变体 + Tab 形态)
      配方载体    (make ex: 六例自检式示例, CI 常设)
     机制门       (docsync 384 断言 / apidump --diff 纯增 / sizecheck / docref / docbuild)
 ```

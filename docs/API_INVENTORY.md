@@ -6,7 +6,7 @@
 
 ## et_config.h
 
-### 宏 (55)
+### 宏 (56)
 
 - `ET_ASSERT(cond) ((void)0)`
 - `ET_CRC_TABLE 0`
@@ -37,6 +37,7 @@
 - `ET_MODULE_MEMPOOL 1`
 - `ET_MODULE_METRICS 1`
 - `ET_MODULE_MODBUS 1`
+- `ET_MODULE_PARAMS 1`
 - `ET_MODULE_PID 1`
 - `ET_MODULE_QUEUE 1`
 - `ET_MODULE_RINGBUF 1`
@@ -55,7 +56,7 @@
 - `ET_SPWM_CH_MAX 4`
 - `ET_VERSION ((ET_VERSION_MAJOR << 16) | (ET_VERSION_MINOR << 8) | (ET_VERSION_PATCH))`
 - `ET_VERSION_MAJOR 2`
-- `ET_VERSION_MINOR 29`
+- `ET_VERSION_MINOR 30`
 - `ET_VERSION_PATCH 0`
 - `ET_VERSION_STR(x) ET_VERSION_STR_(x)`
 - `ET_VERSION_STRING ET_VERSION_STR(ET_VERSION_MAJOR) "." ET_VERSION_STR(ET_VERSION_MINOR) "." ET_VERSION_STR(ET_VERSION_PATCH)`
@@ -724,6 +725,38 @@
 
 - `ET_KV_KEY_MAX ((uint16_t)0x7FFEu)`
 - `ET_KV_VAL_MAX ((uint32_t)PORT_FLASH_SECTOR_SIZE - 24u)`
+
+## storage/et_params.h
+
+### 函数声明 (9)
+
+- `bool et_params_factory_reset(et_params_t *p)`
+- `bool et_params_get(const et_params_t *p, uint16_t field, void *buf, uint16_t cap, uint16_t *out_len)`
+- `bool et_params_init(et_params_t *p, et_kv_t *kv, const et_params_schema_t *schema, void *work, size_t work_cap)`
+- `bool et_params_load(et_params_t *p)`
+- `bool et_params_migrate(et_params_t *p)`
+- `bool et_params_save(et_params_t *p)`
+- `bool et_params_set(et_params_t *p, uint16_t field, const void *val, uint16_t len)`
+- `uint16_t et_params_loaded_version(const et_params_t *p)`
+- `uint16_t et_params_validate(const et_params_t *p)`
+
+### 类型 (5)
+
+- `et_param_desc_t`
+- `et_param_type_t`
+- `et_params_migrate_fn()`
+- `et_params_schema_t`
+- `et_params_t`
+
+### 宏 (7)
+
+- `ET_PARAMS_KEY_BASE 0x6000u`
+- `ET_PARAMS_KEY_GEN 0x7FF0u`
+- `ET_PARAMS_KEY_STRIDE 0x0100u`
+- `ET_PARAMS_MAX_FIELDS 32u`
+- `ET_PARAMS_SLOT_BYTES 32u`
+- `ET_PARAMS_VAL_MAX 30u`
+- `ET_PARAMS_WORK_SIZE(n) ((size_t)(n) * ET_PARAMS_SLOT_BYTES)`
 
 ## sys/et_event.h
 
