@@ -1060,3 +1060,77 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
 | f103「不支持区域 API」声明在位 | **达成**（`PORT_FLASH_REGIONS 0u` + 五符号恒失败实现，`--mode full` 两板构建零警告） | 提交 `3307a1b` |
 | **真固件双单证据（confirm 三字段 + `AT+VER`；回滚 A 槽存活 + `attempts` 递增）** | **未闭合 ⇒ BLOCKED-2** | §19.3；② 行同时说明为何现有 `AT+BOOTINFO` 读数不可用作该判据证据 |
 | `--ver` 奇偶参数逐处标注 | 达成（奇偶只切 demo 自检支路，不切槽位形；SIMUPGRADE/UPGRADE 日志均带 ver 与 addr） | §19.4 行 ③ |
+
+## 20. v2.30 G474 板侧窗口——1K 块型真固件双单闭合与传输面归因（2026-10-22）
+
+> 对应 `versions/v2.30/PLAN.md` P1-1…P1-3（AC-7 / AC-8，REQ-7 / M4-④）与 HC-10 三改顺序。
+> 板侧工程与证据目录在**库外**：工程 `D:/code/STM32CubeMX/G474VET6_ET_TEST`；证据 `D:/code/STM32CubeMX/G474VET6_ET_TEST/build/v2.30-evidence/`。
+> 授权：Owner 2026-10-22 明示「授权我烧录并走单」（仅限本版 P1 的烧录 + 走单，不含发版）。
+> 路径一律正斜杠形态（D-1 教训）。本节结论 = **REQ-7 真固件双单闭合**（confirm + 回滚各一单）。
+
+### 20.1 板侧三改与构建读数（P1-1，AC-7）
+
+改动全部在**库外**（库内 `et_xmodem` / `et_bootctl` / `port` 本版 diff = 空，HC-1）：
+
+1. `Core/Src/et_demo.c`：`g_xmbuf[132]` → **`g_xmbuf[1032]`**（1K 块型 1028 B 帧 + 余量）；
+2. `Core/Src/et_demo.c`：`cmd_upgrade` 接收循环前后加 **`et_log_set_level(ET_LOG_LEVEL_NONE/INFO)`**——升级期间全部日志（含 `alive` 心跳）静默，TX 只剩协议字节；
+3. 板侧 `CMakeLists.txt`：`ET_XM_1K=1`（库内既有编译开关，默认 0；`protocol/et_xmodem.h:44-45`）；
+4. 调试期两处**附加**改动（均为库外 demo，逐条登记于交付 §3）：
+   - 升级期降波特率：`cmd_upgrade` 内 `uart_rebaud(57600)`，结束恢复 115200（HC-10① 第三步）；
+   - 复位原因诊断：启动时把 `RCC->CSR` 存入 `g_rst_csr` 并经 `AT+RXSTAT` 输出（本版定位失败用，`RSTCSR=` 行）。
+
+构建（`tools/board_window.py --mode full`，preset Debug）：`构建 exit=0 warning 计数=0 FLASH=87836 RAM=9992`；
+同步面 3 件（`et_config.h` + `storage/et_params.{h,c}`）拷后残差 0；烧前版本串机检集合含 `2.30.0` 命中=True；
+烧录 `verified=True`。走单：`ver=2.30.0 boot=64`、`FEATURES v2.30.0 (maj=2 min=30 pat=0) sw=33`（含 `PARAMS=1`）、
+`SELFTEST 22/22`、MBRD 三形态 `disc=0`、`METRICS 11/12 drop=0`、`rx=180 ore=0`、从站 `served=3 crc_err=0 mismatch=0`。
+
+### 20.2 传输面三改前后对照（HC-3 要求的按值读数）
+
+镜像 = 当版真固件（`arm-none-eabi-objcopy -O binary` 自 `build/Debug/G474VET6_ET_TEST.elf`）：
+**body 87,852 B → 打包 87,884 B ≤ 槽 131,072 B**；1K 块型 = **86 块**，128B 块型 = 687 块。
+
+| 轮次 | 块型 | 静默 | 波特率 | 驱动纪律 | 结果 |
+|---|---|---|---|---|---|
+| v2.29 基线（§19） | 128 B | 关 | 115200 | 逐块 ACK/NAK 立即重发 | 停 **block ≈ 91（11.6 KB）**，接收端 CAN |
+| A | 1K | 开 | 115200 | 同上 | 停 **block 13（≈13 KB）**；随后 `AT+RXSTAT` 实测 **ore=1** |
+| B | 1K | 开 | 57600 | 同上 | 停 **block 8** |
+| C | 1K | 开 | 19200 | 同上（且上一轮接收端尚未退出） | 停 **block 4** |
+| D | 1K | 开 | 19200 | **单会话 + 切速后清缓冲 + 整窗等 ACK（NAK 不立即重发）** | **86/86 ACK，0 重试，47.23 s** |
+| E | 1K | 开 | 57600 | 同 D | **86/86 ACK，0 重试，16.58 s** |
+
+归因（不夸大）：① v2.29 的 128B 失步在 1K 块型下不再出现（86 块 vs 687 块，逐块往返与日志交织同时消失）；
+② A–C 三轮的失败**混入了探针侧纪律缺陷**——`cmd_upgrade` 的接收循环在无对端时最长驻留 60 s，失败的上一轮若未退出，
+下一轮 `AT+UPGRADE` 文本会被当作 xmodem 数据吞掉（D/E 改用「一次成功或失败后等接收端退出再发起」+ 切速后 `reset_input_buffer`
+后即 0 重试通过；B/C 两轮的停止点差异因此**不能**单独归因于波特率）；
+③ 115200 + 1K 在修正纪律后**未复测**（本版判据不要求 115200 跑通；兜底值 = 57600，实测见 E）。
+④ 全程接收端只回 ACK（`0x06`），无任何文本字节 ⇒ 静默生效（对照 = v2.29 §19.3 的 `alive` 交织记录）。
+
+### 20.3 confirm 单（P1-2，AC-8 第一条）
+
+- 传输前基线：`AT+BOOTINFO` = **`staged=-1 confirmed=-1 attempts=0`**（烧录后首次启动，状态扇区无记录）；
+- 上传 `img_odd.bin`（真固件 body，`--ver 7` 奇数 = 自检通过）：86/86 ACK，EOT#2 应答 `0x06`；
+- 板侧 `boot_reset()` 后重开串口：`AT+BOOTINFO` = **`staged=1 confirmed=1 attempts=1`**、`AT+VER` = **`ver=2.30.0 boot=73`**；
+- 判据「三字段自本次 stage 起算」成立：基线为 `-1/-1/0`，本次由 `et_bootctl_stage` 产生新记录后自检通过并确认（HC-8①）。
+
+### 20.4 回滚单（P1-2，AC-8 第二条）
+
+- 上传 `img_even.bin`（同一真固件 body，`--ver 8` 偶数 = 自检失败路径）：86/86 ACK；
+- 复位后 `AT+BOOTINFO` = **`staged=1 confirmed=-1 attempts=1`**（已 staged、自检不过、未确认）；
+- 两次 `AT+WDTEST` 真复位累积尝试：`attempts` 达上限后 `boot_flow` 执行回滚并清状态，随后 `AT+BOOTINFO` = `staged=-1 confirmed=-1 attempts=0`；
+- **A 槽存活**：`AT+SELFTEST` = **`SELFTEST: 22/22 PASS`**（22 套件全绿）。
+
+### 20.5 归因纠正与遗留
+
+- **BOOTINFO 归因**：v2.29 的 `staged=1 confirmed=1 attempts=1` 系参数区残留、不构成新 confirm 证据（交付 §2 AC-8 已由 v2.30 P0-4 补注）；
+  本版以「烧录后基线 `-1/-1/0`」+「本次传输/复位后 `1/1/1`」两点对照建立归因。
+- **传输可靠性剩余面**：1K + 静默 + 57600 下 0 重试，但**115200 未复测**；`ore=1` 出现在 A 轮，说明高波特率下 1KB 的
+  flash 写窗口仍可能压满 128 B RX 环（`g_rx_mem[128]`，库外 demo）。若后续要求 115200：候选 = 增大 RX 环（demo 面）或
+  缩小 flash 写临界区（`port` 面 = 库面改动，须独立认领）。
+- **驱动纪律**：`dual_walk_1k.py` 的「单会话 + 失败后等接收端退出」为本版实测必需项（A–C 三败即反例），脚本留档于证据目录。
+
+### 20.6 证据清单（`build/v2.30-evidence/`）
+
+`sync_report.txt`（拷后残差 0）/ `build.log` / `version_check.txt` / `flash.log` / `window_run.log` / `walk_output.txt` / `walk_summary.md` /
+`fw.bin`（87,852 B）/ `img_odd.bin`、`img_even.bin`（87,884 B）/ `dual_walk_1k.py`（1K 驱动）/ `dual_walk_1k.log`（末次运行）/
+`dual_walk_1k_57600.log`（E 轮）/ `dual_walk_1k_19200.log`（D 轮）/ `attempt_115200_1k_1st.log`（A 轮）/ `attempt_57600_1st.log`（B 轮）/
+`attempt_19200_stale_state.log`（C 轮）。上述日志为库外留痕，不入库；本节所有读数均可由对应日志原文复核。
