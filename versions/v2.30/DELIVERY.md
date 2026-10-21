@@ -105,7 +105,7 @@ sh tools/gatecheck.sh 2.30 --verify versions/v2.30/DELIVERY.md   # 期望 verify
 
 ### 7.3 登记链逐档点名（(d) 桶）
 
-本版 P3-3 登记轮按 docref 实测点名面追加纯登记行：本版对历史档的触碰 = `v2.29/DELIVERY.md`（P0-4 补注）与 `v2.29/DELIVERY-r2.md`（P0-1 两处）各 +1 **短语行**（token 由本轮补列）+ 入仓批 `166c0d9`（BACKLOG/ROADMAP/PLAN，非白名单）与 P0/P2/P3 各笔（`docsync.sh`/`storage/`/`Makefile`/`test/`）。其余历史档仅登记行 carve-out；逐档 emit 机读值见 §7.4⑧。
+本版 P3-3 登记轮按 docref 实测点名面追加纯登记行：本版对历史档的触碰 = `v2.29/DELIVERY.md`（P0-4 补注）与 `v2.29/DELIVERY-r2.md`（P0-1 两处）各 +1 **短语行**（token 由本轮补列）+ 入仓批 `166c0d9`（BACKLOG/ROADMAP/PLAN，非白名单）与 P0/P2/P3 各笔（`docsync.sh`/`storage/`/`Makefile`/`test/`）。其余历史档仅登记行 carve-out；逐档 emit 机读值见 §7.4⑧。**首轮 emit（@`e63d5c2`）弃用登记**：其 (d) 面 OK **0**/未登记 **25**，点名 `166c0d9`（入仓批）未登记 ⇒ 补登该 token 后**重取**（弃用件 = `build/p35_emit.log`，重取件 = `build/p35_emit2.log`）；此为本版登记轮的首轮漏列自暴露，不改变 §7.4 的「逐字粘贴」口径。
 
 ### 7.4 ⑧ 机读值（`--emit` 逐字粘贴，禁重打）
 
