@@ -396,6 +396,7 @@ static const et_feat_entry_t g_features[] = {
     ET_FEAT(SPWM)
     ET_FEAT(KV)
     ET_FEAT(BOOTCTL)
+    ET_FEAT(PARAMS)
     ET_FEAT(SOFTCLOCK)
     ET_FEAT(SHELL)
     ET_FEAT(SELFTEST)

@@ -305,12 +305,12 @@ static void mt_features_header_and_rows(void)
             lines++;
         }
     }
-    /* 32 个开关逐行(行计数口径) + 1 行表头 */
-    ET_CHECK_U32_EQ(33u, lines);
+    /* 33 个开关逐行(行计数口径) + 1 行表头 (v2.30: 新增 ET_MODULE_PARAMS) */
+    ET_CHECK_U32_EQ(34u, lines);
 
     /* 表头逐字: 版本三件以 maj/min/pat 显式在档 + 版本串 + 开关数 */
     (void)snprintf(want, sizeof(want),
-                   "FEATURES v%s (maj=%d min=%d pat=%d) sw=32\n",
+                   "FEATURES v%s (maj=%d min=%d pat=%d) sw=33\n",
                    ET_VERSION_STRING, ET_VERSION_MAJOR, ET_VERSION_MINOR,
                    ET_VERSION_PATCH);
     ET_CHECK(mt_has_prefix(buf, want));
@@ -511,7 +511,7 @@ static void mt_features_cmd_through_shell(void)
     cmd_fresh();
     cmd_feed("AT+FEATURES\r");
     ET_CHECK(mt_contains(g_out, "FEATURES v"));
-    ET_CHECK(mt_contains(g_out, ") sw=32\n"));
+    ET_CHECK(mt_contains(g_out, ") sw=33\n"));
     ET_CHECK(mt_contains(g_out, "  SCHED=1\n"));
     ET_CHECK(mt_contains(g_out, "  METRICS=1\n"));
 }
