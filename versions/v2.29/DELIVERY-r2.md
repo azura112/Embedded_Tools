@@ -138,3 +138,4 @@ sh tools/gatecheck.sh 2.29 --verify versions/v2.29/DELIVERY-r2.md   # 期望 ver
 
 **新增破坏性候选：无。** 本轮库面六目录 / `et_config.h` / `Makefile` / `CHANGELOG.md` / `port/` / `docs/API_INVENTORY*` diff = 空；公开 API 零变化；门判定语义零变更（`tools/*` 本轮零 diff）；仅 `.gitignore` +1 行为构建产物忽略面、`README.md` 与主档为 T 点名修订。
 - 修订登记：v2.30 P0-1 对本档两处按值勘误（`CO-7` 末笔口径 `:43/:50` → 「记录范围 END = R4；末笔 = R5」；`CO-8` 围栏计数 `:61` → 行首具名 3 笔 R3/R2/R1 + 合写行 3 笔 R3/R4/R5）；均 1:1 行内、`wc -l` 不变；token 由 v2.30 P3-3 登记轮按实测补列（本笔 SHA 不可自列，沿 `RC-5` 自指形态）。
+- 修订登记 @f735d37 @d2de9e0 @f912c38：v2.30 P3-3 登记轮补列（本档为 rN 档、不解析严格声明行；P0-1 两处勘误载体 = `f735d37`，其后 `d2de9e0`/`f912c38` 属非白名单触碰面点名）。
