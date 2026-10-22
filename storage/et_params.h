@@ -10,8 +10,9 @@
  *    已提交代际与数据版本存于单键 ET_PARAMS_KEY_GEN (值 = {gen, ver_lo, ver_hi});
  *  - save() 顺序 = 先写非活跃代际的全部字段 → et_kv_commit() 压实 → **最后**写 GEN 键;
  *    GEN 写入即提交点: 之前掉电 ⇒ 加载仍选旧代际 (完整旧配置); 之后掉电 ⇒ 新代际完整;
- *  - load() 按 GEN 选代际, 逐字段校验 (存在/长度/范围); 当前代际损坏 ⇒ 回退另一代际;
- *    两代际均不可用 ⇒ false (调用方可 et_params_factory_reset)。
+ *  - load() 按 GEN 选代际, 逐字段校验 (存在/长度/范围); 当前代际损坏 ⇒ 回退另一代际,
+ *    但**仅限同版本代际** (另一代际的 KEY_VER 须等于 GEN 记录的版本; 跨版本损坏 ⇒ 不回退,
+ *    落默认值并返回 false); 两代际均不可用 ⇒ false (调用方可 et_params_factory_reset)。
  *
  * 版本与迁移 (REQ-12 验收 1/2):
  *  - schema_ver 为当前代码的 schema 版本; 加载后若数据版本 < schema_ver, et_params_migrate()
@@ -65,7 +66,7 @@ typedef struct {
     uint8_t     group;      /* 调用方自定义分组 (诊断/导出用) */
     bool        keep_on_factory_reset;  /* true = 设备身份/校准类, 恢复出厂保留 */
     uint16_t    since_ver;  /* 引入该字段的 schema 版本 (迁移用) */
-    int32_t     min_i;      /* 数值下界 (含); BLOB 忽略 */
+    int32_t     min_i;      /* 数值下界 (含); BLOB 忽略; U32 按 uint32_t 位型解释 (max_i = -1 即 0xFFFFFFFF) */
     int32_t     max_i;      /* 数值上界 (含); BLOB 忽略 */
     const void *def;        /* 默认值 (数值: 指向对应宽度整数; BLOB: def_len 字节) */
     uint8_t     def_len;
@@ -106,8 +107,8 @@ typedef struct {
 bool et_params_init(et_params_t *p, et_kv_t *kv, const et_params_schema_t *schema,
                     void *work, size_t work_cap);
 
-/* 加载: 按 GEN 选代际并逐字段校验; 当前代际坏则回退另一代际。
- * 成功 loaded=true/loaded_ver=数据版本; 两代际均坏返回 false 且工作区置默认值。🏠MAIN */
+/* 加载: 按 GEN 选代际并逐字段校验; 当前代际坏则回退另一代际(仅同版本代际;
+ * 跨版本代际不参与回退)。成功 loaded=true/loaded_ver=数据版本; 两代际均坏返回 false 且工作区置默认值。🏠MAIN */
 bool et_params_load(et_params_t *p);
 
 /* 保存 (代际原子): 写非活跃代际 → 压实 → 写 GEN 提交点。任一步失败返回 false,

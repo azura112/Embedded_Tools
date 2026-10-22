@@ -393,6 +393,86 @@ static void params_get_bounds(void)
     ET_CHECK_U32_EQ(1u, buf[0]);
 }
 
+/* v2.30-r2 CO-1: U32 全值域 (无符号比较) —— 独立 schema/介质, 不扰动主用例的 F_COUNT 面 */
+static const uint32_t def_u32_full = 0x7FFFFFFFu;
+static const et_param_desc_t g_desc_u32[2] = {
+    /* 0: 全范围 —— max_i = -1 即 0xFFFFFFFF */
+    { ET_PARAM_U32, 0u, 0u, false, 1u, 0, -1,         &def_u32_full, 4u, "full" },
+    /* 1: 有界 —— 上界 0x7FFFFFFF, 高半区仍须被拒 */
+    { ET_PARAM_U32, 0u, 0u, false, 1u, 0, 0x7FFFFFFF, &def_u32_full, 4u, "half" },
+};
+static et_params_schema_t g_schema_u32 = { g_desc_u32, 2u, 1u, NULL, NULL };
+static et_kv_t            g_kv2;
+static et_kv_layout_t     g_layout2 = { 2u, 3u };
+static et_params_t        g_p2;
+static uint8_t            g_work2[ET_PARAMS_WORK_SIZE(2)];
+
+static void params_u32_full_range(void)
+{
+    static const uint32_t vals[3] = { 0x7FFFFFFFu, 0x80000000u, 0xFFFFFFFFu };
+    uint32_t got = 0u;
+    uint16_t len = 0u;
+    size_t   i;
+
+    port_host_flash_reset();
+    ET_CHECK(et_kv_format(&g_kv2, &g_layout2));
+    ET_CHECK(et_params_init(&g_p2, &g_kv2, &g_schema_u32, g_work2, sizeof(g_work2)));
+
+    for (i = 0u; i < 3u; i++) {                     /* 三个边界值全部可 set/get */
+        ET_CHECK(et_params_set(&g_p2, 0u, &vals[i], 4u));
+        got = 0u;
+        len = 0u;
+        ET_CHECK(et_params_get(&g_p2, 0u, &got, sizeof(got), &len));
+        ET_CHECK(len == 4u);
+        ET_CHECK_U32_EQ(vals[i], got);
+    }
+    ET_CHECK(et_params_validate(&g_p2) == 2u);
+
+    ET_CHECK(!et_params_set(&g_p2, 1u, &vals[1], 4u));   /* 有界描述符: 高半区仍拒 */
+    ET_CHECK(!et_params_set(&g_p2, 1u, &vals[2], 4u));
+    ET_CHECK(et_params_set(&g_p2, 1u, &vals[0], 4u));
+
+    ET_CHECK(et_params_save(&g_p2));                     /* 持久化往返 */
+    ET_CHECK(et_kv_init(&g_kv2, &g_layout2));
+    ET_CHECK(et_params_init(&g_p2, &g_kv2, &g_schema_u32, g_work2, sizeof(g_work2)));
+    ET_CHECK(g_p2.loaded);
+    got = 0u;
+    len = 0u;
+    ET_CHECK(et_params_get(&g_p2, 0u, &got, sizeof(got), &len));
+    ET_CHECK_U32_EQ(0xFFFFFFFFu, got);
+}
+
+/* v2.30-r2 CO-2(β): 回退仅限同版本代际 —— 跨版本损坏 ⇒ 不回退, 落默认值且 loaded=false */
+static void params_fallback_cross_version(void)
+{
+    uint8_t  gen[3];
+    uint16_t glen = 0u;
+    uint16_t cur;
+    uint8_t  one = 0x01u;
+
+    p_fresh();
+    ET_CHECK(et_params_init(&g_p, &g_kv, &g_schema_v1, g_work, sizeof(g_work)));
+    set_u16(F_THRESH, 5u);
+    ET_CHECK(et_params_save(&g_p));                  /* 代际 A: ver=1 */
+
+    p_reopen();                                      /* v2 schema */
+    g_mig_fail = false;
+    ET_CHECK(et_params_migrate(&g_p));
+    ET_CHECK(et_params_save(&g_p));                  /* 代际 B: ver=2 (GEN ver=2) */
+    ET_CHECK(et_kv_get(&g_kv, ET_PARAMS_KEY_GEN, gen, sizeof(gen), &glen));
+    ET_CHECK(glen == 3u);
+    cur = gen[0];
+
+    /* 破坏当前代际: 用错误长度覆盖一个 U16 字段 ⇒ 逐字段校验失败 */
+    ET_CHECK(et_kv_set(&g_kv,
+                       (uint16_t)(ET_PARAMS_KEY_BASE + (uint16_t)cur * ET_PARAMS_KEY_STRIDE + F_THRESH),
+                       &one, 1u));
+    p_reopen();                                      /* 另一代际仍是 ver=1 ⇒ 不回退 */
+    ET_CHECK(!g_p.loaded);
+    ET_CHECK_U32_EQ(0u, et_params_loaded_version(&g_p));
+    ET_CHECK_U32_EQ(115200u, get_u32(F_BAUD));       /* 工作区 = 默认值 */
+}
+
 static const et_test_case_t g_cases[] = {
     { "params.defaults_on_empty",      params_defaults_on_empty      },
     { "params.save_load_roundtrip",    params_save_load_roundtrip    },
@@ -404,6 +484,8 @@ static const et_test_case_t g_cases[] = {
     { "params.powercut_100",           params_powercut_100           },
     { "params.bad_schema_reject",      params_bad_schema_reject      },
     { "params.get_bounds",             params_get_bounds             },
+    { "params.u32_full_range",         params_u32_full_range         },
+    { "params.fallback_cross_version", params_fallback_cross_version },
 };
 
 const et_test_case_t *test_params_cases(size_t *count)

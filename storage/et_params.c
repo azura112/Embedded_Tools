@@ -75,7 +75,12 @@ static bool desc_ok(const et_param_desc_t *d)
         if ((d->def == NULL) || (d->def_len < (uint8_t)w)) {
             return false;
         }
-        if (d->min_i > d->max_i) {
+        if (d->type == ET_PARAM_U32) {
+            /* U32 值域 = 全 32 位无符号: 边界按 uint32_t 位型比较 (max_i = -1 即 0xFFFFFFFF) */
+            if ((uint32_t)d->min_i > (uint32_t)d->max_i) {
+                return false;
+            }
+        } else if (d->min_i > d->max_i) {
             return false;
         }
     }
@@ -102,6 +107,10 @@ static bool field_value_ok(const et_param_desc_t *d, const uint8_t *val, uint16_
         return true;
     }
     v = load_i32(val, (uint8_t)w);
+    if (d->type == ET_PARAM_U32) {
+        /* v2.30-r2 CO-1: U32 按无符号比较, 允许 0x80000000..0xFFFFFFFF (上界写 -1 即 0xFFFFFFFF) */
+        return ((uint32_t)v >= (uint32_t)d->min_i) && ((uint32_t)v <= (uint32_t)d->max_i);
+    }
     if ((d->type != ET_PARAM_I32) && (v < 0)) {
         return false;
     }
