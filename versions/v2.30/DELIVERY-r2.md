@@ -15,9 +15,9 @@
 - **R1**（`5373264`）：`versions/v2.30/REVIEW.md` 入仓（199 行、内容零改动，`199+/0−`）= 清单外最小登记面，见 §3 偏差 1。
 - **R2**（`4257dcd`）= **T-1**：`storage/et_params.{c,h}` + `test/test_params.c`，`98+/6−`——U32 全值域（`0x80000000…0xFFFFFFFF` 可 set/get）+ 3 边界用例 + 有界描述符仍拒高半区 + CO-2 回退边界条文与跨版本用例。
 - **R3**（`aaa5da3`）= **T-2 + T-3 + T-5**：`ROADMAP.md` M4 ④ → 达成、三处按值勘误（88,608/10,000、两 port 526→**538**、AC-1 139→**141**）、用例数 536→**538** 连带回刷、评审记录模板两段纯追加；十一件 `28+/25−`。
-- **R4 / R5 / R6**：r2 档落仓 + `docs/architecture.md` 机制门行 395→397 + 主档**纯登记行**（补 `@a228051 @1653552 @27e00ef @4257dcd @aaa5da3` 五 token，清偿主档结构性未登记面）/ 历史交付档登记链收口（吸收 R2/R3 的非白名单触碰面）/ ⑧ 五锚行由 `--emit` 逐字 1:1 粘贴 + SHA 实测回填 + `--verify` 单点。
+- **R4 / R5 / R6 / R7 / R8**：r2 档落仓 + `docs/architecture.md` 机制门行 395→397 + 主档**纯登记行**（补 `@a228051 @1653552 @27e00ef @4257dcd @aaa5da3` 五 token，清偿主档结构性未登记面）/ 历史交付档登记链收口**首轮**（吸收 R2/R3 的非白名单触碰面）/ **体积行回刷**（T-1 的 `.text` +40 B 连带面：27192→27232、39636→39676、27860→27900，`sizecheck` 0/3→**3/0**）/ 登记链收口**二轮**（吸收 R6 的非白名单触碰面）/ ⑧ 五锚行由 `--emit` 逐字 1:1 粘贴 + SHA 实测回填 + `--verify` 单点。
 
-**归因与命名**：本轮笔号 R1…R6（无缺号）；每笔作用域见 §4。
+**归因与命名**：本轮笔号 R1…R8（无缺号；R5 = 收口首轮、R6 = 体积回刷、R7 = 收口二轮、R8 = 末笔）；每笔作用域见 §4。
 
 ## 2. 自查表（B2 口径：只列被点名条目 + 受修复影响条目）
 
@@ -25,7 +25,7 @@
 
 | 来源 | 验证方式 | 结果 | 证据 |
 |---|---|---|---|
-| **T-1**（`CO-1`/`CO-2`）`et_params` 值域与回退语义 | 真实代码探针（三边界值 set→get）+ 新增两用例 + 四形态回归 | **通过** | **(a) 代码**：`field_value_ok` 对 `ET_PARAM_U32` 改无符号比较（`uint32_t` 中转；`max_i = -1` 即 `0xFFFFFFFF`），U8/U16/I32 路径不变；`et_params_init` 的 `min_i ≤ max_i` 校验对 U32 同改无符号。**行为面**：旧实现 `set(0x80000000)` / `set(0xFFFFFFFF)` = false（评审 PP-1 探针），现 = **true 且 get 逐值回读**；有界 U32 描述符（`max=0x7FFFFFFF`）仍拒高半区。**用例**：`params.u32_full_range`（独立 schema/介质 `layout={2,3}`）+ `params.fallback_cross_version`（v1 保存 → 迁移+保存 → 破坏当代 U16 槽 → 重载 ⇒ `loaded=false` / `loaded_ver=0` / 工作区 = 默认值）。**四形态** = **538/538/539/545**（38 套件、fail 合计 0）、`make ex` 六配方 PASS、`apidump --diff` = **纯新增 22 / 修改删除 0**（签名未变；(a) 属行为修正，见 §3 偏差 2） |
+| **T-1**（`CO-1`/`CO-2`）`et_params` 值域与回退语义 | 真实代码探针（三边界值 set→get）+ 新增两用例 + 四形态回归 | **通过** | **(a) 代码**：`field_value_ok` 对 `ET_PARAM_U32` 改无符号比较（`uint32_t` 中转；`max_i = -1` 即 `0xFFFFFFFF`），U8/U16/I32 路径不变；`et_params_init` 的 `min_i ≤ max_i` 校验对 U32 同改无符号。**行为面**：旧实现 `set(0x80000000)` / `set(0xFFFFFFFF)` = false（评审 PP-1 探针），现 = **true 且 get 逐值回读**；有界 U32 描述符（`max=0x7FFFFFFF`）仍拒高半区。**用例**：`params.u32_full_range`（独立 schema/介质 `layout={2,3}`）+ `params.fallback_cross_version`（v1 保存 → 迁移+保存 → 破坏当代 U16 槽 → 重载 ⇒ `loaded=false` / `loaded_ver=0` / 工作区 = 默认值）。**四形态** = **538/538/539/545**（38 套件、fail 合计 0）、`make ex` 六配方 PASS、`apidump --diff` = **纯新增 22 / 修改删除 0**（签名未变；(a) 属行为修正，见 §3 偏差 2）；**体积连带**：U32 分支使 `.text` **+40 B** ⇒ `sizecheck` 由 0/3 转 **3/0**（R6 回刷：f103 27232/39676、g474 27900，见 §3 偏差 6） |
 | **T-2**（`CO-4`）ROADMAP M4 状态行 | 行内判据：④ 含「达成」且无「传输面受阻」；日期 = 2026-10-22 | **通过** | `ROADMAP.md:34` 的 ④ → 「**达成**（真固件双单由 v2.30 P1 收尾，`BLOCKED-2(v2.29)` 三改 + 双单 + BOOTINFO 归因纠正，实机记录 §20）+ **残留 = 115200+1K 未复测（池 H）**」；达成状态行日期 2026-10-21 → **2026-10-22**；旧重复标题「（2026-10-22 v2.30 P1 结案）④ = 达成」→「复测读数」。判据实测：`grep -c '④ **达成**'` = **1**、该行「传输面受阻」= **0** |
 | **T-3**（`CO-3`）三处按值勘误 + 526 回刷 | `grep -rh FLASH` / 按状态列统计 / `git diff --numstat` | **通过（② 终值口径与评审字面不同，见偏差 3）** | ① 交付 AC-7 与实机记录 §20：`FLASH=87836 RAM=9992` → **`FLASH=88,608 RAM=10,000`**（口径 = `build/v2.30-evidence/build.log` 与 `window_run.log:24`；取数时点 = 含两处诊断改动的构建）；② 两 port host 读数 **526 → 538**（1K 539 / Tab 545）——评审原写 536 系 T-1 新增用例前口径，**判据取「与实测一致」**；③ AC-1「139→140」→「139→**141**」（P0 +1 短语行、P3-3 +1 token 行）。`grep -rn 526 --include=*.md` 的**用例计数面 0 残留**（余命中 = 哈希 `405265e` / CHANGELOG 历史句「526→536」/ 历史档原文，非计数声称） |
 | **T-4**（`CO-5`）留痕件 + verify | `build/final-gates-v230.log` 存在性 + 六段标题齐 + verify 段原文 | **通过** | 该件（库外、零入库）六段 = docsync / apidump `--check`+`--diff` / sizecheck / 四形态 + `ex` / docref 逐档（含本档红原文）/ **`--emit` 五锚 + `--verify` stdout 与 exit 码**；取数时点 = R6 定稿末笔（见 §4 首行），其后不再入库任何笔（`CO-12(v2.28)`）；交付 AC-12 行尾已加指针（R3） |
@@ -41,6 +41,7 @@
 | 2 | **`ET_PARAM_U32` 比较语义变更 = 行为修正（非 API 形状）** | Owner 裁 (a)。旧行为对 `≥ 0x80000000` 全部拒绝；新行为按无符号接受（受 `min_i/max_i` 无符号边界约束）。API 签名/结构体布局不变 ⇒ `apidump --diff` 仍 **22/0** | 在 `et_params.h`（`min_i/max_i` 位型说明 + 回退边界）与 `API_GUIDE §6.3` 同批写明；新用例 `params.u32_full_range` 断言三边界值；**本行 = 交付说明区登记**（评审 T-1 对 (a) 的明示要求）| T-1(a)（Owner 裁决） |
 | 3 | **T-3② 的终值取 538 而非评审字面 536** | 评审 T-3 写「两 port 526 → 536」；该 536 系 T-1 新增 2 用例**之前**的口径，而 T-1(a) 必然改变用例总数 ⇒ 终值 = **538**（1K 539 / Tab 545） | 按「判据 = 与实测一致」取 538，并在交付 AC-10 注明 538 的由来（r2 T-1 +2）；不照抄评审字面值（`CO-7(v2.26)` 按值纪律） | T-3（② 的目标值随 T-1 联动） |
 | 4 | **⑧ 取值与粘贴分笔（CO-12 等价式）** | 「同一笔内取值又粘贴」不可自指；R6 = 末笔，其行数须与 R5 一致 | R5 落仓后在该 HEAD 前台单跑 `--emit`（rc/stdout/stderr 独立落档），R6 严格 1:1 行内粘贴五锚行并回填 SHA（`wc -l` 不变 ⇒ (b) 两口径随 R5 取值稳定） | 无 |
+| 6 | **T-1(a) 的 `.text` +40 B 连带体积行** | `et_params.c` 的两处 U32 分支使三处体积读数各 +40 B（27192→**27232**、39636→**39676**、27860→**27900**），`sizecheck` 首测 = **pass=0 fail=3**（三行逐值差 +40） | R6 按「数字回刷纪律（checklist #7）：同批更新表行」回刷两 port README 三行 + 主档 AC-10/§8 池条目 + `docs/v3-candidates.md` 常设条目；回刷后 `sizecheck` = **3/0**；旧档与评审记录内原文不动（时点记录） | T-1（连带面） |
 | 5 | **用例数回刷面超出 T-3 字面（T-1 的必然后果）** | T-1 新增 2 用例 ⇒ 文档中 536 类声称全部过期（HC-8 一致性面）；其中两处是 `docsync` 的 `assert_grep` 字面 | 同批回刷 11 处文档 + 两处断言字面（**断言数不变**）；回刷清单与判据见 §2「受影响」行 | T-1（连带面，HC-8 强制） |
 
 > 授权列语义（`templates/DELIVERY.md` 五列形态）：本轮唯一的计划/评审点名库面改动 = `et_params` U32 行为修正（T-1(a)，Owner 裁决）；其余 4 项均无计划面外授权；`docs/architecture.md` 一行数值为门强制（`[自指]` 对账），非授权面。
@@ -49,18 +50,20 @@
 
 记录范围 = **上一轮交付 HEAD（`27e00ef` = 主批定稿链末笔 P3-5a）..本提交（R6 = 定稿链末笔，见本节围栏首行）**（B2 口径）。本档不入 docref 严格声明行形态（rN 档定稿笔自引用不可预写，沿 v2.28/v2.29 r2 先例；实测 = `缺'记录范围 + diffstat'声明行` exit 1），三数口径由 §7.4⑧ (b) 片段行的版本键区间承载。
 
-`git log --oneline 27e00ef..HEAD`（终态 = **6 笔**，`git rev-list --count` 实测）：
+`git log --oneline 27e00ef..HEAD`（终态 = **8 笔**，`git rev-list --count` 实测）：
 
 ```text
-（R6 = 本提交，SHA 自指不列）v2.30-r2 R6: 定稿链末笔——⑧ 五锚行由 --emit 逐字 1:1 粘贴 + §4/§7.3 的 R5 SHA 回填 + --verify 单点
-〈R5 = 由 R6 实测回填〉 v2.30-r2 R5: 历史交付档登记链收口（各 +1 纯登记行，吸收 R2/R3 非白名单触碰面）
-〈R4 = 由 R6 实测回填〉 v2.30-r2 R4: versions/v2.30/DELIVERY-r2.md 落仓 + architecture 395→397 + 主档纯登记行（@a228051 @1653552 @27e00ef @4257dcd @aaa5da3）
+（R8 = 本提交，SHA 自指不列）v2.30-r2 R8: 定稿链末笔——⑧ 五锚行由 --emit 逐字 1:1 粘贴 + §4/§7.3 的 R7/R5/R4 SHA 回填 + --verify 单点
+〈R7 = 由 R8 实测回填〉 v2.30-r2 R7(登记链收口二轮, 纯登记): 十档 + 主档各 +1 行（token @a836105）
+〈R6 = 由 R8 实测回填〉 v2.30-r2 R6(T-1 连带面·体积行回刷): 两 port README 三行 + 主档 AC-10/§8 + v3 常设条目，6+/6-
+840e39c v2.30-r2 R5(登记链收口首轮, 纯登记): 十档各 +1 行（token @4257dcd @aaa5da3 @abea3be）
+〈R4 = 由 R8 实测回填〉 v2.30-r2 R4: versions/v2.30/DELIVERY-r2.md 落仓 + architecture 395→397 + 主档纯登记行（@a228051 @1653552 @27e00ef @4257dcd @aaa5da3）
 aaa5da3 v2.30-r2 R3(T-2 + T-3 + T-5 + 用例数回刷): 十一件 28+/25-
 4257dcd v2.30-r2 R2(T-1 = CO-1(a) + CO-2(β)): et_params.{c,h} + test_params.c 98+/6-
 5373264 v2.30-r2 R1: versions/v2.30/REVIEW.md 入仓（199+/0−，内容零改动）
 ```
 
-（对账口径：`git rev-list --count 27e00ef..HEAD` 终态 = **6 笔** = 围栏 **6 行**（R6 自指不列 + R5/R4 行内回填 + R1/R2/R3 行首具名），差集 = ∅。**触碰文件全列**（`git diff --name-only 27e00ef..HEAD`，R6 实测回填）= `versions/v2.30/REVIEW.md` / `versions/v2.30/DELIVERY-r2.md`（本档）/ `versions/v2.30/DELIVERY.md`（主档）/ `storage/et_params.c` / `storage/et_params.h` / `test/test_params.c` / `README.md` / `ROADMAP.md` / `docs/API_GUIDE.md` / `docs/architecture.md` / `docs/getting-started.md` / `docs/评审记录模板.md` / `port/stm32f103/README.md` / `port/stm32g474/README.md` / `tools/docsync.sh` / `移植stm32实机记录.md` / 历史交付档九件（R5 收口）——**构建输入 / CHANGELOG / 两 port 源码 / 归档 / tag / Release 零触碰**（逐路径命令与输出见 T-4 留痕件 §6）。）
+（对账口径：`git rev-list --count 27e00ef..HEAD` 终态 = **8 笔** = 围栏 **8 行**（R8 自指不列 + R7/R6/R5/R4 行内记名 + R1/R2/R3 行首具名），差集 = ∅。**触碰文件全列**（`git diff --name-only 27e00ef..HEAD` 行计数 = **27** 件，R7 工作树实测）= `versions/v2.30/REVIEW.md` / `versions/v2.30/DELIVERY-r2.md`（本档）/ `versions/v2.30/DELIVERY.md`（主档）/ `storage/et_params.c` / `storage/et_params.h` / `test/test_params.c` / `README.md` / `ROADMAP.md` / `docs/API_GUIDE.md` / `docs/architecture.md` / `docs/getting-started.md` / `docs/评审记录模板.md` / `port/stm32f103/README.md` / `port/stm32g474/README.md` / `tools/docsync.sh` / `移植stm32实机记录.md` / `docs/v3-candidates.md` / 历史交付档十件（R5 首轮 + R7 二轮收口：平铺 `v2.20`–`v2.24` 五件 + `versions/v2.25`–`v2.29` 五件）——**构建输入 / CHANGELOG / 两 port 源码 / 归档 / tag / Release 零触碰**（逐路径命令与输出见 T-4 留痕件 §6）。）
 
 ## 5. 未核验项与新发现
 
@@ -102,8 +105,8 @@ sh tools/gatecheck.sh 2.30 --verify versions/v2.30/DELIVERY-r2.md    # 期望 ve
 | R1 | `5373264` | 评审记录入仓（199 行零改动） | 良性（`versions/*/REVIEW*` 白名单） |
 | R2 | `4257dcd` | T-1 库面行为修正 + 2 用例 | **非良性**（`storage/` + `test/`）→ 由 R4 主档登记行与 R5 历史档收口行收录 |
 | R3 | `aaa5da3` | T-2/T-3/T-5 + 用例数回刷（十一件） | **非良性**（README/ROADMAP/docs/port READMEs/docsync 字面）→ 同上 |
-| R4 / R5 | 〈由 R6 实测回填〉 | R4 = r2 档落仓 + architecture 397 + 主档纯登记行；R5 = 历史档登记链收口 | **非良性**（architecture + 本档）与历史档登记面 → 主档/历史档的纯登记行收录；本档自身 = 缺声明行桶（结构性，不代登记） |
-| R6 | 本提交（自指不列） | ⑧ 五锚行 1:1 粘贴 + SHA 回填 + verify | 良性（仅触及本档；行数不变 ⇒ (b) 两口径稳定） |
+| R4 / R5 / R6 / R7 | `abea3be` / `840e39c` / `a836105` ／ R7 = 由 R8 回填 | R4 = r2 档落仓 + architecture 397 + 主档纯登记行；R5 = 历史档收口首轮；R6 = 体积行回刷；R7 = 历史档+主档收口二轮 | **非良性**（architecture + 本档）与历史档登记面 → 主档/历史档的纯登记行收录；本档自身 = 缺声明行桶（结构性，不代登记） |
+| R8 | 本提交（自指不列） | ⑧ 五锚行 1:1 粘贴 + SHA 回填 + verify | 良性（仅触及本档；行数不变 ⇒ (b) 两口径稳定） |
 
 ### 7.4 ⑧ 机读值（`--emit` 逐字粘贴，禁重打）
 

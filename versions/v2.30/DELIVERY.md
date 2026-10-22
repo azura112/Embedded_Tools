@@ -107,6 +107,7 @@ sh tools/gatecheck.sh 2.30 --verify versions/v2.30/DELIVERY.md   # 期望 verify
 
 本版 P3-3 登记轮按 docref 实测点名面追加纯登记行：本版对历史档的触碰 = `v2.29/DELIVERY.md`（P0-4 补注）与 `v2.29/DELIVERY-r2.md`（P0-1 两处）各 +1 **短语行**（token 由本轮补列）+ 入仓批 `166c0d9`（BACKLOG/ROADMAP/PLAN，非白名单）与 P0/P2/P3 各笔（`docsync.sh`/`storage/`/`Makefile`/`test/`）。其余历史档仅登记行 carve-out；逐档 emit 机读值见 §7.4⑧。**首轮 emit（@`e63d5c2`）弃用登记**：其 (d) 面 OK **0**/未登记 **25**，点名 `166c0d9`（入仓批）未登记 ⇒ 补登该 token 后**重取**（弃用件 = `build/p35_emit.log`，重取件 = `build/p35_emit2.log`）；此为本版登记轮的首轮漏列自暴露，不改变 §7.4 的「逐字粘贴」口径。
 - 修订登记 @a228051 @1653552 @27e00ef @4257dcd @aaa5da3：r2 轮清偿本档的结构性未登记面——`a228051`（P3-4 落仓）与 `1653552`（P3-3b 补登）及定稿链末笔 `27e00ef` 均触及本档而落仓时无法自列 token；`4257dcd`（r2 R2 库面）与 `aaa5da3`（r2 R3 本档行内修订）为新增两笔。本行为 r2 批次登记（纯登记），勘误载体 = `versions/v2.30/DELIVERY-r2.md` §7.3
+- 修订登记 @a836105：r2 R6（体积行回刷）触及本档 AC-10 与 §8 池条目；本行 = r2 批次登记（纯登记），勘误载体同上
 
 ### 7.4 ⑧ 机读值（`--emit` 逐字粘贴，禁重打）
 

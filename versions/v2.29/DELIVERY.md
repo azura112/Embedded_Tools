@@ -146,6 +146,7 @@ sh tools/gatecheck.sh 2.29 --verify versions/v2.29/DELIVERY.md        # 期望 v
 - 修订登记：v2.30 P0-4 对本档 AC-8 行按值补注「`AT+BOOTINFO` 三字段 = 参数区残留，不构成本版新做一次 confirm 的证据」（1:1 行内，`wc -l` 不变）；token 由 v2.30 P3-3 登记轮按实测补列（本笔 SHA 不可自列，沿 `RC-5` 自指形态）。
 - 修订登记 @166c0d9 @f735d37 @e0d8ceb @9817b37 @d2de9e0 @e07ad51 @f912c38 @a228051：**v2.30 P3-3 登记轮（纯登记行）**——本版七笔对本文档的非白名单触碰面逐笔点名放行（P0-4 补注载体 = `f735d37`；其余六笔为 docs/tools/test/README/architecture 面）；token 补列兑现 P0-4 短语行的延后承诺。
 - 修订登记 @4257dcd @aaa5da3 @abea3be：v2.30 r2 批的非白名单触碰面（`storage/` / `test/` / `README.md` / `ROADMAP.md` / 两 port README / `docs/` 五件 / `tools/docsync.sh` 字面 / `docs/architecture.md`）与主档纯登记笔，勘误载体 = `versions/v2.30/DELIVERY-r2.md`；本行 = 登记链维护（纯登记）
+- 修订登记 @a836105：v2.30 r2 的 R6 体积行回刷笔触碰 `port/stm32f103/README.md`、`port/stm32g474/README.md`（非白名单面）与主档，勘误载体 = `versions/v2.30/DELIVERY-r2.md`；本行 = 登记链维护（纯登记）
 
 ### 7.4 ⑧ 机读值（`--emit` 逐字粘贴，禁重打）
 
