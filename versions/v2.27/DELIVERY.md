@@ -117,6 +117,7 @@ N 复算推导（计划预置公式 `N = 上版实测 + 当版交付文档数 + 
 - 修订登记 @04e6471 @36de066：v2.29 r2 批的非白名单触碰面（`README.md` / `.gitignore` / `docs/architecture.md`）与主档 1:1 行内修订，勘误载体 = `versions/v2.29/DELIVERY-r2.md`；本行 = 登记链维护（纯登记）
 - 修订登记 @61034e1 @3820fe1 @e4a8a20：v2.29 tag 后收尾笔的统一登记（`CO-9(v2.29)-M` 处置，2026-10-21）——`61034e1` 复评记录入仓（良性面）、`3820fe1` 状态位代改（BACKLOG/ROADMAP 非白名单）、`e4a8a20` 复评勘误追加 + 提案 §8（新功能提案.md 非白名单）；tag `v2.29` 落点仍 = `810d355`
 - 修订登记 @166c0d9 @f735d37 @e0d8ceb @9817b37 @d2de9e0 @e07ad51 @f912c38 @a228051：**v2.30 P3-3 登记轮（纯登记行）**——本版八笔对本文档的非白名单触碰面逐笔点名放行：`166c0d9`(入仓批: BACKLOG/ROADMAP/PLAN 三件，= 快照本身) / `f735d37`(P0: r2 档两处勘误/两模板条文/`.gitignore`/v2.29 主档补注) / `e0d8ceb`(P2: `storage/et_params.{h,c}` + `test/test_params.c` + `et_config.h`/`Makefile`/`test_main.c`) / `9817b37`(P3-2a: 版本宏 29→30) / `d2de9e0`(P2-3a: `debug/et_metrics.c` 特性表 + `test/test_metrics.c` 计数) / `e07ad51`(P1: 实机记录 §20) / `f912c38`(P2-3+P3-1+P3-2b: 文档五面 + v2.29 归档 + BASE 两处 + 数字回刷 + CHANGELOG) / `a228051`(P3-4: v2.30 交付档 + architecture 门行)；载体 = `versions/v2.30/DELIVERY.md` §3/§7.3。
+- 修订登记 @4257dcd @aaa5da3 @abea3be：v2.30 r2 批的非白名单触碰面（`storage/` / `test/` / `README.md` / `ROADMAP.md` / 两 port README / `docs/` 五件 / `tools/docsync.sh` 字面 / `docs/architecture.md`）与主档纯登记笔，勘误载体 = `versions/v2.30/DELIVERY-r2.md`；本行 = 登记链维护（纯登记）
 
 ### 7.4 ⑧ 自检表（引用机检第六周期）
 
