@@ -1079,7 +1079,7 @@ RXS`，命令行 CRLF 照常入环缓冲、由 shell 消费） | 无溢出/错�
    - 升级期降波特率：`cmd_upgrade` 内 `uart_rebaud(57600)`，结束恢复 115200（HC-10① 第三步）；
    - 复位原因诊断：启动时把 `RCC->CSR` 存入 `g_rst_csr` 并经 `AT+RXSTAT` 输出（本版定位失败用，`RSTCSR=` 行）。
 
-构建（`tools/board_window.py --mode full`，preset Debug）：`构建 exit=0 warning 计数=0 FLASH=87836 RAM=9992`；
+构建（`tools/board_window.py --mode full`，preset Debug）：`构建 exit=0 warning 计数=0 FLASH=88,608 RAM=10,000`（取数时点 = 含两处诊断改动的构建；评审 CO-3① 勘误）；
 同步面 3 件（`et_config.h` + `storage/et_params.{h,c}`）拷后残差 0；烧前版本串机检集合含 `2.30.0` 命中=True；
 烧录 `verified=True`。走单：`ver=2.30.0 boot=64`、`FEATURES v2.30.0 (maj=2 min=30 pat=0) sw=33`（含 `PARAMS=1`）、
 `SELFTEST 22/22`、MBRD 三形态 `disc=0`、`METRICS 11/12 drop=0`、`rx=180 ore=0`、从站 `served=3 crc_err=0 mismatch=0`。

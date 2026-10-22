@@ -13,25 +13,25 @@
 - **P0 勘误与条文批（G0）**：v2.29 r2 档两处按值勘误（`CO-7`/`CO-8`，1:1 行内）；「tag 后收尾笔」条文入两模板（`CO-9`）；`.qoder-credits/` 入 `.gitignore`；v2.29 交付 AC-8 的 `BOOTINFO` 归因补注；M4 收尾 + M5 登记（M5 三判据由入仓批完成）。
 - **P1 升级链闭合（REQ-7 / M4-④）**：板侧三改（`g_xmbuf[1032]` 1K 块型 / 升级期 `et_log` 全静默 / `-DET_XM_1K=1`）+ 调试期两处附加（升级期 57600 兜底、`RCC->CSR` 复位原因诊断）；**真固件 87,884 B 经 86 块 × 1K 传输 86/86 ACK、0 重试（16.58 s）**；**confirm 单**（基线 `-1/-1/0` → `staged=1 confirmed=1 attempts=1` + `ver=2.30.0`）与**回滚单**（even-ver 自检不过 → `attempts` 累积后清状态 + A 槽 `SELFTEST 22/22`）双达成。
 - **P2 参数版本化（REQ-12 / M5-①）**：新模块 `storage/et_params.{h,c}`（第 **36** 模块）——定容 schema + 逐版迁移 + **代际原子保存**（单键 `gen` 提交点）+ 恢复出厂保留；`test/test_params.c` 10 例（含 **100 点掉电注入**）。
-- **P3 常设批**：基线滚动（v2.29 归档 475 项 / BASE 两处 / 复读 22/0）、数字回刷（536 系 / 36 模块 / 33 开关 / 体积行）、登记链、本档。
+- **P3 常设批**：基线滚动（v2.29 归档 475 项 / BASE 两处 / 复读 22/0）、数字回刷（538 系 / 36 模块 / 33 开关 / 体积行）、登记链、本档。
 
 ## 2. AC 自查表
 
 | AC | 结论 | 实测读数与证据命令 | 判据出处 |
 |---|---|---|---|
 | **AC-0** | **通过（异常已登记）** | 见首注：`tag v2.29` = `810d355`（本地，`main` 祖先）、`gh release list` 无 v2.29、`gh run list --limit 2` 最近 = v2.28 push、`origin/main` = `ef339dd`、本地 main 领先 **24**；v2.29 Release 待发 + 推送顺序在案 | HC-0 / §1.0 |
-| **AC-1** | **通过** | `versions/v2.29/DELIVERY-r2.md`：`:43`/`:50` 新形态「记录范围 END = R4；末笔 = R5」**2 命中**、旧串 `R4 = 定稿链末笔|R4 = 末笔` **0 命中**；`:61` 「行首具名 **3** 笔（R3/R2/R1）+ 首行合写 3 笔」1 命中；两处 1:1（该档 139→**140**，+1 全来自同批 修订登记 短语行）；docref 对该档 = 缺声明行（既定形态） | P0-1 |
+| **AC-1** | **通过** | `versions/v2.29/DELIVERY-r2.md`：`:43`/`:50` 新形态「记录范围 END = R4；末笔 = R5」**2 命中**、旧串 `R4 = 定稿链末笔|R4 = 末笔` **0 命中**；`:61` 「行首具名 **3** 笔（R3/R2/R1）+ 首行合写 3 笔」1 命中；两处 1:1（该档 139→**141**：P0 +1 短语行、P3-3 +1 token 行）；docref 对该档 = 缺声明行（既定形态） | P0-1 |
 | **AC-2** | **通过** | 两模板各 +1 行（纯追加，旧行前缀未改）；`git check-ignore -v .qoder-credits/` = `.gitignore:30` rc=0；v2.29 交付 AC-8 补注句在位（1:1 行内、旧声称零删）；`grep -c '^\*\*M5' ROADMAP.md` = **1** 且 M4 已结案归档（P0-6，P1 达成后） | P0-2…P0-6 |
 | **AC-3** | **通过** | `storage/et_params.h` 公开面在 `--diff` 点名清单内（新增 22 / 修改删除 0）；**代际原子**在 host 可复现：`params.gen_switch`（GEN 交替 + 旧代际记录仍在）、`params.powercut_100`（100 注入点，重开后 `loaded=true`/`validate==count`/七字段全 A 或全 B 不混）；范围拒绝/恢复出厂保留各有专例 | P2-1 |
-| **AC-4** | **通过** | `make WERROR=1 test` = **536/536 ALL PASS**；断电注入 **100 次**（`w0 + span*i/100`，i=0…99，注入点覆盖 save 全过程；判据 = 旧代际或新代际**完整**，无半套）；迁移失败回滚 = `params.migrate_fail_rollback`（版本与值均回旧） | P2-2 |
+| **AC-4** | **通过** | `make WERROR=1 test` = **538/538 ALL PASS**；断电注入 **100 次**（`w0 + span*i/100`，i=0…99，注入点覆盖 save 全过程；判据 = 旧代际或新代际**完整**，无半套）；迁移失败回滚 = `params.migrate_fail_rollback`（版本与值均回旧） | P2-2 |
 | **AC-5** | **通过** | 五面机读：`et_config.h` 开关 / `Makefile` 两列表 / `test_main` 注册 / `README` 特性表 / `API_GUIDE` 6.3+11.16 各有断言（K=**10**）；模块 **36**（`docsync` 逐名对账 36 行）/ 开关 **33**（`grep -c '^#define ET_MODULE_'` = 33） | P2-3 |
 | **AC-6** | **通过** | `apidump --check` rc=0；`--diff` 对 **v2.29** 基线 = **新增 22 项 / 修改删除 0**（点名清单 = `et_params` 9 函数 + 4 类型 + 键空间/容量宏）；`et_xmodem`/`et_bootctl`/`port` 前缀零变更；`API_STABILITY` §5.1 本版零行（无结构体追加） | HC-6 |
-| **AC-7** | **通过** | 板侧构建 exit=0 **warning 0**、`FLASH=87836 RAM=9992`；`ET_XM_1K=1` 生效（传输帧 = STX/1024 B，86 块 vs 128B 的 687 块）；升级期 TX 仅协议字节（D/E 两轮 0 重试，宿主只收 ACK）；三改前后停止点对照见 §6 与实机记录 §20.2 | P1-1 / HC-3 |
+| **AC-7** | **通过** | 板侧构建 exit=0 **warning 0**、`FLASH=88,608 RAM=10,000`（取数时点 = **含两处诊断改动的构建**；评审 CO-3①）；`ET_XM_1K=1` 生效（传输帧 = STX/1024 B，86 块 vs 128B 的 687 块）；升级期 TX 仅协议字节（D/E 两轮 0 重试，宿主只收 ACK）；三改前后停止点对照见 §6 与实机记录 §20.2 | P1-1 / HC-3 |
 | **AC-8** | **通过** | 双单证据在档：confirm（`-1/-1/0` 基线 → **`1/1/1`** + `AT+VER 2.30.0`）与回滚（`staged=1 confirmed=-1 attempts=1` → 累积后清状态 + **A 槽 `SELFTEST 22/22`**）；镜像 = 当版真固件 body **87,852 B** → 打包 **87,884 B ≤ 131,072 B**；`--ver` 奇偶逐处标注（7 奇 = 自检过 / 8 偶 = 自检不过）；归因纠正在案（P0-4 + 实机记录 §20.3 基线对照） | P1-2 / M4-④ |
 | **AC-9** | **通过** | `docs/API_INVENTORY_v2.29.md` 在位（worktree 于 `tag v2.29` 真生成；**475 项 / 806 行 / 25,233 B / sha256 `276224cd…a84adc`**）；与 v2.28 归档 diff = **25 行**（版本宏 1 + 区域 API 7 项）；`apidump.sh` BASE 两处切 v2.29；复读 = 新增 22 / 删改 0 | P3-1 |
-| **AC-10** | **通过** | MINOR **30** / **`0x021E00`**（probe 实测 `ver=2.30.0 hex=0x021E00`）；README 版本/链接/基线名 ×2；模块 **36** / 开关 **33**；用例数 **536**（`grep -rn 526` 终态 0 命中；536/536/537/543 四形态）；CHANGELOG `[2.30.0]` = 2026-10-22；体积行 f103 27192/32/1520 与 39636/32/3808、g474 27860/36/1520（`sizecheck` 3/0） | P3-2 / HC-5 |
-| **AC-11** | **通过** | `make WERROR=1 test` 536 / `test-g4` 536 / `test-1k` 537 / `test-tab` 543 全绿；`make ex` 六配方 PASS；`docsync` **395/0**；`apidump --check` rc=0；`sizecheck` 3/0；CI 七 job 与 Release = 发版步（归 Owner，本档不预写其绿）；快照触发面 = 无新 run/Release（§7.6） | P3-2(b) / REQ-18 |
-| **AC-12** | **见 §7.4⑧ 与 §7.5** | ⑧ 五行 = `--emit` 逐字粘贴（`diff` 空）；`--verify` PASS @定稿链末笔；(d) 全集与分桶逐值取自 emit；token 机读与 §7.3 一致 | P3-4/P3-5 |
+| **AC-10** | **通过** | MINOR **30** / **`0x021E00`**（probe 实测 `ver=2.30.0 hex=0x021E00`）；README 版本/链接/基线名 ×2；模块 **36** / 开关 **33**；用例数 **538**（r2 T-1 新增 2 例；四形态 **538/538/539/545**）；`grep -rn 526 --include=*.md` 的**用例计数面 0 残留**（余 2 命中 = 哈希 `405265e` 与 CHANGELOG 历史句「526→536」，非计数声称）；CHANGELOG `[2.30.0]` = 2026-10-22；体积行 f103 27192/32/1520 与 39636/32/3808、g474 27860/36/1520（`sizecheck` 3/0） | P3-2 / HC-5 |
+| **AC-11** | **通过** | `make WERROR=1 test` 538 / `test-g4` 538 / `test-1k` 539 / `test-tab` 545 全绿；`make ex` 六配方 PASS；`docsync` **395/0**；`apidump --check` rc=0；`sizecheck` 3/0；CI 七 job 与 Release = 发版步（归 Owner，本档不预写其绿）；快照触发面 = 无新 run/Release（§7.6） | P3-2(b) / REQ-18 |
+| **AC-12** | **见 §7.4⑧ 与 §7.5** | ⑧ 五行 = `--emit` 逐字粘贴（`diff` 空）；`--verify` PASS @定稿链末笔；(d) 全集与分桶逐值取自 emit；token 机读与 §7.3 一致；**留痕件 = `build/final-gates-v230.log`**（库外、零入库，六段 = 声称面，含 `--emit` 五锚与 `--verify` stdout/rc；r2 T-4） | P3-4/P3-5 |
 | **AC-13** | **通过** | G0 窗口谓词（本版 P0 时点）逐文件 = `docref.sh`/`gatecheck.sh`/`sizecheck.sh`/`apidump.sh` + 库面六目录 + `port/` + `Makefile` + `et_config.h` + `.github/` diff **空**（apidump BASE 属 P3-1 计划面，窗口外）；`docsync.sh` 计划内改动（K=10 + 两处字面） | P0 G0 |
 | **AC-14** | **通过** | `docs/v3-candidates.md`「v2.30 复评记录」= **15 行 CO 输入（同序）+ 3 行常设条目**；三板 v2.30 行在档（G474 窗口已执行含双单 / ch32x035 六口无 WCH-Link / f103 交叉构建）；池新增三条（F/G/H）；P1 未失败 ⇒ 无新增 xmodem 可靠性候选 | P3-4 |
 
@@ -63,7 +63,7 @@
 
 ## 5. 机制自证与门改动面
 
-- `docsync` 本版 **+10 断言**（`et_params` 模块块，纯新增，判定语义零变更 HC-7）+ **两处字面** 526→536；`apidump.sh` 仅 BASE 两处；`docref.sh`/`gatecheck.sh`/`sizecheck.sh` **diff 空**。
+- `docsync` 本版 **+10 断言**（`et_params` 模块块，纯新增，判定语义零变更 HC-7）+ **两处字面** 526→536（r2 轮因 T-1 新增 2 用例再回刷为 **538**，见 AC-10）；`apidump.sh` 仅 BASE 两处；`docref.sh`/`gatecheck.sh`/`sizecheck.sh` **diff 空**。
 - 公开面：`apidump --diff` 对 v2.29 = **新增 22 / 修改删除 0**；`et_xmodem`/`et_bootctl`/`port` 零变更；无结构体字段追加。
 - 库面：按计划允许面 = `et_config.h`（版本 + 开关）、`Makefile`（两列表）、`test_main.c`（注册）、新增三件 + 偏差 3 的 `debug/et_metrics.c` 一行与 `test/test_metrics.c` 三处计数；其余六目录 **diff 空**；`port/` 零改动（P1 在库外 demo）。
 
@@ -96,7 +96,7 @@ sh tools/docsync.sh                                   # 期望 395/0
 sh tools/apidump.sh --check                           # 期望 rc=0
 sh tools/apidump.sh --diff                            # 期望 新增 22 / 修改删除 0
 sh tools/sizecheck.sh                                 # 期望 pass=3 fail=0
-make WERROR=1 test && make test-g4 && make test-1k && make test-tab   # 536/536/537/543
+make WERROR=1 test && make test-g4 && make test-1k && make test-tab   # 538/538/539/545
 make ex                                               # 六配方 PASS
 sh tools/docbuild.sh                                  # 两板 rc=0 警告 0
 sh tools/gatecheck.sh 2.30 --emit                     # ⑧ 取值
