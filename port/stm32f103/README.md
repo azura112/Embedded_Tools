@@ -137,8 +137,8 @@ arm-none-eabi-size build/stm32f103_demo.elf build/stm32f103_demo_selftest.elf
 | v2.28 | 38056 | 24 | 3792 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+12 B**（同一守卫在 SELFTEST=1 构型下展开为独立分支，与本 port 默认构型的 +8 B 差异属构型相关，两值各按实测标注、不互推），data/bss 零变化；`make WERROR=1 test` 零警告 + 四形态 520/520/527/521 全绿（本版用例数零增减，`null_safety` 为既有用例内扩展） |
 | v2.29 | 25760 | 32 | 1520 | 默认裁剪构建；**接入版 P2 契约面**（v2.29 计划 P2-1/P2-2）：text **+152 B** = port 区域五符号(本平台 = 恒失败桩, 见 `port_stm32f103.c` 区域段) + `et_bootctl` 的 `cfg_slots_valid` 位形校验与 `slot_read` 分发(两取数点经区域 API 或 `port_flash_read`)；data **+8 B** / bss **+8 B** = `et_bootctl_cfg_t` 尾字段 `slot_base[2]`(20→28 B, 编译期断言实测)在 demo 静态实例与自测句柄上的尺寸增量, 无新增静态数组；`port_flash_read/write/erase_sector` 与 bootctl 七签名逐字不变(`apidump --diff` = 新增 7 项 / 修改删除 0 项)。体积读数 = `arm-none-eabi-size` 本机实测(GNU Tools for STM32 13.3.rel1, `sh tools/docbuild.sh` 产出的同一 ELF), `sh tools/sizecheck.sh` 断言同值 |
 | v2.29 | 38204 | 32 | 3808 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+148 B** / data **+8 B** / bss **+16 B**（同上一行归因；两构型 text 增量差 4 B 属构型相关, 各按实测标注、不互推）；板上 selftest 套件数维持 22（本版不新增板上套件, 计划 §1.3） |
-| v2.30 | 27192 | 32 | 1520 | 默认裁剪构建；**功能版（升级链闭合 + 参数版本化）**：text **+1432 B** = 第 36 模块 `storage/et_params`（schema/迁移/代际原子保存，默认编入但 demo 不调用，`.text` 随全量链接纳入）；用例 538（`make test` 实测；r2 T-1 后）；`apidump --diff` 对 v2.29 基线 = 新增 22 / 修改删除 0 |
-| v2.30 | 39636 | 32 | 3808 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+1432 B** / data **+0 B** / bss **+0 B**（同上一行归因 = `storage/et_params` 全量链接；selftest 套件 22 维持，`test_params` 属 host 侧） |
+| v2.30 | 27232 | 32 | 1520 | 默认裁剪构建；**功能版（升级链闭合 + 参数版本化）**：text **+1472 B**（含 r2 T-1 U32 修正 +40 B） = 第 36 模块 `storage/et_params`（schema/迁移/代际原子保存，默认编入但 demo 不调用，`.text` 随全量链接纳入）；用例 538（`make test` 实测；r2 T-1 后）；`apidump --diff` 对 v2.29 基线 = 新增 22 / 修改删除 0 |
+| v2.30 | 39676 | 32 | 3808 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态）；text **+1472 B**（含 r2 T-1 +40 B） / data **+0 B** / bss **+0 B**（同上一行归因 = `storage/et_params` 全量链接；selftest 套件 22 维持，`test_params` 属 host 侧） |
 | v2.4 | 30796 | 24 | 2232 | **ET_MODULE_SELFTEST=1 构建**（CI/仿真常态，终值）；+et_modbus |
 
 ## Renode 仿真（v1.3 起为 CI 常设门）
