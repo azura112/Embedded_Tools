@@ -110,11 +110,11 @@ sh tools/gatecheck.sh 2.30 --verify versions/v2.30/DELIVERY.md   # 期望 verify
 ### 7.4 ⑧ 机读值（`--emit` 逐字粘贴，禁重打）
 
 ```
-[gatecheck:emit] (b) 全量 = 待粘贴_1
-[gatecheck:emit] (b) 自排除 = 待粘贴_2
-[gatecheck:emit] (d) 待粘贴_3
-[gatecheck:emit] (a) 待粘贴_4
-[gatecheck:emit] 登记 token = 待粘贴_5
+[gatecheck:emit] (b) 全量 = 39 files / 2259 / 50
+[gatecheck:emit] (b) 自排除 = 38 files / 2106 / 50 (口径 = -- ':(exclude)v2.30开发交付__*.md :(exclude)versions/v2.30/DELIVERY*.md')
+[gatecheck:emit] (d) 全集 38 份 → OK 10 / 未登记实质变更 15 / 自指滞后 3 / 缺声明行 10 / 其他 0
+[gatecheck:emit] (a) CHANGELOG [2.30.0] 节日期 = 2026-10-22; 全文日期计数 = 2026-09-29×5 2026-10-01×3 2026-09-25×3 2026-09-24×3 2026-09-12×3 2026-10-20×2 2026-10-02×2 2026-09-30×2 2026-09-27×2 2026-09-09×2 2026-09-06×2 2026-10-22×1 2026-10-10×1 2026-10-09×1 2026-10-08×1 2026-10-07×1 2026-10-06×1 2026-10-05×1 2026-10-04×1 2026-10-03×1 2026-09-26×1 2026-09-19×1 2026-09-11×1 2026-09-08×1 2026-09-07×1 2026-09-05×1
+[gatecheck:emit] 登记 token = v2.10开发交付__挂账清偿与板侧闭环.md=22 v2.11开发交付__勘误批与轨道收口.md=3 v2.12开发交付__勘误清偿与判据自洽.md=4 v2.18开发交付__碰撞面根治实施与记法机制化.md=4 v2.19开发交付__勘误更正与时点纪律收口.md=5 v2.20开发交付__定稿后复测机制与基线口径明示.md=88 v2.21开发交付__勘误收敛与封闭枚举.md=83 v2.22开发交付__非代码清欠与复测脚本化.md=79 v2.23开发交付__引用机检闭环与纪律块重组.md=76 v2.24开发交付__勘误收敛与verify时点固化.md=70 v2.9开发交付__模板口径澄清与板侧同步窗口-r2.md=1 v2.9开发交付__模板口径澄清与板侧同步窗口.md=54 versions/v2.25/DELIVERY.md=64 versions/v2.26/DELIVERY-r2.md=1 versions/v2.26/DELIVERY.md=59 versions/v2.27/DELIVERY-r2.md=3 versions/v2.27/DELIVERY.md=54 versions/v2.28/DELIVERY-r2.md=4 versions/v2.28/DELIVERY.md=33 versions/v2.29/DELIVERY-r2.md=4 versions/v2.29/DELIVERY.md=15
 ```
 
 ### 7.5 复测预期与 tag 后红
