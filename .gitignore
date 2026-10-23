@@ -28,3 +28,9 @@ __pycache__/
 .workbuddy/
 # Qoder 会话产物目录 (v2.30 P0-3; v2.29 r2 交付 §5.4 新发现)
 .qoder-credits/
+
+# 发布/测试产物（迁移执行卡，2026-10-23）
+dist/
+release*/
+test-results/
+node_modules/
