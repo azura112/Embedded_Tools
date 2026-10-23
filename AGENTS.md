@@ -37,12 +37,13 @@ Embedded_Tools 是一套面向嵌入式 MCU 的 C99 组件库：零动态内存�
 
 ## 当前状态（每次收工更新两行）
 
-- 已完成：v2.30.0 r2 定稿链执行完毕（9 笔，末笔 `f78937b`）；`gatecheck --verify` PASS、`docsync` 397/0、`sizecheck` 3/0；REQ-7 真固件双单达成（1K + 升级期静默 + 57600），`et_params` 落地。
+- 已完成：v2.30.0 r2 定稿链执行完毕（9 笔，末笔 `f78937b`；该点 `gatecheck --verify` PASS、`docsync` 397/0、`sizecheck` 3/0）；REQ-7 真固件双单达成（1K + 升级期静默 + 57600），`et_params` 落地；2026-10-23 入库 `AGENTS.md`/`TODO.md`/`.gitignore`（`a3530e2`）并完成 115200+1K 复测（87/87 ACK、0 重试、`ore=0`；板侧已恢复 57600）。
 - 下一步：Owner 按顺序发版——① push main + tag `v2.29` → v2.29 Release；② v2.30 合入 main，tag `v2.30` 落 `f78937b` → CI/Release；③ 之后按 CO-12(v2.28) 在新末笔重取门读数。
 
 ## 已知问题
 
 - `tag v2.30` 未打、`dev/v2.30` 未合 main、v2.29 Release 未发（发版步归 Owner）。
-- **115200 + 1K 未复测**（v3 池 H）；当前可用形态 = 1K 块型 + 升级期静默 + 57600。
+- **115200 + 1K 已于 2026-10-23 复测通过**（修正主机纪律；confirm/rollback 各 87/87 ACK、0 重试、9.03 s、`ore=0`；证据 = 库外 `D:/code/STM32CubeMX/G474VET6_ET_TEST/build/v3h-115200-evidence/dual_walk_1k_115200.log`）。当前默认/可用形态仍 = 1K + 升级期静默 + 57600；是否切换 115200（需固化上位机纪律并同步 ROADMAP/池 H）待 Owner 决定。
 - 根目录三件 BLOCKED 的头部状态仍写「待裁决 / 受阻在案」，但对应问题已由 v2.29 / v2.30 消解：`BLOCKED-2__v2.28…`（转 v2.29 路径 A）、`BLOCKED-2__v2.29…`（v2.30 P1 双单达成）、`BLOCKED-3__v2.28…`（§4 更正章，申报面作废）。按执行卡原文件冻结，不改不搬。
 - `versions/v2.30/REVIEW-r2.md` 未见入库；r2 档提到「复评记录再入库」，是否需补做 A2 复评待 Owner 确认。
+- 2026-10-23 的 `a3530e2` 与本次结果登记笔均触碰非 docref 白名单文件 ⇒ 当前 HEAD 的 (b) 锚后移、主档/十档 docref 转「未登记实质变更」，`gatecheck --verify` 预期红；按 CO-12(v2.28) 在发版后新末笔重取，禁以红态值回填。
