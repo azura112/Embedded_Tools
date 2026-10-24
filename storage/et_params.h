@@ -33,7 +33,8 @@
 #include <stddef.h>
 #include "et_config.h"
 
-#if ET_MODULE_PARAMS
+/* 本模块建在 et_kv 之上, 无 kv 则整模块关断(空 TU, 同 selftest 的合取守卫惯例) */
+#if ET_MODULE_PARAMS && ET_MODULE_KV
 
 #include "et_kv.h"
 

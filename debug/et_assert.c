@@ -35,9 +35,11 @@ void et_assert_fail(const char *file, int line, const char *expr)
     }
 
     /* 内置策略: 记录现场后停机, 便于调试器定位或等待看门狗复位 */
+#if ET_MODULE_LOG
     (void)et_log_output(ET_LOG_LEVEL_ERROR, "ASSERT",
                         "%s:%d expr(%s)", file, line,
                         (expr != NULL) ? expr : "?");
+#endif
     for (;;) {
         /* 可按平台替换为: 关中断 / WFI / NVIC_SystemReset() */
     }

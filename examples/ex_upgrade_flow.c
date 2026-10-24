@@ -45,7 +45,8 @@ static int g_fail;
 #define SLOT_B_OFF      (SLOT_B * PORT_FLASH_SECTOR_SIZE)
 
 static const et_bootctl_cfg_t g_bcfg = {
-    6u, { 7u, 8u }, PORT_FLASH_SECTOR_SIZE, 2u      /* state/A/B, max=2 */
+    6u, { 7u, 8u }, PORT_FLASH_SECTOR_SIZE, 2u,     /* state/A/B, max=2 */
+   { 0u, 0u }                                       /* slot_base: 0 = 旧扇区语义 */
 };
 
 /* ---- 镜像与传输状态 ---- */

@@ -4,7 +4,7 @@
  */
 #include "et_params.h"
 
-#if ET_MODULE_PARAMS
+#if ET_MODULE_PARAMS && ET_MODULE_KV
 
 #include <string.h>
 
