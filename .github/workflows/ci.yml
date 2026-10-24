@@ -126,12 +126,19 @@ jobs:
       - name: Disabled modules carry no symbols (HC-8① 口径 = 无目标代码/符号)
         run: |
           mkdir -p build
-          nm build-off/CMakeFiles/embedded_tools.dir/storage/et_kv.c.obj | grep -E '[TtDdBbRrWw] et_' | tee build/kv-off-symbols.txt
+          # 对象扩展名随平台: Linux/Ninja 产 .o, Windows 产 .obj ⇒ 按存在者取, 不写死
+          KV_OFF=$(ls build-off/CMakeFiles/embedded_tools.dir/storage/et_kv.c.o \
+                      build-off/CMakeFiles/embedded_tools.dir/storage/et_kv.c.obj 2>/dev/null | head -1)
+          LOG_OFF=$(ls build-off/CMakeFiles/embedded_tools.dir/debug/et_log.c.o \
+                       build-off/CMakeFiles/embedded_tools.dir/debug/et_log.c.obj 2>/dev/null | head -1)
+          KV_ON=$(ls build-cmake/CMakeFiles/embedded_tools.dir/storage/et_kv.c.o \
+                     build-cmake/CMakeFiles/embedded_tools.dir/storage/et_kv.c.obj 2>/dev/null | head -1)
+          nm "$KV_OFF" | grep -E '[TtDdBbRrWw] et_' | tee build/kv-off-symbols.txt
           test "$(grep -c '[TtDdBbRrWw] et_' build/kv-off-symbols.txt)" -eq 0
-          nm build-off/CMakeFiles/embedded_tools.dir/debug/et_log.c.obj | grep -E '[TtDdBbRrWw] et_' | tee build/log-off-symbols.txt
+          nm "$LOG_OFF" | grep -E '[TtDdBbRrWw] et_' | tee build/log-off-symbols.txt
           test "$(grep -c '[TtDdBbRrWw] et_' build/log-off-symbols.txt)" -eq 0
           # 对照面: 默认位形下同一命令必须数得出符号(证明上一条不是空 grep 假绿)
-          test "$(nm build-cmake/CMakeFiles/embedded_tools.dir/storage/et_kv.c.obj | grep -c '[TtDdBbRrWw] et_')" -gt 0
+          test "$(nm "$KV_ON" | grep -c '[TtDdBbRrWw] et_')" -gt 0
 
       - name: install + find_package(et CONFIG) 消费样例 (5 行接入)
         run: |
